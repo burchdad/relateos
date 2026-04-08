@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -9,10 +11,19 @@ from app.routes.interactions import router as interactions_router
 from app.routes.relationships import router as relationships_router
 from app.routes.style_profiles import router as style_profiles_router
 
-
-Base.metadata.create_all(bind=engine)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.app_name)
+
+
+@app.on_event("startup")
+def startup_tasks():
+    if settings.auto_create_tables:
+        try:
+            Base.metadata.create_all(bind=engine)
+            logger.info("Auto-create tables enabled: metadata created.")
+        except Exception as exc:
+            logger.warning("Auto-create tables failed: %s", exc)
 
 allowed_origins = [item.strip() for item in settings.cors_origins.split(",") if item.strip()]
 if not allowed_origins:

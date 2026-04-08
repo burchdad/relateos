@@ -232,6 +232,8 @@ Environment variables for both services:
 - `API_V1_PREFIX=/api/v1`
 - `CORS_ORIGINS=https://<your-vercel-domain>`
 
+Important: ensure `DATABASE_URL` is set from your Railway Postgres service reference. If missing, the app falls back to local defaults intended only for local development.
+
 Optional additional worker service for scheduled jobs:
 
 ```bash
