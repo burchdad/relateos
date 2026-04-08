@@ -7,13 +7,24 @@ import DemoGuide from "@/components/DemoGuide";
 import { PriorityItem, ScoreExplanation } from "@/components/types";
 
 const resolveApiUrl = () => {
+  let url: string;
+  
   if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
+    url = process.env.NEXT_PUBLIC_API_URL;
+  } else if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+    url = "http://localhost:8000/api/v1";
+  } else {
+    url = "/_/backend/api/v1";
   }
-  if (typeof window !== "undefined" && window.location.hostname === "localhost") {
-    return "http://localhost:8000/api/v1";
+  
+  // Ensure the URL is valid and not a hostname-only string
+  if (url && !url.startsWith("http") && !url.startsWith("/")) {
+    console.warn(`[API] Invalid API_URL format: ${url}. Using fallback.`);
+    url = "/_/backend/api/v1";
   }
-  return "/_/backend/api/v1";
+  
+  console.info(`[API] Resolved API URL: ${url}`);
+  return url;
 };
 
 export default function DashboardPage() {
