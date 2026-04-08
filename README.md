@@ -9,7 +9,7 @@ This MVP includes:
 - FastAPI backend with PostgreSQL models
 - Celery + Redis background workers
 - AI-powered summaries and message suggestions
-- Priority scoring engine
+- Signal-driven priority scoring engine
 - Next.js 14 Daily Command Center dashboard
 
 ## Architecture
@@ -43,6 +43,8 @@ Implemented tables:
 - `interactions`
 - `opportunities`
 - `ai_insights`
+- `relationship_signals`
+- `user_style_profiles`
 
 ## API Endpoints
 
@@ -66,20 +68,41 @@ AI:
 - `POST /ai/message/{relationship_id}`
 - `POST /ai/insights/{relationship_id}`
 
+Preferences:
+
+- `GET /preferences/style/{owner_user_id}`
+- `PUT /preferences/style/{owner_user_id}`
+
 Dashboard:
 
 - `GET /dashboard/priorities?limit=5..10`
+- `GET /dashboard/score-explanation/{relationship_id}`
 
 ## Scoring Formula
 
-Priority score is computed as:
+Priority score is now signal-driven and explainable:
 
-- Opportunity * 0.35
-- Risk * 0.25
-- Value * 0.25
-- Recency * 0.15
+1. Derive relationship signals, for example:
+   - `RECENT_REPLY`
+   - `NO_CONTACT_21_DAYS`
+   - `ACTIVE_DEAL`
+   - `HIGH_VALUE_CONTACT`
+   - `NEGATIVE_SENTIMENT`
+   - `FOLLOW_UP_DUE`
+2. Apply a configured weight and magnitude for each signal.
+3. Compute a 0-100 score and store it in `relationships.priority_score`.
+4. Persist active signals in `relationship_signals` for dashboard explainability.
 
-The result is normalized and stored as a 0-100 score in `relationships.priority_score`.
+Dashboard output now includes:
+
+- urgency level (`Act Today`, `This Week`, `Low Priority`)
+- top signal reasons used for ranking
+
+Score explanations include:
+
+- base score
+- total signal impact
+- per-signal contribution (`weight * magnitude`) with reason text
 
 ## Local Run Instructions
 
@@ -125,6 +148,7 @@ python -m scripts.seed
 ```
 
 Seeds 15 relationships with varied history, opportunities, and starter AI insights.
+The seed step also auto-creates default style profiles for each unique seeded owner.
 
 ### 4) Run Celery worker + beat
 
@@ -163,6 +187,69 @@ Open:
 
 - Dashboard: `http://localhost:3000/dashboard`
 - API docs: `http://localhost:8000/docs`
+
+## Railway + Vercel Deployment
+
+Recommended split:
+
+- Frontend: Vercel
+- Backend API: Railway service
+- Worker: Railway service (same image, worker command)
+- Redis: Railway Redis
+- Postgres: Railway Postgres
+
+### Backend services (Railway)
+
+Create two Railway services from `backend/`:
+
+If Railway is connected to the repo root and shows a Railpack error like "start.sh not found", this repo now includes a root `Dockerfile` and `railway.toml` so Railway can build the backend API directly from monorepo root.
+
+For one-click service creation with no command overrides:
+
+- API service: use `Dockerfile`
+- Worker service: use `Dockerfile.worker`
+
+1) API service command:
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port ${PORT}
+```
+
+2) Worker service command:
+
+```bash
+celery -A app.workers.celery_app.celery worker --loglevel=info
+```
+
+If using `Dockerfile.worker`, no Railway Start Command override is needed.
+
+Environment variables for both services:
+
+- `DATABASE_URL`
+- `REDIS_URL`
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
+- `API_V1_PREFIX=/api/v1`
+- `CORS_ORIGINS=https://<your-vercel-domain>`
+
+Optional additional worker service for scheduled jobs:
+
+```bash
+celery -A app.workers.celery_app.celery beat --loglevel=info
+```
+
+### Frontend (Vercel)
+
+Deploy `frontend/` and set:
+
+- `NEXT_PUBLIC_API_URL=https://<your-railway-api-domain>/api/v1`
+
+### Production checks
+
+- `GET /health` responds OK on Railway
+- CORS allows only Vercel domains
+- Worker can connect to Redis and Postgres
+- Posting `POST /interactions` enqueues AI tasks successfully
 
 ## MVP Workflow
 

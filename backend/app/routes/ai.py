@@ -19,7 +19,12 @@ def summary(relationship_id: UUID, db: Session = Depends(get_db)):
 
 @router.post("/message/{relationship_id}", response_model=AIResponse)
 def message(relationship_id: UUID, payload: MessageSuggestionRequest, db: Session = Depends(get_db)):
-    content = AIService().generate_message_suggestion(db, relationship_id, payload.goal)
+    content = AIService().generate_message_suggestion_with_style(
+        db,
+        relationship_id,
+        payload.goal,
+        style_override=payload.style_profile.model_dump() if payload.style_profile else None,
+    )
     return AIResponse(content=content)
 
 

@@ -3,14 +3,33 @@ from sqlalchemy.orm import Session
 from openai import OpenAI
 
 from app.core.config import settings
-from app.models import AIInsight, Interaction, Opportunity, Relationship
+from app.models import AIInsight, Interaction, Opportunity, Relationship, RelationshipSignal
+from app.services.style_profile_service import DEFAULT_STYLE, get_style_profile
 
 
 class AIService:
     def __init__(self):
         self.client = OpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
 
-    def _relationship_context(self, db: Session, relationship_id) -> str:
+    def _style_instructions(self, style_profile: dict) -> str:
+        return (
+            "Style profile:\n"
+            f"- Tone: {style_profile['tone']}\n"
+            f"- Length: {style_profile['length']}\n"
+            f"- Energy: {style_profile['energy']}\n"
+            f"- Emoji usage: {style_profile['emoji_usage']}"
+        )
+
+    def _latest_summary(self, db: Session, relationship_id) -> str | None:
+        item = (
+            db.query(AIInsight)
+            .filter(AIInsight.relationship_id == relationship_id, AIInsight.type == "summary")
+            .order_by(AIInsight.created_at.desc())
+            .first()
+        )
+        return item.content if item else None
+
+    def _memory_context(self, db: Session, relationship_id, style_override: dict | None = None) -> str:
         rel = db.query(Relationship).filter(Relationship.id == relationship_id).first()
         if not rel:
             return "Relationship not found"
@@ -19,20 +38,38 @@ class AIService:
             db.query(Interaction)
             .filter(Interaction.relationship_id == relationship_id)
             .order_by(Interaction.created_at.desc())
-            .limit(10)
+            .limit(5)
             .all()
         )
         opps = db.query(Opportunity).filter(Opportunity.relationship_id == relationship_id).all()
+        signals = (
+            db.query(RelationshipSignal)
+            .filter(RelationshipSignal.relationship_id == relationship_id)
+            .order_by(RelationshipSignal.detected_at.desc())
+            .all()
+        )
+        style_profile = get_style_profile(db, rel.owner_user_id)
+        if style_override:
+            style_profile = {**style_profile, **style_override}
+        else:
+            style_profile = {**DEFAULT_STYLE, **style_profile}
+
+        summary = self._latest_summary(db, relationship_id)
 
         context_lines = [
             f"Relationship type: {rel.type}",
             f"Lifecycle stage: {rel.lifecycle_stage}",
             f"Priority score: {rel.priority_score}",
-            "Recent interactions:",
+            f"Owner user id: {rel.owner_user_id or 'unknown'}",
         ]
+        context_lines.append(f"Last summary: {summary or 'No summary yet.'}")
+        context_lines.append("Recent interactions:")
         context_lines += [f"- [{i.type}] {i.content}" for i in interactions]
         context_lines.append("Opportunities:")
         context_lines += [f"- {o.title}: {o.value_estimate} ({o.status})" for o in opps]
+        context_lines.append("Current signals:")
+        context_lines += [f"- {s.signal_key}: {s.reason}" for s in signals]
+        context_lines.append(self._style_instructions(style_profile))
         return "\n".join(context_lines)
 
     def _fallback(self, relationship_id, insight_type: str, goal: str | None = None) -> str:
@@ -75,7 +112,7 @@ class AIService:
         return item
 
     def generate_contact_summary(self, db: Session, relationship_id):
-        context = self._relationship_context(db, relationship_id)
+        context = self._memory_context(db, relationship_id)
         prompt = (
             "You are a relationship intelligence assistant. Return exactly 4 lines with these labels and nothing else:\n"
             "Who: ...\n"
@@ -90,7 +127,7 @@ class AIService:
         return content
 
     def generate_message_suggestion(self, db: Session, relationship_id, goal: str):
-        context = self._relationship_context(db, relationship_id)
+        context = self._memory_context(db, relationship_id)
         prompt = (
             "Write one short outreach message under 45 words."
             " Tone rules: casual, human, direct, no corporate language, no buzzwords, no robotic phrasing."
@@ -102,8 +139,24 @@ class AIService:
         self._store_insight(db, relationship_id, "suggestion", content)
         return content
 
+    def generate_message_suggestion_with_style(
+        self, db: Session, relationship_id, goal: str, style_override: dict | None = None
+    ):
+        context = self._memory_context(db, relationship_id, style_override=style_override)
+        prompt = (
+            "Write one short outreach message under 45 words."
+            " Tone rules: casual, human, direct, no corporate language, no buzzwords, no robotic phrasing."
+            " Follow the provided style profile exactly."
+            " Include one specific detail from context when possible."
+            " Avoid openers like 'Hope you're doing well'."
+            f" Goal: {goal}\n\n{context}"
+        )
+        content = self._run_prompt(prompt) or self._fallback(relationship_id, "suggestion", goal=goal)
+        self._store_insight(db, relationship_id, "suggestion", content)
+        return content
+
     def generate_insights(self, db: Session, relationship_id):
-        context = self._relationship_context(db, relationship_id)
+        context = self._memory_context(db, relationship_id)
         prompt = (
             "Generate exactly 2 lines and nothing else:\n"
             "Risk: ...\n"

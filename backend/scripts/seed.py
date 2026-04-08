@@ -2,8 +2,9 @@ import random
 from datetime import datetime, timedelta, timezone
 
 from app.core.database import Base, SessionLocal, engine
-from app.models import AIInsight, Interaction, Opportunity, Person, Relationship
+from app.models import AIInsight, Interaction, Opportunity, Person, Relationship, RelationshipSignal, UserStyleProfile
 from app.services.scoring_service import calculate_priority_score
+from app.services.style_profile_service import DEFAULT_STYLE
 
 
 FIRST_NAMES = ["Avery", "Jordan", "Taylor", "Morgan", "Casey", "Riley", "Parker", "Quinn", "Skyler", "Emerson", "Cameron", "Reese", "Blake", "Hayden", "Finley"]
@@ -11,20 +12,40 @@ LAST_NAMES = ["Parker", "Lee", "Nguyen", "Patel", "Garcia", "Kim", "Lopez", "Bro
 TYPES = ["lead", "agent", "investor", "partner"]
 STAGES = ["new", "engaged", "nurturing", "active", "dormant"]
 INTERACTION_TYPES = ["call", "sms", "email", "meeting", "note"]
+OWNER_IDS = ["owner-1", "owner-2", "owner-3"]
+
+
+def _ensure_default_style_profiles(db, owner_ids: set[str]):
+    for owner_user_id in owner_ids:
+        existing = db.query(UserStyleProfile).filter(UserStyleProfile.owner_user_id == owner_user_id).first()
+        if existing:
+            continue
+        db.add(
+            UserStyleProfile(
+                owner_user_id=owner_user_id,
+                tone=DEFAULT_STYLE["tone"],
+                length=DEFAULT_STYLE["length"],
+                energy=DEFAULT_STYLE["energy"],
+                emoji_usage=DEFAULT_STYLE["emoji_usage"],
+            )
+        )
 
 
 def seed():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
+    db.query(RelationshipSignal).delete()
     db.query(AIInsight).delete()
     db.query(Interaction).delete()
     db.query(Opportunity).delete()
     db.query(Relationship).delete()
     db.query(Person).delete()
+    db.query(UserStyleProfile).delete()
     db.commit()
 
     relationships = []
+    owner_ids: set[str] = set()
     for i in range(15):
         first_name = FIRST_NAMES[i]
         last_name = LAST_NAMES[i]
@@ -40,12 +61,14 @@ def seed():
         db.flush()
 
         last_contacted = datetime.now(timezone.utc) - timedelta(days=random.randint(1, 40))
+        owner_user_id = random.choice(OWNER_IDS)
+        owner_ids.add(owner_user_id)
         rel = Relationship(
             person_id=person.id,
             type=random.choice(TYPES),
             lifecycle_stage=random.choice(STAGES),
             relationship_strength=round(random.uniform(0.2, 0.95), 2),
-            owner_user_id="owner-1",
+            owner_user_id=owner_user_id,
             last_contacted_at=last_contacted,
         )
         db.add(rel)
@@ -100,11 +123,14 @@ def seed():
 
     db.commit()
 
+    _ensure_default_style_profiles(db, owner_ids)
+    db.commit()
+
     for rel in relationships:
         calculate_priority_score(db, rel.id)
 
     db.close()
-    print("Seed complete: 15 relationships created.")
+    print(f"Seed complete: 15 relationships created across {len(owner_ids)} owners with default style profiles.")
 
 
 if __name__ == "__main__":

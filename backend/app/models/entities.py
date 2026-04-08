@@ -46,6 +46,7 @@ class Relationship(Base):
     interactions: Mapped[list["Interaction"]] = relationship("Interaction", back_populates="relationship")
     opportunities: Mapped[list["Opportunity"]] = relationship("Opportunity", back_populates="relationship")
     ai_insights: Mapped[list["AIInsight"]] = relationship("AIInsight", back_populates="relationship")
+    signals: Mapped[list["RelationshipSignal"]] = relationship("RelationshipSignal", back_populates="relationship")
 
 
 class Interaction(Base):
@@ -93,3 +94,33 @@ class AIInsight(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     relationship: Mapped[Relationship] = relationship("Relationship", back_populates="ai_insights")
+
+
+class RelationshipSignal(Base):
+    __tablename__ = "relationship_signals"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    relationship_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("relationships.id"), nullable=False
+    )
+    signal_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    weight: Mapped[float] = mapped_column(Float, nullable=False)
+    magnitude: Mapped[float] = mapped_column(Float, default=1.0)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    detected_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    relationship: Mapped[Relationship] = relationship("Relationship", back_populates="signals")
+
+
+class UserStyleProfile(Base):
+    __tablename__ = "user_style_profiles"
+
+    owner_user_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    tone: Mapped[str] = mapped_column(String(50), default="casual")
+    length: Mapped[str] = mapped_column(String(50), default="short")
+    energy: Mapped[str] = mapped_column(String(50), default="medium")
+    emoji_usage: Mapped[str] = mapped_column(String(50), default="low")
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
