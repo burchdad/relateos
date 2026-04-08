@@ -67,7 +67,7 @@ export default function DashboardPage() {
     ownerUserId: "",
   });
 
-  const fetchPriorities = useCallback(async () => {
+  const fetchPriorities = useCallback(async (): Promise<PriorityItem[]> => {
     setLoading(true);
     setError("");
     try {
@@ -79,8 +79,10 @@ export default function DashboardPage() {
       setItems(data);
       setExplanations({});
       setLoadingExplanation({});
+      return data;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
+      return [];
     } finally {
       setLoading(false);
     }
@@ -221,6 +223,7 @@ export default function DashboardPage() {
     }
 
     setCreating(true);
+    const previousCount = items.length;
     try {
       const res = await fetch(`${API_URL}/relationships`, {
         method: "POST",
@@ -258,11 +261,22 @@ export default function DashboardPage() {
       setShowCreateForm(false);
       await fetchPriorities();
     } catch (e) {
-      setCreateError(e instanceof Error ? e.message : "Failed to create relationship");
-
-      // If the write succeeded but the response failed (for example, transient proxy/CORS error),
-      // immediately refresh priorities so the new relationship appears without manual reload.
-      await fetchPriorities();
+      const refreshed = await fetchPriorities();
+      if (refreshed.length > previousCount) {
+        setCreateError("");
+        setForm({
+          firstName: "",
+          lastName: "",
+          type: "lead",
+          interests: "",
+          currentStatus: "active",
+          lastInteractionTiming: "stale",
+          ownerUserId: "",
+        });
+        setShowCreateForm(false);
+      } else {
+        setCreateError(e instanceof Error ? e.message : "Failed to create relationship");
+      }
     } finally {
       setCreating(false);
     }

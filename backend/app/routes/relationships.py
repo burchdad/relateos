@@ -24,7 +24,11 @@ logger = logging.getLogger(__name__)
 @router.post("", response_model=RelationshipOut)
 def create_relationship(payload: RelationshipCreate, db: Session = Depends(get_db)):
     rel = RelationshipService.create_person_and_relationship(db, payload)
-    calculate_priority_score(db, rel.id)
+    try:
+        calculate_priority_score(db, rel.id)
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Score calculation failed for relationship %s: %s", rel.id, exc, exc_info=True)
 
     ai_service = AIService()
     try:
@@ -36,7 +40,7 @@ def create_relationship(payload: RelationshipCreate, db: Session = Depends(get_d
         )
     except Exception as exc:
         db.rollback()
-        logger.warning("AI bootstrap generation failed for relationship %s: %s", rel.id, exc)
+        logger.warning("AI bootstrap generation failed for relationship %s: %s", rel.id, exc, exc_info=True)
 
     rel = RelationshipService.get_by_id(db, rel.id)
     return rel
