@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.venv/
+.env
+
+# Node / Next
+node_modules/
+.next/
+out/
+
+# OS / tooling
+.DS_Store
+.vscode/
