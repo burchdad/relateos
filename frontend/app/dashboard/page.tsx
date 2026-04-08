@@ -17,9 +17,16 @@ const resolveApiUrl = () => {
     url = "/_/backend/api/v1";
   }
   
-  // Ensure the URL is valid and not a hostname-only string
+  // Auto-normalize hostname-only values such as "relateos-production.up.railway.app"
   if (url && !url.startsWith("http") && !url.startsWith("/")) {
-    console.warn(`[API] Invalid API_URL format: ${url}. Using fallback.`);
+    const normalized = `https://${url.replace(/^\/+/, "")}`;
+    url = normalized.endsWith("/api/v1") ? normalized : `${normalized}/api/v1`;
+    console.warn(`[API] Normalized API_URL to: ${url}`);
+  }
+
+  // Last-resort guard for malformed values
+  if (url && !url.startsWith("http") && !url.startsWith("/")) {
+    console.warn(`[API] Invalid API_URL format after normalization: ${url}. Using fallback.`);
     url = "/_/backend/api/v1";
   }
   
