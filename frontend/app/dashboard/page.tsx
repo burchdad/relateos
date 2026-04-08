@@ -1,10 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import DashboardList from "@/components/DashboardList";
 import DemoGuide from "@/components/DemoGuide";
 import { PriorityItem, ScoreExplanation } from "@/components/types";
+
+type RelationshipFormState = {
+  firstName: string;
+  lastName: string;
+  type: string;
+  ownerUserId: string;
+};
 
 const resolveApiUrl = () => {
   let url: string;
@@ -41,6 +48,15 @@ export default function DashboardPage() {
   const [loadingExplanation, setLoadingExplanation] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [form, setForm] = useState<RelationshipFormState>({
+    firstName: "",
+    lastName: "",
+    type: "client",
+    ownerUserId: "",
+  });
 
   const fetchPriorities = useCallback(async () => {
     setLoading(true);
@@ -98,6 +114,50 @@ export default function DashboardPage() {
     }
   };
 
+  const onCreateRelationship = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCreateError("");
+
+    if (!form.firstName.trim() || !form.lastName.trim() || !form.type.trim()) {
+      setCreateError("First name, last name, and relationship type are required.");
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const res = await fetch(`${API_URL}/relationships`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          person: {
+            first_name: form.firstName.trim(),
+            last_name: form.lastName.trim(),
+            email: null,
+            phone: null,
+            tags: {},
+            metadata: {},
+          },
+          type: form.type.trim(),
+          lifecycle_stage: "new",
+          relationship_strength: 0,
+          owner_user_id: form.ownerUserId.trim() || null,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to create relationship");
+      }
+
+      setForm({ firstName: "", lastName: "", type: "client", ownerUserId: "" });
+      setShowCreateForm(false);
+      await fetchPriorities();
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : "Failed to create relationship");
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <>
       <main className="mx-auto min-h-screen max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
@@ -107,7 +167,72 @@ export default function DashboardPage() {
         <p className="mt-3 max-w-2xl text-sm text-muted">
           Who should you talk to today, and what should you say? Priorities are scored by relationship momentum, risk, value, and recency.
         </p>
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={() => {
+              setShowCreateForm((prev) => !prev);
+              setCreateError("");
+            }}
+            className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-canvas hover:brightness-110"
+          >
+            {showCreateForm ? "Close" : "Add Relationship"}
+          </button>
+        </div>
         </header>
+
+        {showCreateForm ? (
+          <form onSubmit={onCreateRelationship} className="mb-6 rounded-2xl border border-soft bg-panel/60 p-4">
+            <h2 className="text-base font-semibold text-text">Create Relationship</h2>
+            <p className="mt-1 text-xs text-muted">Use this to seed your dashboard without backend access.</p>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <input
+                value={form.firstName}
+                onChange={(e) => setForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                placeholder="First name"
+                className="rounded-md border border-soft bg-canvas px-3 py-2 text-sm text-text outline-none ring-accent/40 placeholder:text-muted focus:ring"
+              />
+              <input
+                value={form.lastName}
+                onChange={(e) => setForm((prev) => ({ ...prev, lastName: e.target.value }))}
+                placeholder="Last name"
+                className="rounded-md border border-soft bg-canvas px-3 py-2 text-sm text-text outline-none ring-accent/40 placeholder:text-muted focus:ring"
+              />
+              <input
+                value={form.type}
+                onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value }))}
+                placeholder="Relationship type (client, investor, mentor...)"
+                className="rounded-md border border-soft bg-canvas px-3 py-2 text-sm text-text outline-none ring-accent/40 placeholder:text-muted focus:ring sm:col-span-2"
+              />
+              <input
+                value={form.ownerUserId}
+                onChange={(e) => setForm((prev) => ({ ...prev, ownerUserId: e.target.value }))}
+                placeholder="Owner user ID (optional, e.g. demo-owner)"
+                className="rounded-md border border-soft bg-canvas px-3 py-2 text-sm text-text outline-none ring-accent/40 placeholder:text-muted focus:ring sm:col-span-2"
+              />
+            </div>
+
+            {createError ? <p className="mt-3 text-sm text-red-300">{createError}</p> : null}
+
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={creating}
+                className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-canvas hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {creating ? "Creating..." : "Create"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCreateForm(false)}
+                className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : null}
 
         {loading ? <p className="text-muted">Loading priorities...</p> : null}
         {error ? <p className="text-red-300">{error}</p> : null}
