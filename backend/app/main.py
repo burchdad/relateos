@@ -1,5 +1,6 @@
 import logging
 import os
+from urllib.parse import urlparse
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,6 +23,21 @@ logger.info(f"Database URL (masked): {masked_url}")
 app = FastAPI(title=settings.app_name)
 
 
+def _normalize_origin(raw_origin: str) -> str | None:
+    value = (raw_origin or "").strip().rstrip("/")
+    if not value:
+        return None
+    if value == "*":
+        return "*"
+    if not value.startswith(("http://", "https://")):
+        value = f"https://{value.lstrip('/')}"
+
+    parsed = urlparse(value)
+    if not parsed.scheme or not parsed.netloc:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
 @app.on_event("startup")
 def startup_tasks():
     if settings.auto_create_tables:
@@ -31,14 +47,26 @@ def startup_tasks():
         except Exception as exc:
             logger.warning("Auto-create tables failed: %s", exc)
 
-allowed_origins = [item.strip() for item in settings.cors_origins.split(",") if item.strip()]
+allowed_origins = [
+    origin
+    for origin in (_normalize_origin(item) for item in settings.cors_origins.split(","))
+    if origin
+]
 if not allowed_origins:
     allowed_origins = ["*"]
+
+allow_credentials = "*" not in allowed_origins
+allow_origin_regex = settings.cors_origin_regex.strip() or None
+
+logger.info("Resolved CORS origins: %s", allowed_origins)
+if allow_origin_regex:
+    logger.info("Resolved CORS origin regex: %s", allow_origin_regex)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_credentials=True,
+    allow_origin_regex=allow_origin_regex,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )

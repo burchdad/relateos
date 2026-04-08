@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 
 from sqlalchemy.orm import Session
 
@@ -262,12 +263,16 @@ class AIService:
     def _run_prompt(self, prompt: str) -> str:
         if not self.client:
             return ""
-        response = self.client.responses.create(
-            model=settings.openai_model,
-            input=prompt,
-            temperature=0.3,
-        )
-        return (response.output_text or "").strip()
+        try:
+            response = self.client.responses.create(
+                model=settings.openai_model,
+                input=prompt,
+                temperature=0.3,
+            )
+            return (response.output_text or "").strip()
+        except Exception as exc:
+            logging.getLogger(__name__).warning("AI generation failed, falling back to deterministic copy: %s", exc)
+            return ""
 
     def _store_insight(self, db: Session, relationship_id, insight_type: str, content: str, score: float | None = None):
         item = AIInsight(

@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +12,7 @@ from app.services.scoring_service import calculate_priority_score
 
 
 router = APIRouter(prefix="/relationships", tags=["relationships"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("", response_model=RelationshipOut)
@@ -19,12 +21,15 @@ def create_relationship(payload: RelationshipCreate, db: Session = Depends(get_d
     calculate_priority_score(db, rel.id)
 
     ai_service = AIService()
-    ai_service.generate_contact_summary(db, rel.id)
-    ai_service.generate_message_suggestion(
-        db,
-        rel.id,
-        goal=f"check in on their interest in {payload.interests}",
-    )
+    try:
+        ai_service.generate_contact_summary(db, rel.id)
+        ai_service.generate_message_suggestion(
+            db,
+            rel.id,
+            goal=f"check in on their interest in {payload.interests}",
+        )
+    except Exception as exc:
+        logger.warning("AI bootstrap generation failed for relationship %s: %s", rel.id, exc)
 
     rel = RelationshipService.get_by_id(db, rel.id)
     return rel

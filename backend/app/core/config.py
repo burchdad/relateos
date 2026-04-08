@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     debug: bool = True
     api_v1_prefix: str = "/api/v1"
     cors_origins: str = "*"
+    cors_origin_regex: str = ""
     auto_create_tables: bool = True
 
     database_url: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/relateos"
