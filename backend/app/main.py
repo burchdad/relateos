@@ -1,4 +1,5 @@
 import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +13,11 @@ from app.routes.relationships import router as relationships_router
 from app.routes.style_profiles import router as style_profiles_router
 
 logger = logging.getLogger(__name__)
+
+# Log the database URL being used (mask password for security)
+db_url = os.getenv("DATABASE_URL") or settings.database_url
+masked_url = db_url.split("@")[0] + "@" + db_url.split("@")[1] if "@" in db_url else db_url
+logger.info(f"Database URL (masked): {masked_url}")
 
 app = FastAPI(title=settings.app_name)
 
