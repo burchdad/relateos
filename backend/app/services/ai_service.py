@@ -281,10 +281,20 @@ class AIService:
             content=content,
             score=score,
         )
-        db.add(item)
-        db.commit()
-        db.refresh(item)
-        return item
+        try:
+            db.add(item)
+            db.commit()
+            db.refresh(item)
+            return item
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "Failed to persist AI insight (%s) for relationship %s: %s",
+                insight_type,
+                relationship_id,
+                exc,
+            )
+            db.rollback()
+            return None
 
     def generate_contact_summary(self, db: Session, relationship_id):
         context = self._memory_context(db, relationship_id)

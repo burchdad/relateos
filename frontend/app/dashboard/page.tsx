@@ -168,6 +168,10 @@ export default function DashboardPage() {
       await fetchPriorities();
     } catch (e) {
       setCreateError(e instanceof Error ? e.message : "Failed to create relationship");
+
+      // If the write succeeded but the response failed (for example, transient proxy/CORS error),
+      // immediately refresh priorities so the new relationship appears without manual reload.
+      await fetchPriorities();
     } finally {
       setCreating(false);
     }

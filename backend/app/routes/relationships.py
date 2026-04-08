@@ -29,6 +29,7 @@ def create_relationship(payload: RelationshipCreate, db: Session = Depends(get_d
             goal=f"check in on their interest in {payload.interests}",
         )
     except Exception as exc:
+        db.rollback()
         logger.warning("AI bootstrap generation failed for relationship %s: %s", rel.id, exc)
 
     rel = RelationshipService.get_by_id(db, rel.id)
