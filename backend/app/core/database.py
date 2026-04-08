@@ -4,21 +4,36 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.core.config import settings
 
-# Prefer explicit DATABASE_URL, but fall back safely in Railway environments.
-database_url = os.getenv("DATABASE_URL") or settings.database_url
 
-# Some Railway templates expose postgres:// style URLs; normalize for SQLAlchemy.
-if database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql+psycopg2://", 1)
+def _normalize_database_url(raw_url: str | None) -> str:
+    if not raw_url:
+        return ""
 
-# If DATABASE_URL points to an internal host that is not resolvable from this service,
-# use the public URL if available.
-if "proxy.railway.internal" in database_url:
-    public_url = os.getenv("DATABASE_PUBLIC_URL")
-    if public_url:
-        database_url = public_url
-        if database_url.startswith("postgres://"):
-            database_url = database_url.replace("postgres://", "postgresql+psycopg2://", 1)
+    url = raw_url.strip().strip('"').strip("'")
+
+    # Handle common env entry mistake: value includes the key name itself.
+    if url.upper().startswith("DATABASE_URL=") or url.upper().startswith("DATABASE_PUBLIC_URL="):
+        url = url.split("=", 1)[1].strip()
+
+    # Unresolved Railway variable reference should be treated as missing.
+    if url.startswith("${{") and url.endswith("}}"):
+        return ""
+
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+psycopg2://", 1)
+
+    return url
+
+
+primary_url = _normalize_database_url(os.getenv("DATABASE_URL"))
+public_url = _normalize_database_url(os.getenv("DATABASE_PUBLIC_URL"))
+default_url = _normalize_database_url(settings.database_url)
+
+database_url = primary_url or public_url or default_url
+
+# If DATABASE_URL resolves to a private Railway host, prefer public URL when present.
+if "proxy.railway.internal" in database_url and public_url:
+    database_url = public_url
 
 engine = create_engine(database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
