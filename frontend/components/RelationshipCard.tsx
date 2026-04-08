@@ -46,7 +46,7 @@ export default function RelationshipCard({
 
   const lastContact = useMemo(() => {
     if (!item.last_contacted_at) {
-      return "No contact yet";
+      return "Context added, first outreach due";
     }
     const now = Date.now();
     const then = new Date(item.last_contacted_at).getTime();
@@ -105,7 +105,7 @@ export default function RelationshipCard({
 
       <div className="mt-4 space-y-3 text-sm">
         <p>
-          <span className="text-amber">Why it matters:</span> {item.summary ?? "Generate a summary to enrich context."}
+          <span className="text-amber">Why it matters:</span> {item.summary ?? "High-leverage relationship worth a proactive touchpoint."}
         </p>
         <p>
           <span className="text-amber">Why now:</span> {item.why_now}
@@ -113,7 +113,9 @@ export default function RelationshipCard({
         <p>
           <span className="text-amber">Signals:</span> {item.signal_reasons.join(" • ")}
         </p>
-        <p className="rounded-md border border-soft bg-canvas/70 p-3 text-text/95">{item.suggested_message ?? "No suggestion yet."}</p>
+        <p className="rounded-md border border-soft bg-canvas/70 p-3 text-text/95">
+          {item.suggested_message ?? "Quick check-in could help maintain momentum and keep this relationship warm."}
+        </p>
       </div>
 
       {showComposer ? (

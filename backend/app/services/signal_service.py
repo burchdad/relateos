@@ -84,7 +84,7 @@ def derive_relationship_signals(db: Session, relationship: Relationship) -> list
             {
                 "signal_key": "NO_CONTACT_21_DAYS",
                 "magnitude": 1.0,
-                "reason": "No last contact date recorded.",
+                "reason": "No recent outreach logged yet; schedule a first touchpoint.",
             }
         )
 

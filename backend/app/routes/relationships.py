@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.relationship import RelationshipCreate, RelationshipOut, RelationshipUpdateStage
+from app.services.ai_service import AIService
 from app.services.relationship_service import RelationshipService
 from app.services.scoring_service import calculate_priority_score
 
@@ -16,6 +17,15 @@ router = APIRouter(prefix="/relationships", tags=["relationships"])
 def create_relationship(payload: RelationshipCreate, db: Session = Depends(get_db)):
     rel = RelationshipService.create_person_and_relationship(db, payload)
     calculate_priority_score(db, rel.id)
+
+    ai_service = AIService()
+    ai_service.generate_contact_summary(db, rel.id)
+    ai_service.generate_message_suggestion(
+        db,
+        rel.id,
+        goal=f"check in on their interest in {payload.interests}",
+    )
+
     rel = RelationshipService.get_by_id(db, rel.id)
     return rel
 

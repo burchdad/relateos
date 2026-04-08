@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -16,8 +17,11 @@ class PersonCreate(BaseModel):
 class RelationshipCreate(BaseModel):
     person: PersonCreate
     type: str
-    lifecycle_stage: str = "new"
-    relationship_strength: float = 0.0
+    interests: str = Field(min_length=3, max_length=300)
+    current_status: Literal["cold", "active", "hot", "past_deal"]
+    last_interaction_timing: Literal["today", "this_week", "stale"]
+    lifecycle_stage: str | None = None
+    relationship_strength: float | None = None
     owner_user_id: str | None = None
 
 

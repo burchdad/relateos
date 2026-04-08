@@ -9,7 +9,10 @@ import { PriorityItem, ScoreExplanation } from "@/components/types";
 type RelationshipFormState = {
   firstName: string;
   lastName: string;
-  type: string;
+  type: "lead" | "investor" | "agent" | "partner";
+  interests: string;
+  currentStatus: "cold" | "active" | "hot" | "past_deal";
+  lastInteractionTiming: "today" | "this_week" | "stale";
   ownerUserId: string;
 };
 
@@ -54,7 +57,10 @@ export default function DashboardPage() {
   const [form, setForm] = useState<RelationshipFormState>({
     firstName: "",
     lastName: "",
-    type: "client",
+    type: "lead",
+    interests: "",
+    currentStatus: "active",
+    lastInteractionTiming: "stale",
     ownerUserId: "",
   });
 
@@ -118,8 +124,8 @@ export default function DashboardPage() {
     event.preventDefault();
     setCreateError("");
 
-    if (!form.firstName.trim() || !form.lastName.trim() || !form.type.trim()) {
-      setCreateError("First name, last name, and relationship type are required.");
+    if (!form.firstName.trim() || !form.lastName.trim() || !form.interests.trim()) {
+      setCreateError("First name, last name, role, interests, status, and last interaction are required.");
       return;
     }
 
@@ -137,9 +143,10 @@ export default function DashboardPage() {
             tags: {},
             metadata: {},
           },
-          type: form.type.trim(),
-          lifecycle_stage: "new",
-          relationship_strength: 0,
+          type: form.type,
+          interests: form.interests.trim(),
+          current_status: form.currentStatus,
+          last_interaction_timing: form.lastInteractionTiming,
           owner_user_id: form.ownerUserId.trim() || null,
         }),
       });
@@ -148,11 +155,72 @@ export default function DashboardPage() {
         throw new Error("Failed to create relationship");
       }
 
-      setForm({ firstName: "", lastName: "", type: "client", ownerUserId: "" });
+      setForm({
+        firstName: "",
+        lastName: "",
+        type: "lead",
+        interests: "",
+        currentStatus: "active",
+        lastInteractionTiming: "stale",
+        ownerUserId: "",
+      });
       setShowCreateForm(false);
       await fetchPriorities();
     } catch (e) {
       setCreateError(e instanceof Error ? e.message : "Failed to create relationship");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const seedDemoData = async () => {
+    setCreateError("");
+    setCreating(true);
+    const demoRows = [
+      {
+        person: { first_name: "Jordan", last_name: "Lee", email: null, phone: null, tags: {}, metadata: {} },
+        type: "investor",
+        interests: "duplexes in Dallas and quick close opportunities",
+        current_status: "hot",
+        last_interaction_timing: "stale",
+        owner_user_id: "demo-owner",
+      },
+      {
+        person: { first_name: "Avery", last_name: "Cole", email: null, phone: null, tags: {}, metadata: {} },
+        type: "agent",
+        interests: "off-market listings in high-growth neighborhoods",
+        current_status: "active",
+        last_interaction_timing: "this_week",
+        owner_user_id: "demo-owner",
+      },
+      {
+        person: { first_name: "Morgan", last_name: "Reed", email: null, phone: null, tags: {}, metadata: {} },
+        type: "lead",
+        interests: "first multifamily acquisition with conservative financing",
+        current_status: "cold",
+        last_interaction_timing: "stale",
+        owner_user_id: "demo-owner",
+      },
+    ];
+
+    try {
+      const responses = await Promise.all(
+        demoRows.map((payload) =>
+          fetch(`${API_URL}/relationships`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          })
+        )
+      );
+
+      if (responses.some((res) => !res.ok)) {
+        throw new Error("Failed to seed demo data");
+      }
+
+      await fetchPriorities();
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : "Failed to seed demo data");
     } finally {
       setCreating(false);
     }
@@ -176,15 +244,15 @@ export default function DashboardPage() {
             }}
             className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-canvas hover:brightness-110"
           >
-            {showCreateForm ? "Close" : "Add Relationship"}
+            {showCreateForm ? "Close" : "Add Relationship + Context"}
           </button>
         </div>
         </header>
 
         {showCreateForm ? (
           <form onSubmit={onCreateRelationship} className="mb-6 rounded-2xl border border-soft bg-panel/60 p-4">
-            <h2 className="text-base font-semibold text-text">Create Relationship</h2>
-            <p className="mt-1 text-xs text-muted">Use this to seed your dashboard without backend access.</p>
+            <h2 className="text-base font-semibold text-text">Create Relationship With Context</h2>
+            <p className="mt-1 text-xs text-muted">This 15-second input unlocks summary, score signals, and first message instantly.</p>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <input
@@ -199,12 +267,53 @@ export default function DashboardPage() {
                 placeholder="Last name"
                 className="rounded-md border border-soft bg-canvas px-3 py-2 text-sm text-text outline-none ring-accent/40 placeholder:text-muted focus:ring"
               />
-              <input
+              <select
                 value={form.type}
-                onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value }))}
-                placeholder="Relationship type (client, investor, mentor...)"
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, type: e.target.value as RelationshipFormState["type"] }))
+                }
+                className="rounded-md border border-soft bg-canvas px-3 py-2 text-sm text-text outline-none ring-accent/40 focus:ring sm:col-span-1"
+              >
+                <option value="lead">Lead</option>
+                <option value="investor">Investor</option>
+                <option value="agent">Agent</option>
+                <option value="partner">Partner</option>
+              </select>
+              <select
+                value={form.currentStatus}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    currentStatus: e.target.value as RelationshipFormState["currentStatus"],
+                  }))
+                }
+                className="rounded-md border border-soft bg-canvas px-3 py-2 text-sm text-text outline-none ring-accent/40 focus:ring sm:col-span-1"
+              >
+                <option value="cold">Cold</option>
+                <option value="active">Active</option>
+                <option value="hot">Hot</option>
+                <option value="past_deal">Past deal</option>
+              </select>
+              <input
+                value={form.interests}
+                onChange={(e) => setForm((prev) => ({ ...prev, interests: e.target.value }))}
+                placeholder="What are they interested in?"
                 className="rounded-md border border-soft bg-canvas px-3 py-2 text-sm text-text outline-none ring-accent/40 placeholder:text-muted focus:ring sm:col-span-2"
               />
+              <select
+                value={form.lastInteractionTiming}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    lastInteractionTiming: e.target.value as RelationshipFormState["lastInteractionTiming"],
+                  }))
+                }
+                className="rounded-md border border-soft bg-canvas px-3 py-2 text-sm text-text outline-none ring-accent/40 focus:ring sm:col-span-2"
+              >
+                <option value="today">Last interaction: Today</option>
+                <option value="this_week">Last interaction: This week</option>
+                <option value="stale">Last interaction: Haven&apos;t talked in a while</option>
+              </select>
               <input
                 value={form.ownerUserId}
                 onChange={(e) => setForm((prev) => ({ ...prev, ownerUserId: e.target.value }))}
@@ -238,7 +347,17 @@ export default function DashboardPage() {
         {error ? <p className="text-red-300">{error}</p> : null}
         {!loading && !error && items.length === 0 ? (
           <div className="rounded-2xl border border-soft bg-panel/50 p-6 text-sm text-muted">
-            No priorities yet. Add your first relationship to start generating focus cards.
+            <p>Your dashboard gets smart after one contact with context. Add one now, or load sample relationships.</p>
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={seedDemoData}
+                disabled={creating}
+                className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {creating ? "Seeding demo..." : "Load 3 Demo Relationships"}
+              </button>
+            </div>
           </div>
         ) : null}
 

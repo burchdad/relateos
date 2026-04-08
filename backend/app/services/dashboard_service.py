@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import desc
 from sqlalchemy.orm import Session, joinedload
 
@@ -34,6 +36,73 @@ def _load_signals(db: Session, relationship_id):
     )
 
 
+def _days_since_last_contact(relationship: Relationship) -> int | None:
+    if not relationship.last_contacted_at:
+        return None
+    now = datetime.now(timezone.utc)
+    then = relationship.last_contacted_at
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=timezone.utc)
+    return max(0, int((now - then.astimezone(timezone.utc)).total_seconds() // 86400))
+
+
+def _fallback_summary(relationship: Relationship) -> str:
+    metadata = relationship.person.metadata_json if relationship.person else {}
+    interests = metadata.get("interests") or "their current priorities"
+    status = (metadata.get("current_status") or relationship.lifecycle_stage or "active").replace("_", " ")
+    return f"{relationship.person.first_name} is a {relationship.type} contact focused on {interests}. Current status: {status}."
+
+
+def _fallback_suggestion(relationship: Relationship) -> str:
+    metadata = relationship.person.metadata_json if relationship.person else {}
+    interests = metadata.get("interests") or "their goals"
+    status_key = (metadata.get("current_status") or relationship.lifecycle_stage or "active").strip().lower()
+    days_since = _days_since_last_contact(relationship)
+    relationship_type = (relationship.type or "").lower()
+    first_name = relationship.person.first_name if relationship.person else "there"
+
+    if days_since is None or days_since >= 14:
+        if relationship_type == "investor":
+            if status_key == "hot":
+                return f"Hey {first_name}, quick pulse check: still ready to move fast on {interests}? I can send top-fit options today."
+            if status_key == "cold":
+                return f"Hey {first_name}, checking if {interests} is still on your radar, or if your buy box changed recently."
+            return f"Hey {first_name}, are you still focused on {interests}, or has your buy box shifted recently?"
+        if relationship_type == "lead":
+            if status_key == "hot":
+                return f"Hey {first_name}, momentum looks strong on {interests}. Want to lock a quick next-step call this week?"
+            if status_key == "cold":
+                return f"Hey {first_name}, light check-in on {interests}. Is this still a priority right now?"
+            return f"Hey {first_name}, checking in on {interests}. Still a priority, and want to map the next step?"
+        if relationship_type == "agent":
+            if status_key == "hot":
+                return f"Hey {first_name}, active demand is building around {interests}. Any strong matches you can share this week?"
+            if status_key == "cold":
+                return f"Hey {first_name}, touching base on {interests}. Anything new worth watching?"
+            return f"Hey {first_name}, quick sync on {interests}. Any active opportunities I should review this week?"
+        return f"Hey {first_name}, quick check-in. Are you still focused on {interests}, or has anything shifted?"
+
+    if relationship_type == "investor":
+        if status_key == "hot":
+            return f"Hey {first_name}, keeping this moving on {interests}. Want 2 strong-fit opportunities in your inbox today?"
+        if status_key == "cold":
+            return f"Hey {first_name}, keeping a light touch on {interests}. Still worth sharing opportunities this month?"
+        return f"Hey {first_name}, keeping momentum on {interests}. Want me to send over 1-2 aligned opportunities?"
+    if relationship_type == "lead":
+        if status_key == "hot":
+            return f"Hey {first_name}, momentum is strong on {interests}. Open for a short decision call this week?"
+        if status_key == "cold":
+            return f"Hey {first_name}, quick pulse check on {interests}. Should we pause or pick one simple next step?"
+        return f"Hey {first_name}, keeping momentum on {interests}. Open to a short next-step call this week?"
+    if relationship_type == "agent":
+        if status_key == "hot":
+            return f"Hey {first_name}, strong demand is active around {interests}. Can you send your best near-term matches?"
+        if status_key == "cold":
+            return f"Hey {first_name}, keeping this warm around {interests}. Any listings worth a quick look this week?"
+        return f"Hey {first_name}, staying synced on {interests}. Do you have fresh inventory that fits this focus?"
+    return f"Hey {first_name}, wanted to keep momentum on {interests}. Open to a quick sync this week?"
+
+
 def _urgency(relationship: Relationship, signals: list[RelationshipSignal]) -> str:
     signal_keys = {s.signal_key for s in signals}
     if relationship.priority_score >= 80 or "FOLLOW_UP_DUE" in signal_keys:
@@ -56,7 +125,7 @@ def _dashboard_signals(signals: list[RelationshipSignal]):
         "Keep warm",
         "Opportunity",
         "A short touchpoint now keeps momentum healthy and prevents future drop-off.",
-        ["No dominant signal detected yet."],
+        ["Context is loaded; sending a short touchpoint now protects momentum."],
     )
 
 
@@ -71,8 +140,8 @@ def get_top_priorities(db: Session, limit: int = 10):
 
     output = []
     for rel in rows:
-        summary = _latest_insight_content(db, rel.id, "summary")
-        suggestion = _latest_insight_content(db, rel.id, "suggestion")
+        summary = _latest_insight_content(db, rel.id, "summary") or _fallback_summary(rel)
+        suggestion = _latest_insight_content(db, rel.id, "suggestion") or _fallback_suggestion(rel)
         signals = _load_signals(db, rel.id)
         reason_tag, confidence_indicator, why_now, signal_reasons = _dashboard_signals(signals)
         urgency_level = _urgency(rel, signals)
