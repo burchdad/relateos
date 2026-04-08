@@ -111,7 +111,13 @@ export default function DashboardPage() {
 
         {loading ? <p className="text-muted">Loading priorities...</p> : null}
         {error ? <p className="text-red-300">{error}</p> : null}
-        {!loading && !error ? (
+        {!loading && !error && items.length === 0 ? (
+          <div className="rounded-2xl border border-soft bg-panel/50 p-6 text-sm text-muted">
+            No priorities yet. Add your first relationship to start generating focus cards.
+          </div>
+        ) : null}
+
+        {!loading && !error && items.length > 0 ? (
           <DashboardList
             items={items}
             onSimulateSend={onSimulateSend}
