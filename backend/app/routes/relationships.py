@@ -21,29 +21,42 @@ router = APIRouter(prefix="/relationships", tags=["relationships"])
 logger = logging.getLogger(__name__)
 
 
-@router.post("", response_model=RelationshipOut)
+@router.post("", response_model=RelationshipOut, status_code=201)
 def create_relationship(payload: RelationshipCreate, db: Session = Depends(get_db)):
-    rel = RelationshipService.create_person_and_relationship(db, payload)
+    rel = None
     try:
-        calculate_priority_score(db, rel.id)
-    except Exception as exc:
-        db.rollback()
-        logger.warning("Score calculation failed for relationship %s: %s", rel.id, exc, exc_info=True)
+        rel = RelationshipService.create_person_and_relationship(db, payload)
+        try:
+            calculate_priority_score(db, rel.id)
+        except Exception as exc:
+            db.rollback()
+            logger.warning("Score calculation failed for relationship %s: %s", rel.id, exc, exc_info=True)
 
-    ai_service = AIService()
-    try:
-        ai_service.generate_contact_summary(db, rel.id)
-        ai_service.generate_message_suggestion(
-            db,
-            rel.id,
-            goal=f"check in on their interest in {payload.interests}",
-        )
-    except Exception as exc:
-        db.rollback()
-        logger.warning("AI bootstrap generation failed for relationship %s: %s", rel.id, exc, exc_info=True)
+        ai_service = AIService()
+        try:
+            ai_service.generate_contact_summary(db, rel.id)
+            ai_service.generate_message_suggestion(
+                db,
+                rel.id,
+                goal=f"check in on their interest in {payload.interests}",
+            )
+        except Exception as exc:
+            db.rollback()
+            logger.warning("AI bootstrap generation failed for relationship %s: %s", rel.id, exc, exc_info=True)
 
-    rel = RelationshipService.get_by_id(db, rel.id)
-    return rel
+        hydrated = RelationshipService.get_by_id(db, rel.id)
+        if hydrated:
+            return hydrated
+        raise RuntimeError(f"Failed to load relationship {rel.id} after creation")
+    except Exception as exc:
+        logger.error("Create relationship request failed: %s", exc, exc_info=True)
+        db.rollback()
+        if rel is not None:
+            fallback = RelationshipService.get_by_id(db, rel.id)
+            if fallback:
+                logger.warning("Recovered create response for persisted relationship %s", rel.id)
+                return fallback
+        raise
 
 
 @router.get("", response_model=list[RelationshipOut])

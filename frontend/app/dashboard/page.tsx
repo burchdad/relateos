@@ -223,7 +223,25 @@ export default function DashboardPage() {
     }
 
     setCreating(true);
+    const normalizedFirstName = form.firstName.trim().toLowerCase();
+    const normalizedLastName = form.lastName.trim().toLowerCase();
+    const normalizedType = form.type.trim().toLowerCase();
     const previousCount = items.length;
+    const previousIds = new Set(items.map((item) => item.relationship_id));
+
+    const clearCreateForm = () => {
+      setCreateError("");
+      setForm({
+        firstName: "",
+        lastName: "",
+        type: "lead",
+        interests: "",
+        currentStatus: "active",
+        lastInteractionTiming: "stale",
+        ownerUserId: "",
+      });
+      setShowCreateForm(false);
+    };
     try {
       const res = await fetch(`${API_URL}/relationships`, {
         method: "POST",
@@ -249,31 +267,34 @@ export default function DashboardPage() {
         throw new Error("Failed to create relationship");
       }
 
-      setForm({
-        firstName: "",
-        lastName: "",
-        type: "lead",
-        interests: "",
-        currentStatus: "active",
-        lastInteractionTiming: "stale",
-        ownerUserId: "",
-      });
-      setShowCreateForm(false);
+      clearCreateForm();
       await fetchPriorities();
     } catch (e) {
       const refreshed = await fetchPriorities();
-      if (refreshed.length > previousCount) {
-        setCreateError("");
-        setForm({
-          firstName: "",
-          lastName: "",
-          type: "lead",
-          interests: "",
-          currentStatus: "active",
-          lastInteractionTiming: "stale",
-          ownerUserId: "",
-        });
-        setShowCreateForm(false);
+      const topListChanged = refreshed.some((item) => !previousIds.has(item.relationship_id)) || refreshed.length > previousCount;
+
+      let existsInFullList = false;
+      try {
+        const allRes = await fetch(`${API_URL}/relationships`, { cache: "no-store" });
+        if (allRes.ok) {
+          const allRelationships = (await allRes.json()) as Array<{
+            type: string;
+            person: { first_name: string; last_name: string };
+          }>;
+          existsInFullList = allRelationships.some((rel) => {
+            return (
+              rel.type?.toLowerCase() === normalizedType &&
+              rel.person?.first_name?.toLowerCase() === normalizedFirstName &&
+              rel.person?.last_name?.toLowerCase() === normalizedLastName
+            );
+          });
+        }
+      } catch {
+        existsInFullList = false;
+      }
+
+      if (topListChanged || existsInFullList) {
+        clearCreateForm();
       } else {
         setCreateError(e instanceof Error ? e.message : "Failed to create relationship");
       }
