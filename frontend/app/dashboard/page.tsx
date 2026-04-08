@@ -1,21 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import DashboardList from "@/components/DashboardList";
 import DemoGuide from "@/components/DemoGuide";
 import { PriorityItem, ScoreExplanation } from "@/components/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const resolveApiUrl = () => {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+    return "http://localhost:8000/api/v1";
+  }
+  return "/_/backend/api/v1";
+};
 
 export default function DashboardPage() {
+  const API_URL = useMemo(resolveApiUrl, []);
   const [items, setItems] = useState<PriorityItem[]>([]);
   const [explanations, setExplanations] = useState<Record<string, ScoreExplanation>>({});
   const [loadingExplanation, setLoadingExplanation] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const fetchPriorities = async () => {
+  const fetchPriorities = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -32,11 +41,11 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [API_URL]);
 
   useEffect(() => {
     fetchPriorities();
-  }, []);
+  }, [fetchPriorities]);
 
   const onSimulateSend = async (relationshipId: string, message: string) => {
     await fetch(`${API_URL}/interactions`, {
