@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Interaction, Person, Relationship
+from app.models import AIInsight, Interaction, Opportunity, Person, Relationship, RelationshipSignal
 from app.schemas.relationship import RelationshipCreate
 
 
@@ -115,3 +116,50 @@ class RelationshipService:
         db.commit()
         db.refresh(rel)
         return rel
+
+    @staticmethod
+    def delete_relationship(db: Session, relationship_id: UUID) -> bool:
+        deleted = RelationshipService.bulk_delete_relationships(db, relationship_ids=[relationship_id], delete_all=False)
+        return deleted > 0
+
+    @staticmethod
+    def bulk_delete_relationships(
+        db: Session,
+        relationship_ids: list[UUID] | None = None,
+        delete_all: bool = False,
+    ) -> int:
+        if delete_all:
+            target_relationships = db.query(Relationship).all()
+        else:
+            ids = list({rid for rid in (relationship_ids or [])})
+            if not ids:
+                return 0
+            target_relationships = db.query(Relationship).filter(Relationship.id.in_(ids)).all()
+
+        if not target_relationships:
+            return 0
+
+        target_ids = [rel.id for rel in target_relationships]
+        person_ids = list({rel.person_id for rel in target_relationships})
+
+        try:
+            db.query(Interaction).filter(Interaction.relationship_id.in_(target_ids)).delete(synchronize_session=False)
+            db.query(Opportunity).filter(Opportunity.relationship_id.in_(target_ids)).delete(synchronize_session=False)
+            db.query(AIInsight).filter(AIInsight.relationship_id.in_(target_ids)).delete(synchronize_session=False)
+            db.query(RelationshipSignal).filter(RelationshipSignal.relationship_id.in_(target_ids)).delete(
+                synchronize_session=False
+            )
+            db.query(Relationship).filter(Relationship.id.in_(target_ids)).delete(synchronize_session=False)
+
+            for person_id in person_ids:
+                has_remaining_relationships = (
+                    db.query(Relationship.id).filter(Relationship.person_id == person_id).first() is not None
+                )
+                if not has_remaining_relationships:
+                    db.query(Person).filter(Person.id == person_id).delete(synchronize_session=False)
+
+            db.commit()
+            return len(target_ids)
+        except Exception:
+            db.rollback()
+            raise

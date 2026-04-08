@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class PersonCreate(BaseModel):
@@ -53,3 +53,20 @@ class RelationshipOut(BaseModel):
 
 class RelationshipUpdateStage(BaseModel):
     lifecycle_stage: str
+
+
+class RelationshipBulkDeleteRequest(BaseModel):
+    relationship_ids: list[UUID] = Field(default_factory=list)
+    delete_all: bool = False
+
+    @model_validator(mode="after")
+    def validate_target(self):
+        if self.delete_all:
+            return self
+        if not self.relationship_ids:
+            raise ValueError("Provide relationship_ids or set delete_all=true")
+        return self
+
+
+class RelationshipBulkDeleteResult(BaseModel):
+    deleted_count: int

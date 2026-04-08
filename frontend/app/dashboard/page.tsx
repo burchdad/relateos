@@ -54,6 +54,9 @@ export default function DashboardPage() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [form, setForm] = useState<RelationshipFormState>({
     firstName: "",
     lastName: "",
@@ -87,6 +90,14 @@ export default function DashboardPage() {
     fetchPriorities();
   }, [fetchPriorities]);
 
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const currentIds = new Set(items.map((item) => item.relationship_id));
+      const next = new Set(Array.from(prev).filter((id) => currentIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [items]);
+
   const onSimulateSend = async (relationshipId: string, message: string) => {
     await fetch(`${API_URL}/interactions`, {
       method: "POST",
@@ -117,6 +128,86 @@ export default function DashboardPage() {
       setExplanations((prev) => ({ ...prev, [relationshipId]: data }));
     } finally {
       setLoadingExplanation((prev) => ({ ...prev, [relationshipId]: false }));
+    }
+  };
+
+  const onToggleSelect = (relationshipId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(relationshipId)) {
+        next.delete(relationshipId);
+      } else {
+        next.add(relationshipId);
+      }
+      return next;
+    });
+  };
+
+  const onToggleSelectAll = () => {
+    if (selectedIds.size === items.length) {
+      setSelectedIds(new Set());
+      return;
+    }
+    setSelectedIds(new Set(items.map((item) => item.relationship_id)));
+  };
+
+  const onDeleteRelationship = async (relationshipId: string) => {
+    setDeleteError("");
+    if (!window.confirm("Delete this relationship card? This cannot be undone.")) {
+      return;
+    }
+
+    setDeleting(true);
+    try {
+      const res = await fetch(`${API_URL}/relationships/${relationshipId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        throw new Error("Failed to delete relationship");
+      }
+
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(relationshipId);
+        return next;
+      });
+      await fetchPriorities();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "Failed to delete relationship");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const onDeleteSelected = async () => {
+    if (selectedIds.size === 0) {
+      return;
+    }
+    setDeleteError("");
+    if (!window.confirm(`Delete ${selectedIds.size} selected relationship(s)? This cannot be undone.`)) {
+      return;
+    }
+
+    setDeleting(true);
+    try {
+      const res = await fetch(`${API_URL}/relationships`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          relationship_ids: Array.from(selectedIds),
+          delete_all: false,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error("Failed to delete selected relationships");
+      }
+
+      setSelectedIds(new Set());
+      await fetchPriorities();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "Failed to delete selected relationships");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -349,6 +440,7 @@ export default function DashboardPage() {
 
         {loading ? <p className="text-muted">Loading priorities...</p> : null}
         {error ? <p className="text-red-300">{error}</p> : null}
+        {deleteError ? <p className="mt-2 text-red-300">{deleteError}</p> : null}
         {!loading && !error && items.length === 0 ? (
           <div className="rounded-2xl border border-soft bg-panel/50 p-6 text-sm text-muted">
             <p>Your dashboard gets smart after one contact with context. Add one now, or load sample relationships.</p>
@@ -366,13 +458,46 @@ export default function DashboardPage() {
         ) : null}
 
         {!loading && !error && items.length > 0 ? (
-          <DashboardList
-            items={items}
-            onSimulateSend={onSimulateSend}
-            explanations={explanations}
-            loadingExplanation={loadingExplanation}
-            onLoadExplanation={onLoadExplanation}
-          />
+          <>
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-soft bg-panel/50 p-3 text-sm">
+              <label className="flex items-center gap-2 text-text">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size > 0 && selectedIds.size === items.length}
+                  onChange={onToggleSelectAll}
+                  className="h-4 w-4 rounded border-soft bg-canvas text-accent focus:ring-accent"
+                />
+                Select all visible
+              </label>
+              <button
+                type="button"
+                onClick={onDeleteSelected}
+                disabled={deleting || selectedIds.size === 0}
+                className="rounded-md border border-red-400/50 px-3 py-1.5 text-sm text-red-200 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {deleting ? "Deleting..." : `Delete Selected (${selectedIds.size})`}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                disabled={deleting || selectedIds.size === 0}
+                className="rounded-md border border-soft px-3 py-1.5 text-sm text-text hover:bg-soft disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Clear selection
+              </button>
+            </div>
+            <DashboardList
+              items={items}
+              onSimulateSend={onSimulateSend}
+              explanations={explanations}
+              loadingExplanation={loadingExplanation}
+              onLoadExplanation={onLoadExplanation}
+              selectedIds={selectedIds}
+              onToggleSelect={onToggleSelect}
+              onDeleteRelationship={onDeleteRelationship}
+              deleteDisabled={deleting}
+            />
+          </>
         ) : null}
       </main>
       <DemoGuide />

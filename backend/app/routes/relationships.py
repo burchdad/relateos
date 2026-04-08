@@ -1,11 +1,17 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.relationship import RelationshipCreate, RelationshipOut, RelationshipUpdateStage
+from app.schemas.relationship import (
+    RelationshipBulkDeleteRequest,
+    RelationshipBulkDeleteResult,
+    RelationshipCreate,
+    RelationshipOut,
+    RelationshipUpdateStage,
+)
 from app.services.ai_service import AIService
 from app.services.relationship_service import RelationshipService
 from app.services.scoring_service import calculate_priority_score
@@ -55,3 +61,24 @@ def update_stage(relationship_id: UUID, payload: RelationshipUpdateStage, db: Se
     if not rel:
         raise HTTPException(status_code=404, detail="Relationship not found")
     return RelationshipService.get_by_id(db, relationship_id)
+
+
+@router.delete("/{relationship_id}")
+def delete_relationship(relationship_id: UUID, db: Session = Depends(get_db)):
+    deleted = RelationshipService.delete_relationship(db, relationship_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Relationship not found")
+    return {"deleted_count": 1}
+
+
+@router.delete("", response_model=RelationshipBulkDeleteResult)
+def bulk_delete_relationships(
+    payload: RelationshipBulkDeleteRequest = Body(...),
+    db: Session = Depends(get_db),
+):
+    deleted_count = RelationshipService.bulk_delete_relationships(
+        db,
+        relationship_ids=payload.relationship_ids,
+        delete_all=payload.delete_all,
+    )
+    return RelationshipBulkDeleteResult(deleted_count=deleted_count)

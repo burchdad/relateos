@@ -11,6 +11,10 @@ type Props = {
   explanation?: ScoreExplanation;
   explanationLoading: boolean;
   onLoadExplanation: (relationshipId: string) => Promise<void>;
+  selected: boolean;
+  onToggleSelect: (relationshipId: string) => void;
+  onDelete: (relationshipId: string) => Promise<void>;
+  deleteDisabled?: boolean;
 };
 
 export default function RelationshipCard({
@@ -19,6 +23,10 @@ export default function RelationshipCard({
   explanation,
   explanationLoading,
   onLoadExplanation,
+  selected,
+  onToggleSelect,
+  onDelete,
+  deleteDisabled,
 }: Props) {
   const [showComposer, setShowComposer] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
@@ -100,7 +108,18 @@ export default function RelationshipCard({
             </span>
           </div>
         </div>
-        <p className="rounded-full bg-soft px-3 py-1 text-xs text-muted">Last contact: {lastContact}</p>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-muted">
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={() => onToggleSelect(item.relationship_id)}
+              className="h-4 w-4 rounded border-soft bg-canvas text-accent focus:ring-accent"
+            />
+            Select
+          </label>
+          <p className="rounded-full bg-soft px-3 py-1 text-xs text-muted">Last contact: {lastContact}</p>
+        </div>
       </div>
 
       <div className="mt-4 space-y-3 text-sm">
@@ -154,6 +173,13 @@ export default function RelationshipCard({
           className="rounded-md border border-soft px-3 py-1.5 text-sm text-text hover:bg-soft"
         >
           Snooze
+        </button>
+        <button
+          onClick={() => onDelete(item.relationship_id)}
+          disabled={deleteDisabled}
+          className="rounded-md border border-red-400/50 px-3 py-1.5 text-sm text-red-200 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Delete
         </button>
       </div>
 
