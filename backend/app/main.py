@@ -140,7 +140,7 @@ def healthcheck():
     db_status = "connected"
     migration_revision = None
     schema_valid = False
-    errors: list[str] = []
+    errors: list[dict] = []
 
     try:
         with engine.connect() as connection:
@@ -149,7 +149,7 @@ def healthcheck():
             ).scalar()
     except Exception as exc:
         db_status = "error"
-        errors.append(f"db: {exc}")
+        errors.append({"component": "db", "message": str(exc)})
 
     if db_status == "connected":
         try:
@@ -158,9 +158,9 @@ def healthcheck():
             missing = [c for c in REQUIRED_CONTENT_ITEM_COLUMNS if c not in existing]
             schema_valid = len(missing) == 0
             if missing:
-                errors.append(f"schema: missing columns {missing}")
+                errors.append({"component": "schema", "message": f"missing columns: {', '.join(missing)}"})
         except Exception as exc:
-            errors.append(f"schema: {exc}")
+            errors.append({"component": "schema", "message": str(exc)})
 
     latency_ms = round((time.monotonic() - t_start) * 1000)
     overall = "ok" if db_status == "connected" and schema_valid and not errors else "degraded"
