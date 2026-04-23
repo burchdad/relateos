@@ -3,8 +3,9 @@ import os
 import json
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import inspect, text
 
 from app.core.config import settings
@@ -130,18 +131,41 @@ app.include_router(style_profiles_router, prefix=settings.api_v1_prefix)
 
 @app.get("/health")
 def healthcheck():
-    return {"status": "ok"}
+    db_status = "connected"
+    migration_revision = None
+    schema_valid = False
+    errors: list[str] = []
 
-
-@app.get("/health/migrations")
-def migration_healthcheck():
     try:
         with engine.connect() as connection:
-            version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
+            migration_revision = connection.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar()
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"Migration health check failed: {exc}") from exc
+        db_status = "error"
+        errors.append(f"db: {exc}")
 
-    if not version:
-        raise HTTPException(status_code=503, detail="Migration health check failed: no alembic version found")
+    if db_status == "connected":
+        try:
+            inspector = inspect(engine)
+            existing = {col["name"] for col in inspector.get_columns("content_items")}
+            missing = [c for c in REQUIRED_CONTENT_ITEM_COLUMNS if c not in existing]
+            schema_valid = len(missing) == 0
+            if missing:
+                errors.append(f"schema: missing columns {missing}")
+        except Exception as exc:
+            errors.append(f"schema: {exc}")
 
-    return {"status": "ok", "current_revision": version}
+    overall = "ok" if db_status == "connected" and schema_valid and not errors else "degraded"
+    response = {
+        "status": overall,
+        "app": "running",
+        "db": db_status,
+        "migrations": migration_revision,
+        "schema_valid": schema_valid,
+    }
+    if errors:
+        response["errors"] = errors
+
+    status_code = 200 if overall == "ok" else 503
+    return JSONResponse(content=response, status_code=status_code)
