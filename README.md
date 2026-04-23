@@ -291,6 +291,7 @@ Deploy `frontend/` and set:
 ### Production checks
 
 - `GET /health` responds OK on Railway
+- `GET /health/migrations` responds OK and returns current Alembic revision
 - CORS allows only Vercel domains
 - Worker can connect to Redis and Postgres
 - Posting `POST /interactions` enqueues AI tasks successfully

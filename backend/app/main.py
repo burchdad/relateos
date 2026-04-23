@@ -3,8 +3,9 @@ import os
 import json
 from urllib.parse import urlparse
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
 
 from app.core.config import settings
 from app.core.database import Base, engine
@@ -25,6 +26,8 @@ masked_url = db_url.split("@")[0] + "@" + db_url.split("@")[1] if "@" in db_url 
 logger.info(f"Database URL (masked): {masked_url}")
 
 app = FastAPI(title=settings.app_name)
+
+REQUIRED_CONTENT_ITEM_COLUMNS = ["experiment_key", "experiment_variant"]
 
 
 def _normalize_origin(raw_origin: str) -> str | None:
@@ -67,6 +70,22 @@ def _parse_cors_origins(raw_origins: str) -> list[str]:
     return normalized
 
 
+def _validate_schema_requirements() -> None:
+    inspector = inspect(engine)
+    if not inspector.has_table("content_items"):
+        raise RuntimeError("Missing required table: content_items")
+
+    existing_columns = {column["name"] for column in inspector.get_columns("content_items")}
+    missing_columns = [
+        column_name for column_name in REQUIRED_CONTENT_ITEM_COLUMNS if column_name not in existing_columns
+    ]
+    if missing_columns:
+        raise RuntimeError(
+            "Schema validation failed for content_items. Missing columns: "
+            + ", ".join(missing_columns)
+        )
+
+
 @app.on_event("startup")
 def startup_tasks():
     if settings.auto_create_tables:
@@ -75,6 +94,9 @@ def startup_tasks():
             logger.info("Auto-create tables enabled: metadata created.")
         except Exception as exc:
             logger.warning("Auto-create tables failed: %s", exc)
+
+    _validate_schema_requirements()
+    logger.info("Schema validation passed for content_items experiment columns.")
 
 allowed_origins = _parse_cors_origins(settings.cors_origins)
 if not allowed_origins:
@@ -109,3 +131,17 @@ app.include_router(style_profiles_router, prefix=settings.api_v1_prefix)
 @app.get("/health")
 def healthcheck():
     return {"status": "ok"}
+
+
+@app.get("/health/migrations")
+def migration_healthcheck():
+    try:
+        with engine.connect() as connection:
+            version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Migration health check failed: {exc}") from exc
+
+    if not version:
+        raise HTTPException(status_code=503, detail="Migration health check failed: no alembic version found")
+
+    return {"status": "ok", "current_revision": version}
