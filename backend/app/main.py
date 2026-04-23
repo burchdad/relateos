@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 from urllib.parse import urlparse
 
 from fastapi import FastAPI
@@ -27,11 +28,13 @@ app = FastAPI(title=settings.app_name)
 
 
 def _normalize_origin(raw_origin: str) -> str | None:
-    value = (raw_origin or "").strip().rstrip("/")
+    value = (raw_origin or "").strip().strip("\"").strip("'").rstrip("/")
     if not value:
         return None
     if value == "*":
         return "*"
+    if value in {"[", "]"}:
+        return None
     if not value.startswith(("http://", "https://")):
         value = f"https://{value.lstrip('/')}"
 
@@ -39,6 +42,29 @@ def _normalize_origin(raw_origin: str) -> str | None:
     if not parsed.scheme or not parsed.netloc:
         return None
     return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _parse_cors_origins(raw_origins: str) -> list[str]:
+    raw = (raw_origins or "").strip()
+    if not raw:
+        return []
+
+    entries: list[str] = []
+    try:
+        loaded = json.loads(raw)
+        if isinstance(loaded, str):
+            entries = [loaded]
+        elif isinstance(loaded, list):
+            entries = [str(item) for item in loaded]
+    except Exception:
+        entries = [item for item in raw.split(",")]
+
+    normalized = []
+    for item in entries:
+        value = _normalize_origin(item)
+        if value and value not in normalized:
+            normalized.append(value)
+    return normalized
 
 
 @app.on_event("startup")
@@ -50,11 +76,7 @@ def startup_tasks():
         except Exception as exc:
             logger.warning("Auto-create tables failed: %s", exc)
 
-allowed_origins = [
-    origin
-    for origin in (_normalize_origin(item) for item in settings.cors_origins.split(","))
-    if origin
-]
+allowed_origins = _parse_cors_origins(settings.cors_origins)
 if not allowed_origins:
     allowed_origins = ["*"]
 
