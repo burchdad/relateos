@@ -2,7 +2,6 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-import AppTabs from "@/components/AppTabs";
 import { resolveApiUrl } from "@/components/api";
 import { EventItem } from "@/components/types";
 
@@ -106,16 +105,14 @@ export default function EventsPage() {
   };
 
   return (
-    <main className="mx-auto min-h-screen max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+    <main className="mx-auto min-h-screen max-w-6xl px-4 py-10 sm:px-6 lg:px-10">
       <header className="mb-8 rounded-2xl border border-soft bg-panel/70 p-6">
         <p className="text-xs uppercase tracking-[0.2em] text-accent">RelateOS</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Events</h1>
         <p className="mt-3 max-w-2xl text-sm text-muted">
           Create recurring or one-time Zoom/YouTube events that pair with your content and relationship workflows.
         </p>
-        <div className="mt-4">
-          <AppTabs />
-        </div>
+        <p className="mt-2 text-xs text-muted">Manage and distribute live sessions.</p>
       </header>
 
       <section className="mb-6 rounded-2xl border border-soft bg-panel/60 p-4">

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AddContentModal from "@/components/AddContentModal";
-import AppTabs from "@/components/AppTabs";
 import ContentCard from "@/components/ContentCard";
 import { resolveApiUrl } from "@/components/api";
 import { ContentFollowUpResponse, ContentItem, ContentTarget, FollowUpExecuteResponse } from "@/components/types";
@@ -180,16 +179,14 @@ export default function ContentPage() {
   };
 
   return (
-    <main className="mx-auto min-h-screen max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+    <main className="mx-auto min-h-screen max-w-6xl px-4 py-10 sm:px-6 lg:px-10">
       <header className="mb-8 rounded-2xl border border-soft bg-panel/70 p-6">
         <p className="text-xs uppercase tracking-[0.2em] text-accent">RelateOS</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Content Engine</h1>
         <p className="mt-3 max-w-2xl text-sm text-muted">
           Decide what content to share, who should receive it, and when to follow up.
         </p>
-        <div className="mt-4">
-          <AppTabs />
-        </div>
+        <p className="mt-2 text-xs text-muted">Turn content into conversations.</p>
         <button
           type="button"
           onClick={() => setShowAddModal(true)}
