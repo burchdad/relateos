@@ -35,7 +35,11 @@ database_url = primary_url or public_url or default_url
 if "proxy.railway.internal" in database_url and public_url:
     database_url = public_url
 
-engine = create_engine(database_url, pool_pre_ping=True)
+# Railway Postgres requires SSL; local Postgres typically does not.
+_is_remote = not any(host in database_url for host in ("localhost", "127.0.0.1"))
+_connect_args = {"sslmode": "require"} if _is_remote else {}
+
+engine = create_engine(database_url, pool_pre_ping=True, connect_args=_connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

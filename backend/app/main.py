@@ -142,14 +142,21 @@ def healthcheck():
     schema_valid = False
     errors: list[dict] = []
 
-    try:
-        with engine.connect() as connection:
-            migration_revision = connection.execute(
-                text("SELECT version_num FROM alembic_version")
-            ).scalar()
-    except Exception as exc:
+    _last_db_exc: Exception | None = None
+    for _attempt in range(3):
+        try:
+            with engine.connect() as connection:
+                migration_revision = connection.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).scalar()
+            _last_db_exc = None
+            break
+        except Exception as exc:
+            _last_db_exc = exc
+            time.sleep(0.5)
+    if _last_db_exc is not None:
         db_status = "error"
-        errors.append({"component": "db", "message": str(exc)})
+        errors.append({"component": "db", "message": str(_last_db_exc)})
 
     if db_status == "connected":
         try:
