@@ -29,6 +29,7 @@ masked_url = db_url.split("@")[0] + "@" + db_url.split("@")[1] if "@" in db_url 
 logger.info(f"Database URL (masked): {masked_url}")
 
 BUILD_SHA = os.getenv("RAILWAY_GIT_COMMIT_SHA", os.getenv("GIT_SHA", "dev"))[:8]
+ENVIRONMENT = os.getenv("RAILWAY_ENVIRONMENT", os.getenv("ENVIRONMENT", "dev"))
 
 app = FastAPI(title=settings.app_name)
 
@@ -170,6 +171,7 @@ def healthcheck():
         "migrations": migration_revision,
         "schema_valid": schema_valid,
         "version": BUILD_SHA,
+        "environment": ENVIRONMENT,
         "checked_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "latency_ms": latency_ms,
     }
