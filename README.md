@@ -160,6 +160,20 @@ source .venv/bin/activate
 alembic upgrade head
 ```
 
+Production-safe migration command (explicit target):
+
+```bash
+cd backend
+source .venv/bin/activate
+DATABASE_URL="postgresql://postgres:<password>@switchyard.proxy.rlwy.net:50433/postgres" alembic upgrade head
+```
+
+If you intentionally want local migrations without setting `DATABASE_URL`, use:
+
+```bash
+ALEMBIC_ALLOW_LOCAL_DB=1 alembic upgrade head
+```
+
 ### 3) Seed test data
 
 In another terminal:
@@ -239,6 +253,8 @@ For one-click service creation with no command overrides:
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port ${PORT}
 ```
+
+Note: when using the repo Dockerfile, API startup runs `alembic upgrade head` before `uvicorn`.
 
 2) Worker service command:
 

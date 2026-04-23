@@ -1,14 +1,32 @@
+import os
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from app.core.config import settings
-from app.core.database import Base
+from app.core.database import Base, database_url
 from app.models import *  # noqa: F401,F403
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.database_url)
+
+
+def _resolve_alembic_url() -> str:
+    explicit_env_url = os.getenv("DATABASE_URL") or os.getenv("DATABASE_PUBLIC_URL")
+    resolved_url = explicit_env_url or database_url
+    allow_local = os.getenv("ALEMBIC_ALLOW_LOCAL_DB", "").lower() in {"1", "true", "yes"}
+
+    # Guardrail: prevent accidentally migrating a default local database when env vars are missing.
+    if not explicit_env_url and ("localhost" in resolved_url or "127.0.0.1" in resolved_url) and not allow_local:
+        raise RuntimeError(
+            "Refusing to run Alembic against implicit local DB URL. "
+            "Set DATABASE_URL (or DATABASE_PUBLIC_URL) explicitly, "
+            "or set ALEMBIC_ALLOW_LOCAL_DB=1 to allow local migrations intentionally."
+        )
+
+    return resolved_url
+
+
+config.set_main_option("sqlalchemy.url", _resolve_alembic_url())
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
