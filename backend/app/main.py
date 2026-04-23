@@ -1,6 +1,8 @@
 import logging
 import os
 import json
+import time
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from fastapi import FastAPI
@@ -25,6 +27,8 @@ logger = logging.getLogger(__name__)
 db_url = os.getenv("DATABASE_URL") or settings.database_url
 masked_url = db_url.split("@")[0] + "@" + db_url.split("@")[1] if "@" in db_url else db_url
 logger.info(f"Database URL (masked): {masked_url}")
+
+BUILD_SHA = os.getenv("RAILWAY_GIT_COMMIT_SHA", os.getenv("GIT_SHA", "dev"))[:8]
 
 app = FastAPI(title=settings.app_name)
 
@@ -131,6 +135,7 @@ app.include_router(style_profiles_router, prefix=settings.api_v1_prefix)
 
 @app.get("/health")
 def healthcheck():
+    t_start = time.monotonic()
     db_status = "connected"
     migration_revision = None
     schema_valid = False
@@ -156,6 +161,7 @@ def healthcheck():
         except Exception as exc:
             errors.append(f"schema: {exc}")
 
+    latency_ms = round((time.monotonic() - t_start) * 1000)
     overall = "ok" if db_status == "connected" and schema_valid and not errors else "degraded"
     response = {
         "status": overall,
@@ -163,6 +169,9 @@ def healthcheck():
         "db": db_status,
         "migrations": migration_revision,
         "schema_valid": schema_valid,
+        "version": BUILD_SHA,
+        "checked_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "latency_ms": latency_ms,
     }
     if errors:
         response["errors"] = errors

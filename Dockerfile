@@ -12,4 +12,7 @@ COPY backend /app/backend
 
 WORKDIR /app/backend
 
+ARG GIT_SHA=dev
+ENV GIT_SHA=${GIT_SHA}
+
 CMD ["sh", "/app/backend/scripts/start_api.sh"]
