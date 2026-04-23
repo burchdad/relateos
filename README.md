@@ -45,6 +45,10 @@ Implemented tables:
 - `ai_insights`
 - `relationship_signals`
 - `user_style_profiles`
+- `content_items`
+- `content_insights`
+- `events`
+- `content_relationship_targets`
 
 ## API Endpoints
 
@@ -77,6 +81,17 @@ Dashboard:
 
 - `GET /dashboard/priorities?limit=5..10`
 - `GET /dashboard/score-explanation/{relationship_id}`
+
+Content + Event Engine:
+
+- `POST /content`
+- `GET /content`
+- `GET /content/{id}`
+- `POST /content/{id}/generate-summary`
+- `GET /content/{id}/targets`
+- `GET /content/{id}/followups`
+- `POST /events`
+- `GET /events`
 
 ## Scoring Formula
 
@@ -137,6 +152,14 @@ Start API:
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+Run DB migrations (recommended for production):
+
+```bash
+cd backend
+source .venv/bin/activate
+alembic upgrade head
+```
+
 ### 3) Seed test data
 
 In another terminal:
@@ -186,6 +209,8 @@ npm run dev
 Open:
 
 - Dashboard: `http://localhost:3000/dashboard`
+- Content Engine: `http://localhost:3000/content`
+- Events: `http://localhost:3000/events`
 - API docs: `http://localhost:8000/docs`
 
 ## Railway + Vercel Deployment
@@ -229,6 +254,7 @@ Environment variables for both services:
 - `REDIS_URL`
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
+- `CONTENT_BULK_SEND_MAX` (default `20`)
 - `API_V1_PREFIX=/api/v1`
 - `CORS_ORIGINS=https://<your-vercel-domain>`
 
@@ -264,3 +290,7 @@ Deploy `frontend/` and set:
 3. Clicking `Send` simulates outreach by logging an interaction to the backend.
 4. AI summary and insights jobs are queued.
 5. Priority scores refresh over time (and after interactions).
+
+## Campaign Validation
+
+Use the campaign scorecard in [docs/campaign-scorecard.md](docs/campaign-scorecard.md) to run and measure a live campaign with clear send/reply/call/opportunity thresholds.

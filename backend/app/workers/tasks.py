@@ -1,8 +1,10 @@
 from app.core.database import SessionLocal
 from app.models import Relationship
 from app.services.ai_service import AIService
+from app.services.followup_service import FollowUpSuggestionService
 from app.services.scoring_service import calculate_priority_score
 from app.workers.celery_app import celery
+from uuid import UUID
 
 
 @celery.task(name="app.workers.tasks.generate_summary_after_interaction")
@@ -31,5 +33,20 @@ def recalculate_scores():
         for rid in ids:
             calculate_priority_score(db, rid)
         return {"updated": len(ids)}
+    finally:
+        db.close()
+
+
+@celery.task(name="app.workers.tasks.dispatch_content_followup_task")
+def dispatch_content_followup_task(content_id: str, day_offset: int, relationship_id: str):
+    db = SessionLocal()
+    try:
+        dispatched = FollowUpSuggestionService.dispatch_followup_for_relationship(
+            db,
+            content_id=UUID(content_id),
+            day_offset=day_offset,
+            relationship_id=UUID(relationship_id),
+        )
+        return {"dispatched": bool(dispatched)}
     finally:
         db.close()

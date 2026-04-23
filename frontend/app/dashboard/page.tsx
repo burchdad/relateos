@@ -2,8 +2,10 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
+import AppTabs from "@/components/AppTabs";
 import DashboardList from "@/components/DashboardList";
 import DemoGuide from "@/components/DemoGuide";
+import { resolveApiUrl } from "@/components/api";
 import { PriorityItem, ScoreExplanation } from "@/components/types";
 
 type RelationshipFormState = {
@@ -14,34 +16,6 @@ type RelationshipFormState = {
   currentStatus: "cold" | "active" | "hot" | "past_deal";
   lastInteractionTiming: "today" | "this_week" | "stale";
   ownerUserId: string;
-};
-
-const resolveApiUrl = () => {
-  let url: string;
-  
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    url = process.env.NEXT_PUBLIC_API_URL;
-  } else if (typeof window !== "undefined" && window.location.hostname === "localhost") {
-    url = "http://localhost:8000/api/v1";
-  } else {
-    url = "/_/backend/api/v1";
-  }
-  
-  // Auto-normalize hostname-only values such as "relateos-production.up.railway.app"
-  if (url && !url.startsWith("http") && !url.startsWith("/")) {
-    const normalized = `https://${url.replace(/^\/+/, "")}`;
-    url = normalized.endsWith("/api/v1") ? normalized : `${normalized}/api/v1`;
-    console.warn(`[API] Normalized API_URL to: ${url}`);
-  }
-
-  // Last-resort guard for malformed values
-  if (url && !url.startsWith("http") && !url.startsWith("/")) {
-    console.warn(`[API] Invalid API_URL format after normalization: ${url}. Using fallback.`);
-    url = "/_/backend/api/v1";
-  }
-  
-  console.info(`[API] Resolved API URL: ${url}`);
-  return url;
 };
 
 export default function DashboardPage() {
@@ -366,6 +340,9 @@ export default function DashboardPage() {
           Who should you talk to today, and what should you say? Priorities are scored by relationship momentum, risk, value, and recency.
         </p>
         <div className="mt-4">
+          <AppTabs />
+        </div>
+        <div>
           <button
             type="button"
             onClick={() => {

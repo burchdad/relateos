@@ -8,7 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import Base, engine
 from app.routes.ai import router as ai_router
+from app.routes.content import router as content_router
 from app.routes.dashboard import router as dashboard_router
+from app.routes.events import router as events_router
 from app.routes.interactions import router as interactions_router
 from app.routes.relationships import router as relationships_router
 from app.routes.style_profiles import router as style_profiles_router
@@ -74,7 +76,9 @@ app.add_middleware(
 app.include_router(relationships_router, prefix=settings.api_v1_prefix)
 app.include_router(interactions_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_router, prefix=settings.api_v1_prefix)
+app.include_router(content_router, prefix=settings.api_v1_prefix)
 app.include_router(dashboard_router, prefix=settings.api_v1_prefix)
+app.include_router(events_router, prefix=settings.api_v1_prefix)
 app.include_router(style_profiles_router, prefix=settings.api_v1_prefix)
 
 

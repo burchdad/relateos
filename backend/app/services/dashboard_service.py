@@ -24,6 +24,9 @@ SIGNAL_LABELS = {
     "NEGATIVE_SENTIMENT": "Negative sentiment",
     "POSITIVE_SENTIMENT": "Positive sentiment",
     "FOLLOW_UP_DUE": "Follow-up due",
+    "CONTENT_SHARED_RECENTLY": "Content shared recently",
+    "CONTENT_ENGAGED_RECENTLY": "Content engaged recently",
+    "CONTENT_IGNORED_RECENTLY": "Content ignored recently",
 }
 
 
