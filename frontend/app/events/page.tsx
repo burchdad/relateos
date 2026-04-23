@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 import { resolveApiUrl } from "@/components/api";
 import { EventItem } from "@/components/types";
@@ -113,6 +114,11 @@ export default function EventsPage() {
           Create recurring or one-time Zoom/YouTube events that pair with your content and relationship workflows.
         </p>
         <p className="mt-2 text-xs text-muted">Manage and distribute live sessions.</p>
+        <div className="mt-4">
+          <Link href="/relationships?intent=invite" className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft">
+            Invite from Relationships
+          </Link>
+        </div>
       </header>
 
       <section className="mb-6 rounded-2xl border border-soft bg-panel/60 p-4">

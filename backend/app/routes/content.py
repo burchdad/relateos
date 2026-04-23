@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.content import (
+    ContentCampaignStats,
     ContentEngagementUpdateRequest,
     ContentCreate,
     ContentItemOut,
@@ -49,12 +50,26 @@ def list_content(db: Session = Depends(get_db)):
     return [_serialize_content_item(db, item) for item in items]
 
 
+@router.get("/campaigns/active", response_model=list[ContentCampaignStats])
+def active_campaigns(db: Session = Depends(get_db)):
+    rows = ContentService.active_campaigns(db)
+    return [ContentCampaignStats.model_validate(row) for row in rows]
+
+
 @router.get("/{content_id}", response_model=ContentItemOut)
 def get_content(content_id: UUID, db: Session = Depends(get_db)):
     item = ContentService.get_content_by_id(db, content_id)
     if not item:
         raise HTTPException(status_code=404, detail="Content item not found")
     return _serialize_content_item(db, item)
+
+
+@router.get("/{content_id}/stats", response_model=ContentCampaignStats)
+def content_stats(content_id: UUID, db: Session = Depends(get_db)):
+    payload = ContentService.content_campaign_stats(db, content_id)
+    if not payload:
+        raise HTTPException(status_code=404, detail="Content item not found")
+    return ContentCampaignStats.model_validate(payload)
 
 
 @router.post("/{content_id}/generate-summary", response_model=ContentSummaryResponse)

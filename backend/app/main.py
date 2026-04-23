@@ -12,6 +12,7 @@ from app.routes.content import router as content_router
 from app.routes.dashboard import router as dashboard_router
 from app.routes.events import router as events_router
 from app.routes.interactions import router as interactions_router
+from app.routes.relateos import router as relateos_router
 from app.routes.relationships import router as relationships_router
 from app.routes.style_profiles import router as style_profiles_router
 
@@ -79,6 +80,7 @@ app.include_router(ai_router, prefix=settings.api_v1_prefix)
 app.include_router(content_router, prefix=settings.api_v1_prefix)
 app.include_router(dashboard_router, prefix=settings.api_v1_prefix)
 app.include_router(events_router, prefix=settings.api_v1_prefix)
+app.include_router(relateos_router, prefix=settings.api_v1_prefix)
 app.include_router(style_profiles_router, prefix=settings.api_v1_prefix)
 
 

@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.models import ContentInsight, ContentItem
+from app.models import ContentInsight, ContentItem, ContentRelationshipTarget
 from app.schemas.content import ContentCreate
 
 
@@ -71,3 +71,28 @@ class ContentService:
             .order_by(ContentInsight.created_at.desc())
             .first()
         )
+
+    @staticmethod
+    def content_campaign_stats(db: Session, content_id: UUID) -> dict | None:
+        item = ContentService.get_content_by_id(db, content_id)
+        if not item:
+            return None
+
+        targets = db.query(ContentRelationshipTarget).filter(ContentRelationshipTarget.content_id == content_id).all()
+        sent = len([t for t in targets if t.engagement_status in {"sent", "responded", "ignored"}])
+        responded = len([t for t in targets if t.engagement_status == "responded"])
+        ignored = len([t for t in targets if t.engagement_status == "ignored"])
+        pending = len([t for t in targets if t.engagement_status == "pending"])
+        return {
+            "content_id": item.id,
+            "title": item.title,
+            "sent_count": sent,
+            "responded_count": responded,
+            "ignored_count": ignored,
+            "pending_count": pending,
+        }
+
+    @staticmethod
+    def active_campaigns(db: Session, limit: int = 8) -> list[dict]:
+        items = ContentService.get_all_content_items(db)[:limit]
+        return [payload for payload in (ContentService.content_campaign_stats(db, item.id) for item in items) if payload is not None]

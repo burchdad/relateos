@@ -9,6 +9,7 @@ from app.models.entities import (
 	Person,
 	Relationship,
 	RelationshipSignal,
+	SystemSetting,
 	UserStyleProfile,
 )
 
@@ -24,4 +25,5 @@ __all__ = [
 	"ContentInsight",
 	"Event",
 	"ContentRelationshipTarget",
+	"SystemSetting",
 ]

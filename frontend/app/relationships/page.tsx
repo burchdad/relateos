@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 import { resolveApiUrl } from "@/components/api";
 
@@ -27,6 +28,8 @@ export default function RelationshipsPage() {
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [intent, setIntent] = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -56,6 +59,16 @@ export default function RelationshipsPage() {
   });
 
   const uniqueTypes = Array.from(new Set(rows.map((row) => row.type))).sort();
+  const selectedIdList = Array.from(selectedIds);
+  const selectedParam = encodeURIComponent(selectedIdList.join(","));
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const url = new URL(window.location.href);
+    setIntent(url.searchParams.get("intent") || "");
+  }, []);
 
   return (
     <main className="mx-auto min-h-screen max-w-6xl px-4 py-10 sm:px-6 lg:px-10">
@@ -63,7 +76,34 @@ export default function RelationshipsPage() {
         <p className="text-xs uppercase tracking-[0.2em] text-accent">RelateOS</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Relationships</h1>
         <p className="mt-3 max-w-2xl text-sm text-muted">Where your people live: search, segment, and review relationship readiness.</p>
+        {intent ? (
+          <p className="mt-2 text-xs text-accent">
+            Context: {intent === "invite" ? "Invite flow" : "Target review flow"} active.
+          </p>
+        ) : null}
       </header>
+
+      <section className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-soft bg-panel/50 p-4 text-sm">
+        <p className="text-muted">Selected: {selectedIds.size}</p>
+        <Link
+          href={selectedIds.size > 0 ? `/content?relationship_ids=${selectedParam}` : "/content"}
+          className="rounded-md border border-soft px-3 py-1.5 text-text hover:bg-soft"
+        >
+          Send Content
+        </Link>
+        <Link
+          href={selectedIds.size > 0 ? `/events?relationship_ids=${selectedParam}` : "/events"}
+          className="rounded-md border border-soft px-3 py-1.5 text-text hover:bg-soft"
+        >
+          Invite to Event
+        </Link>
+        <Link
+          href={selectedIds.size > 0 ? `/content?relationship_ids=${selectedParam}&intent=campaign` : "/content?intent=campaign"}
+          className="rounded-md bg-accent px-3 py-1.5 text-canvas hover:brightness-110"
+        >
+          Start Campaign
+        </Link>
+      </section>
 
       <section className="mb-4 grid gap-3 rounded-2xl border border-soft bg-panel/50 p-4 sm:grid-cols-[1fr_220px]">
         <input
@@ -113,6 +153,25 @@ export default function RelationshipsPage() {
                     Priority {row.priority_score.toFixed(1)}
                   </p>
                 </div>
+                <label className="mt-2 inline-flex items-center gap-2 text-xs text-muted">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(row.id)}
+                    onChange={() => {
+                      setSelectedIds((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(row.id)) {
+                          next.delete(row.id);
+                        } else {
+                          next.add(row.id);
+                        }
+                        return next;
+                      });
+                    }}
+                    className="h-3.5 w-3.5 rounded border-soft bg-canvas text-accent"
+                  />
+                  Select for actions
+                </label>
                 <p className="mt-2 text-sm text-muted">Interests: {interests}</p>
               </article>
             );

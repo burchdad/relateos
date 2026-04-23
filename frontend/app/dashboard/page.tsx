@@ -1,11 +1,12 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 import DashboardList from "@/components/DashboardList";
 import DemoGuide from "@/components/DemoGuide";
 import { resolveApiUrl } from "@/components/api";
-import { PriorityItem, ScoreExplanation } from "@/components/types";
+import { ContentCampaignStats, PriorityItem, ScoreExplanation } from "@/components/types";
 
 type RelationshipFormState = {
   firstName: string;
@@ -23,6 +24,7 @@ export default function DashboardPage() {
   const [explanations, setExplanations] = useState<Record<string, ScoreExplanation>>({});
   const [loadingExplanation, setLoadingExplanation] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
+  const [campaigns, setCampaigns] = useState<ContentCampaignStats[]>([]);
   const [error, setError] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -52,6 +54,11 @@ export default function DashboardPage() {
       setItems(data);
       setExplanations({});
       setLoadingExplanation({});
+      const campaignRes = await fetch(`${API_URL}/content/campaigns/active`, { cache: "no-store" });
+      if (campaignRes.ok) {
+        const campaignRows = (await campaignRes.json()) as ContentCampaignStats[];
+        setCampaigns(campaignRows);
+      }
       return data;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
@@ -450,6 +457,24 @@ export default function DashboardPage() {
         {loading ? <p className="text-muted">Loading priorities...</p> : null}
         {error ? <p className="text-red-300">{error}</p> : null}
         {deleteError ? <p className="mt-2 text-red-300">{deleteError}</p> : null}
+
+        {!loading && campaigns.length > 0 ? (
+          <section className="mb-5 rounded-2xl border border-soft bg-panel/50 p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-base font-semibold text-text">Active Campaigns</h2>
+              <Link href="/content" className="text-xs text-accent hover:underline">Open Content Engine</Link>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {campaigns.map((campaign) => (
+                <article key={campaign.content_id} className="rounded-md border border-soft bg-canvas/60 p-3 text-xs text-muted">
+                  <p className="text-sm font-semibold text-text">{campaign.title}</p>
+                  <p className="mt-1">Sent {campaign.sent_count} • Engaged {campaign.responded_count} • Pending {campaign.pending_count}</p>
+                  <Link href={`/content`} className="mt-2 inline-block text-accent hover:underline">View campaign</Link>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
         {!loading && !error && items.length === 0 ? (
           <div className="rounded-2xl border border-soft bg-panel/50 p-6 text-sm text-muted">
             <p>Your dashboard gets smart after one contact with context. Add one now, or load sample relationships.</p>

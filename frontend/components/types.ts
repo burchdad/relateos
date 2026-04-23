@@ -83,6 +83,13 @@ export type FollowUpExecuteResponse = {
   relationship_ids: string[];
 };
 
+export type CampaignExecutionSummary = {
+  sent: number;
+  engaged: number;
+  ignored: number;
+  next_actions_suggested: number;
+};
+
 export type EventItem = {
   id: string;
   title: string;
@@ -93,4 +100,13 @@ export type EventItem = {
   time_of_day: string;
   owner_user_id: string | null;
   created_at: string;
+};
+
+export type ContentCampaignStats = {
+  content_id: string;
+  title: string;
+  sent_count: number;
+  responded_count: number;
+  ignored_count: number;
+  pending_count: number;
 };

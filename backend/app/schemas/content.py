@@ -86,3 +86,12 @@ class FollowUpExecuteResponse(BaseModel):
 class ContentEngagementUpdateRequest(BaseModel):
     relationship_id: UUID
     status: Literal["responded", "ignored"]
+
+
+class ContentCampaignStats(BaseModel):
+    content_id: UUID
+    title: str
+    sent_count: int
+    responded_count: int
+    ignored_count: int
+    pending_count: int

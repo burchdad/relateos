@@ -1,11 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 import AddContentModal from "@/components/AddContentModal";
 import ContentCard from "@/components/ContentCard";
 import { resolveApiUrl } from "@/components/api";
-import { ContentFollowUpResponse, ContentItem, ContentTarget, FollowUpExecuteResponse } from "@/components/types";
+import {
+  CampaignExecutionSummary,
+  ContentCampaignStats,
+  ContentFollowUpResponse,
+  ContentItem,
+  ContentTarget,
+  FollowUpExecuteResponse,
+} from "@/components/types";
 
 type LoadingMap = Record<string, boolean>;
 
@@ -15,6 +23,7 @@ export default function ContentPage() {
   const [items, setItems] = useState<ContentItem[]>([]);
   const [targetsByContent, setTargetsByContent] = useState<Record<string, ContentTarget[]>>({});
   const [followupsByContent, setFollowupsByContent] = useState<Record<string, ContentFollowUpResponse>>({});
+  const [statsByContent, setStatsByContent] = useState<Record<string, ContentCampaignStats>>({});
   const [loadingTargets, setLoadingTargets] = useState<LoadingMap>({});
   const [loadingFollowups, setLoadingFollowups] = useState<LoadingMap>({});
   const [loading, setLoading] = useState(true);
@@ -34,6 +43,13 @@ export default function ContentPage() {
       }
       const data = (await res.json()) as ContentItem[];
       setItems(data);
+      const statsRes = await fetch(`${API_URL}/content/campaigns/active`, { cache: "no-store" });
+      if (statsRes.ok) {
+        const statsRows = (await statsRes.json()) as ContentCampaignStats[];
+        setStatsByContent(
+          Object.fromEntries(statsRows.map((row) => [row.content_id, row]))
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
@@ -149,6 +165,22 @@ export default function ContentPage() {
       throw new Error(detail);
     }
     const data = (await res.json()) as FollowUpExecuteResponse;
+    let campaignSummary: CampaignExecutionSummary | undefined;
+    try {
+      const statsRes = await fetch(`${API_URL}/content/${contentId}/stats`, { cache: "no-store" });
+      if (statsRes.ok) {
+        const stats = (await statsRes.json()) as ContentCampaignStats;
+        setStatsByContent((prev) => ({ ...prev, [contentId]: stats }));
+        campaignSummary = {
+          sent: stats.sent_count,
+          engaged: stats.responded_count,
+          ignored: stats.ignored_count,
+          next_actions_suggested: stats.responded_count,
+        };
+      }
+    } catch {
+      // Preserve execution success even if summary refresh fails.
+    }
     if (data.dispatch_mode === "immediate") {
       await onViewTargets(contentId, true);
     }
@@ -156,6 +188,7 @@ export default function ContentPage() {
       executedCount: data.executed_count,
       queuedCount: data.queued_count,
       mode: data.dispatch_mode,
+      campaignSummary,
     };
   };
 
@@ -187,13 +220,18 @@ export default function ContentPage() {
           Decide what content to share, who should receive it, and when to follow up.
         </p>
         <p className="mt-2 text-xs text-muted">Turn content into conversations.</p>
-        <button
-          type="button"
-          onClick={() => setShowAddModal(true)}
-          className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-canvas hover:brightness-110"
-        >
-          Add Content
-        </button>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setShowAddModal(true)}
+            className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-canvas hover:brightness-110"
+          >
+            Add Content
+          </button>
+          <Link href="/relationships?intent=targets" className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft">
+            View Targets in Relationships
+          </Link>
+        </div>
       </header>
 
       {loading ? <p className="text-muted">Loading content...</p> : null}
@@ -213,6 +251,7 @@ export default function ContentPage() {
                 item={item}
                 targets={targetsByContent[item.id] ?? []}
                 followups={followupsByContent[item.id]?.steps ?? []}
+                stats={statsByContent[item.id]}
                 loadingTargets={Boolean(loadingTargets[item.id])}
                 loadingFollowups={Boolean(loadingFollowups[item.id])}
                 onViewTargets={onViewTargets}

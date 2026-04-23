@@ -1,10 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import ContentTargetsPanel from "@/components/ContentTargetsPanel";
 import FollowUpPanel from "@/components/FollowUpPanel";
-import { ContentFollowUpStep, ContentItem, ContentTarget } from "@/components/types";
+import { CampaignExecutionSummary, ContentCampaignStats, ContentFollowUpStep, ContentItem, ContentTarget } from "@/components/types";
 
 const extractYouTubeId = (url: string): string | null => {
   try {
@@ -30,6 +31,7 @@ type Props = {
   item: ContentItem;
   targets: ContentTarget[];
   followups: ContentFollowUpStep[];
+  stats?: ContentCampaignStats;
   loadingTargets: boolean;
   loadingFollowups: boolean;
   onViewTargets: (contentId: string) => Promise<void>;
@@ -41,7 +43,12 @@ type Props = {
     relationshipIds: string[],
     dispatchMode: "immediate" | "queued",
     delayWindowMinutes: number
-  ) => Promise<{ executedCount: number; queuedCount: number; mode: "immediate" | "queued" }>;
+  ) => Promise<{
+    executedCount: number;
+    queuedCount: number;
+    mode: "immediate" | "queued";
+    campaignSummary?: CampaignExecutionSummary;
+  }>;
   onMarkEngagement: (contentId: string, relationshipId: string, status: "responded" | "ignored") => Promise<void>;
 };
 
@@ -49,6 +56,7 @@ export default function ContentCard({
   item,
   targets,
   followups,
+  stats,
   loadingTargets,
   loadingFollowups,
   onViewTargets,
@@ -105,6 +113,13 @@ export default function ContentCard({
         {item.latest_insight?.summary || "Summary not generated yet. Generate and refine this content angle."}
       </div>
 
+      <div className="mt-3 grid gap-2 rounded-md border border-soft bg-canvas/60 p-3 text-xs text-muted sm:grid-cols-4">
+        <p>Sent: <span className="font-semibold text-text">{stats?.sent_count ?? 0}</span></p>
+        <p>Engaged: <span className="font-semibold text-emerald-200">{stats?.responded_count ?? 0}</span></p>
+        <p>Ignored: <span className="font-semibold text-amber-200">{stats?.ignored_count ?? 0}</span></p>
+        <p>Pending: <span className="font-semibold text-text">{stats?.pending_count ?? 0}</span></p>
+      </div>
+
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           onClick={async () => {
@@ -130,6 +145,12 @@ export default function ContentCard({
         >
           {showFollowups ? "Hide Follow-Ups" : "View Follow-Ups"}
         </button>
+        <Link
+          href={`/relationships?intent=targets&content_id=${item.id}`}
+          className="rounded-md border border-soft px-3 py-1.5 text-sm text-text hover:bg-soft"
+        >
+          View Targets in Relationships
+        </Link>
       </div>
 
       {showTargets ? (

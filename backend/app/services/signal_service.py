@@ -4,6 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import Interaction, Opportunity, Relationship, RelationshipSignal
+from app.services.relateos_service import get_active_signal_preset
 
 
 SIGNAL_WEIGHTS = {
@@ -31,6 +32,8 @@ def _to_utc(dt):
 def derive_relationship_signals(db: Session, relationship: Relationship) -> list[dict]:
     now = datetime.now(timezone.utc)
     signals: list[dict] = []
+    active_preset = get_active_signal_preset(db)
+    preset_weights = active_preset["weights"]
 
     interactions_48h = (
         db.query(func.count(Interaction.id))
@@ -128,7 +131,7 @@ def derive_relationship_signals(db: Session, relationship: Relationship) -> list
         )
 
     for signal in signals:
-        signal["weight"] = SIGNAL_WEIGHTS[signal["signal_key"]]
+        signal["weight"] = preset_weights.get(signal["signal_key"], SIGNAL_WEIGHTS[signal["signal_key"]])
 
     return signals
 

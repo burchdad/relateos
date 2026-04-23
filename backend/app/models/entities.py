@@ -190,3 +190,14 @@ class ContentRelationshipTarget(Base):
 
     content: Mapped[ContentItem] = relationship("ContentItem", back_populates="targets")
     relationship: Mapped[Relationship] = relationship("Relationship")
+
+
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

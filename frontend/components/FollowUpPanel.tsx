@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 
 import MessageComposer from "@/components/MessageComposer";
-import { ContentFollowUpStep } from "@/components/types";
+import { CampaignExecutionSummary, ContentFollowUpStep } from "@/components/types";
 
 const BULK_SEND_MAX = 20;
 
@@ -18,7 +18,12 @@ type Props = {
     relationshipIds: string[],
     dispatchMode: "immediate" | "queued",
     delayWindowMinutes: number
-  ) => Promise<{ executedCount: number; queuedCount: number; mode: "immediate" | "queued" }>;
+  ) => Promise<{
+    executedCount: number;
+    queuedCount: number;
+    mode: "immediate" | "queued";
+    campaignSummary?: CampaignExecutionSummary;
+  }>;
 };
 
 export default function FollowUpPanel({ loading, steps, contentId, onSend, onBulkSend }: Props) {
@@ -29,6 +34,7 @@ export default function FollowUpPanel({ loading, steps, contentId, onSend, onBul
   const [dispatchModeByStep, setDispatchModeByStep] = useState<Record<number, "immediate" | "queued">>({});
   const [delayWindowByStep, setDelayWindowByStep] = useState<Record<number, number>>({});
   const [status, setStatus] = useState<string>("");
+  const [campaignSummary, setCampaignSummary] = useState<CampaignExecutionSummary | null>(null);
 
   const defaultTargets = useMemo(() => {
     const initial: Record<number, string> = {};
@@ -193,6 +199,9 @@ export default function FollowUpPanel({ loading, steps, contentId, onSend, onBul
                       dispatchMode,
                       delayWindowMinutes
                     );
+                    if (result.campaignSummary) {
+                      setCampaignSummary(result.campaignSummary);
+                    }
                     if (result.mode === "queued") {
                       setStatus(`Queued ${result.queuedCount} follow-ups for ${step.label} over ${delayWindowMinutes} minutes.`);
                     } else {
@@ -239,6 +248,26 @@ export default function FollowUpPanel({ loading, steps, contentId, onSend, onBul
           </div>
         );
       })}
+
+      {campaignSummary ? (
+        <div className="rounded-md border border-soft bg-panel/70 p-3">
+          <p className="text-xs uppercase tracking-wider text-accent">Campaign Summary</p>
+          <div className="mt-2 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <p>
+              Sent: <span className="font-semibold text-text">{campaignSummary.sent}</span>
+            </p>
+            <p>
+              Engaged: <span className="font-semibold text-emerald-200">{campaignSummary.engaged}</span>
+            </p>
+            <p>
+              Ignored: <span className="font-semibold text-amber-200">{campaignSummary.ignored}</span>
+            </p>
+            <p>
+              Next actions suggested: <span className="font-semibold text-text">{campaignSummary.next_actions_suggested}</span>
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       {status ? <p className="text-xs text-muted">{status}</p> : null}
     </div>

@@ -17,3 +17,13 @@ def calculate_priority_score(db: Session, relationship_id):
     db.commit()
     db.refresh(rel)
     return rel.priority_score
+
+
+def recalculate_all_priority_scores(db: Session) -> int:
+    relationships = db.query(Relationship.id).all()
+    updated = 0
+    for row in relationships:
+        score = calculate_priority_score(db, row.id)
+        if score is not None:
+            updated += 1
+    return updated
