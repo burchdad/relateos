@@ -19,14 +19,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "system_settings",
-        sa.Column("key", sa.String(length=100), nullable=False),
-        sa.Column("value", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.PrimaryKeyConstraint("key"),
-    )
+    inspector = sa.inspect(op.get_bind())
+    if "system_settings" not in inspector.get_table_names():
+        op.create_table(
+            "system_settings",
+            sa.Column("key", sa.String(length=100), nullable=False),
+            sa.Column("value", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+            sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+            sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+            sa.PrimaryKeyConstraint("key"),
+        )
 
 
 def downgrade() -> None:

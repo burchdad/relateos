@@ -49,6 +49,8 @@ class ContentService:
             source_url=payload.source_url.strip(),
             thumbnail_url=thumbnail_url,
             owner_user_id=payload.owner_user_id,
+            experiment_key=payload.experiment_key.strip() if payload.experiment_key else None,
+            experiment_variant=payload.experiment_variant,
         )
         db.add(item)
         db.commit()
@@ -86,6 +88,8 @@ class ContentService:
         return {
             "content_id": item.id,
             "title": item.title,
+            "experiment_key": item.experiment_key,
+            "experiment_variant": item.experiment_variant,
             "sent_count": sent,
             "responded_count": responded,
             "ignored_count": ignored,

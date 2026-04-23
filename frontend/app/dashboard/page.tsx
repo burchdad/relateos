@@ -3,10 +3,11 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
+import CampaignProofPanel from "@/components/CampaignProofPanel";
 import DashboardList from "@/components/DashboardList";
 import DemoGuide from "@/components/DemoGuide";
 import { resolveApiUrl } from "@/components/api";
-import { ContentCampaignStats, PriorityItem, ScoreExplanation } from "@/components/types";
+import { CampaignInsights, ContentCampaignStats, PriorityItem, ScoreExplanation } from "@/components/types";
 
 type RelationshipFormState = {
   firstName: string;
@@ -25,6 +26,7 @@ export default function DashboardPage() {
   const [loadingExplanation, setLoadingExplanation] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [campaigns, setCampaigns] = useState<ContentCampaignStats[]>([]);
+  const [campaignInsights, setCampaignInsights] = useState<CampaignInsights | null>(null);
   const [error, setError] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -58,6 +60,11 @@ export default function DashboardPage() {
       if (campaignRes.ok) {
         const campaignRows = (await campaignRes.json()) as ContentCampaignStats[];
         setCampaigns(campaignRows);
+      }
+      const insightsRes = await fetch(`${API_URL}/relateos/campaign-insights`, { cache: "no-store" });
+      if (insightsRes.ok) {
+        const insightPayload = (await insightsRes.json()) as CampaignInsights;
+        setCampaignInsights(insightPayload);
       }
       return data;
     } catch (e) {
@@ -468,11 +475,28 @@ export default function DashboardPage() {
               {campaigns.map((campaign) => (
                 <article key={campaign.content_id} className="rounded-md border border-soft bg-canvas/60 p-3 text-xs text-muted">
                   <p className="text-sm font-semibold text-text">{campaign.title}</p>
+                  {campaign.experiment_key ? (
+                    <p className="mt-1 text-xs text-muted">
+                      {campaign.experiment_key} {campaign.experiment_variant ? `• ${campaign.experiment_variant}` : ""}
+                    </p>
+                  ) : null}
                   <p className="mt-1">Sent {campaign.sent_count} • Engaged {campaign.responded_count} • Pending {campaign.pending_count}</p>
                   <Link href={`/content`} className="mt-2 inline-block text-accent hover:underline">View campaign</Link>
                 </article>
               ))}
             </div>
+          </section>
+        ) : null}
+        {!loading && campaignInsights ? (
+          <section className="mb-5 rounded-2xl border border-soft bg-panel/50 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-text">Proof View</h2>
+                <p className="mt-1 text-xs text-muted">Show the latest control vs optimized evidence without leaving the dashboard.</p>
+              </div>
+              <Link href="/relateos" className="text-xs text-accent hover:underline">Open RelateOS</Link>
+            </div>
+            <CampaignProofPanel insights={campaignInsights} compact />
           </section>
         ) : null}
         {!loading && !error && items.length === 0 ? (

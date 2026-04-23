@@ -82,6 +82,12 @@ export default function ContentCard({
         <div>
           <h3 className="text-lg font-semibold tracking-tight text-text">{item.title}</h3>
           <p className="mt-1 text-xs uppercase tracking-wider text-muted">{item.source_type}</p>
+          {item.experiment_key ? (
+            <p className="mt-2 text-xs text-muted">
+              Experiment <span className="text-text">{item.experiment_key}</span>
+              {item.experiment_variant ? ` • ${item.experiment_variant}` : ""}
+            </p>
+          ) : null}
         </div>
         <a
           href={item.source_url}

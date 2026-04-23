@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import CampaignProofPanel from "@/components/CampaignProofPanel";
 import { resolveApiUrl } from "@/components/api";
+import { CampaignInsights } from "@/components/types";
 
 type StyleProfile = {
   owner_user_id: string;
@@ -16,25 +18,6 @@ type SignalPreset = {
   active_preset: string;
   available_presets: string[];
   weights: Record<string, number>;
-};
-
-type CampaignInsightMetric = {
-  label: string;
-  detail: string;
-};
-
-type CampaignInsights = {
-  sent_count: number;
-  engaged_count: number;
-  ignored_count: number;
-  next_actions_suggested: number;
-  insights: CampaignInsightMetric[];
-  suggestion: {
-    suggested_preset: string;
-    suggested_tone: string;
-    suggested_target_tags: string[];
-    suggested_weight_adjustments: Record<string, number>;
-  };
 };
 
 const defaultStyle: StyleProfile = {
@@ -309,7 +292,7 @@ export default function RelateOSPage() {
       <section className="mt-4 rounded-2xl border border-soft bg-panel/50 p-5">
         <h2 className="text-base font-semibold text-text">Campaign Insights</h2>
         <p className="mt-1 text-xs text-muted">
-          Optimization agent reads campaign outcomes and suggests target, tone, and signal-weight adjustments.
+          Optimization agent reads campaign outcomes, normalizes evidence, and packages the next optimization move into a proof-ready summary.
         </p>
 
         {insightsLoading ? <p className="mt-3 text-sm text-muted">Analyzing campaign performance...</p> : null}
@@ -327,9 +310,16 @@ export default function RelateOSPage() {
                 Ignored: <span className="font-semibold text-amber-200">{campaignInsights.ignored_count}</span>
               </p>
               <p>
-                Next actions suggested: <span className="font-semibold text-text">{campaignInsights.next_actions_suggested}</span>
+                Avg. response time:{" "}
+                <span className="font-semibold text-text">
+                  {campaignInsights.proof_summary.average_time_to_response_hours !== null
+                    ? `${campaignInsights.proof_summary.average_time_to_response_hours}h`
+                    : "Pending"}
+                </span>
               </p>
             </div>
+
+            <CampaignProofPanel insights={campaignInsights} />
 
             <div className="rounded-md border border-soft bg-canvas/60 p-3 text-sm text-text">
               <p className="text-xs uppercase tracking-wider text-accent">Insights</p>

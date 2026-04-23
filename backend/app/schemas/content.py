@@ -12,6 +12,8 @@ class ContentCreate(BaseModel):
     source_url: str = Field(min_length=4)
     thumbnail_url: str | None = None
     owner_user_id: str | None = None
+    experiment_key: str | None = Field(default=None, min_length=3, max_length=100)
+    experiment_variant: Literal["control", "optimized"] | None = None
 
 
 class ContentInsightOut(BaseModel):
@@ -33,6 +35,8 @@ class ContentItemOut(BaseModel):
     source_url: str
     thumbnail_url: str | None
     owner_user_id: str | None
+    experiment_key: str | None = None
+    experiment_variant: Literal["control", "optimized"] | None = None
     created_at: datetime
     latest_insight: ContentInsightOut | None = None
 
@@ -91,6 +95,8 @@ class ContentEngagementUpdateRequest(BaseModel):
 class ContentCampaignStats(BaseModel):
     content_id: UUID
     title: str
+    experiment_key: str | None = None
+    experiment_variant: Literal["control", "optimized"] | None = None
     sent_count: int
     responded_count: int
     ignored_count: int

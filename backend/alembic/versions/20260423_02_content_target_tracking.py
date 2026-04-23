@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -19,25 +20,38 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    engagement_status_enum = sa.Enum("pending", "sent", "responded", "ignored", name="content_engagement_status")
+    inspector = sa.inspect(op.get_bind())
+    existing_columns = {column["name"] for column in inspector.get_columns("content_relationship_targets")}
+    engagement_status_enum = postgresql.ENUM(
+        "pending",
+        "sent",
+        "responded",
+        "ignored",
+        name="content_engagement_status",
+        create_type=False,
+    )
     engagement_status_enum.create(op.get_bind(), checkfirst=True)
 
-    op.add_column(
-        "content_relationship_targets",
-        sa.Column("engagement_status", engagement_status_enum, nullable=False, server_default="pending"),
-    )
-    op.add_column(
-        "content_relationship_targets",
-        sa.Column("delivery_count", sa.Integer(), nullable=False, server_default="0"),
-    )
-    op.add_column(
-        "content_relationship_targets",
-        sa.Column("last_sent_at", sa.DateTime(timezone=True), nullable=True),
-    )
-    op.add_column(
-        "content_relationship_targets",
-        sa.Column("last_engagement_at", sa.DateTime(timezone=True), nullable=True),
-    )
+    if "engagement_status" not in existing_columns:
+        op.add_column(
+            "content_relationship_targets",
+            sa.Column("engagement_status", engagement_status_enum, nullable=False, server_default="pending"),
+        )
+    if "delivery_count" not in existing_columns:
+        op.add_column(
+            "content_relationship_targets",
+            sa.Column("delivery_count", sa.Integer(), nullable=False, server_default="0"),
+        )
+    if "last_sent_at" not in existing_columns:
+        op.add_column(
+            "content_relationship_targets",
+            sa.Column("last_sent_at", sa.DateTime(timezone=True), nullable=True),
+        )
+    if "last_engagement_at" not in existing_columns:
+        op.add_column(
+            "content_relationship_targets",
+            sa.Column("last_engagement_at", sa.DateTime(timezone=True), nullable=True),
+        )
 
 
 def downgrade() -> None:

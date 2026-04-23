@@ -48,6 +48,8 @@ export type ContentItem = {
   source_url: string;
   thumbnail_url: string | null;
   owner_user_id: string | null;
+  experiment_key: string | null;
+  experiment_variant: "control" | "optimized" | null;
   created_at: string;
   latest_insight: ContentInsight | null;
 };
@@ -105,8 +107,76 @@ export type EventItem = {
 export type ContentCampaignStats = {
   content_id: string;
   title: string;
+  experiment_key: string | null;
+  experiment_variant: "control" | "optimized" | null;
   sent_count: number;
   responded_count: number;
   ignored_count: number;
   pending_count: number;
+};
+
+export type CampaignInsightMetric = {
+  label: string;
+  detail: string;
+};
+
+export type CampaignNormalizedMetric = {
+  label: string;
+  count: number;
+  formatted_rate: string;
+  detail: string | null;
+};
+
+export type CampaignComparisonMetric = {
+  label: string;
+  control_value: string;
+  optimized_value: string;
+  lift: string;
+  winner: string | null;
+};
+
+export type CampaignComparisonSummary = {
+  experiment_key: string;
+  control_campaign_title: string;
+  optimized_campaign_title: string;
+  compared_within_hours: number;
+  window_valid: boolean;
+  winning_strategy: string;
+  metrics: CampaignComparisonMetric[];
+};
+
+export type CampaignProofSummary = {
+  minimum_sample_size: number;
+  current_sample_size: number;
+  sample_size_valid: boolean;
+  experiment_window_hours: number;
+  experiment_rules: string[];
+  comparison_status: string;
+  comparison: CampaignComparisonSummary | null;
+  average_time_to_response_hours: number | null;
+  confidence_label: string;
+  confidence_score: number;
+  evidence_campaign_count: number;
+  evidence_send_count: number;
+  consistency_label: string;
+  projected_lift_low: number | null;
+  projected_lift_high: number | null;
+  projected_lift_basis: string;
+  baseline_metrics: CampaignNormalizedMetric[];
+  action_applied: string[];
+};
+
+export type CampaignInsights = {
+  sent_count: number;
+  engaged_count: number;
+  ignored_count: number;
+  next_actions_suggested: number;
+  insights: CampaignInsightMetric[];
+  proof_summary: CampaignProofSummary;
+  suggestion: {
+    suggested_preset: string;
+    suggested_tone: string;
+    suggested_target_tags: string[];
+    suggested_weight_adjustments: Record<string, number>;
+  };
 };

@@ -66,6 +66,8 @@ export default function ContentPage() {
     description: string;
     source_type: "youtube" | "zoom" | "upload";
     source_url: string;
+    experiment_key?: string;
+    experiment_variant?: "control" | "optimized";
   }) => {
     setCreateError("");
     setCreating(true);

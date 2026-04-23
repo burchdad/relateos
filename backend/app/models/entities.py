@@ -136,6 +136,11 @@ class ContentItem(Base):
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
     thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     owner_user_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    experiment_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    experiment_variant: Mapped[str | None] = mapped_column(
+        Enum("control", "optimized", name="campaign_experiment_variant"),
+        nullable=True,
+    )
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     insights: Mapped[list["ContentInsight"]] = relationship("ContentInsight", back_populates="content", cascade="all, delete-orphan")

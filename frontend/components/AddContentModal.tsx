@@ -12,6 +12,8 @@ type Props = {
     description: string;
     source_type: "youtube" | "zoom" | "upload";
     source_url: string;
+    experiment_key?: string;
+    experiment_variant?: "control" | "optimized";
   }) => Promise<void>;
 };
 
@@ -20,6 +22,8 @@ export default function AddContentModal({ open, creating, error, onClose, onSubm
   const [description, setDescription] = useState("");
   const [sourceType, setSourceType] = useState<"youtube" | "zoom" | "upload">("youtube");
   const [sourceUrl, setSourceUrl] = useState("");
+  const [experimentKey, setExperimentKey] = useState("");
+  const [experimentVariant, setExperimentVariant] = useState<"control" | "optimized" | "">("");
   const [localError, setLocalError] = useState("");
 
   if (!open) {
@@ -40,12 +44,16 @@ export default function AddContentModal({ open, creating, error, onClose, onSubm
       description: description.trim(),
       source_type: sourceType,
       source_url: sourceUrl.trim(),
+      experiment_key: experimentKey.trim() || undefined,
+      experiment_variant: experimentVariant || undefined,
     });
 
     setTitle("");
     setDescription("");
     setSourceType("youtube");
     setSourceUrl("");
+    setExperimentKey("");
+    setExperimentVariant("");
   };
 
   return (
@@ -87,6 +95,21 @@ export default function AddContentModal({ open, creating, error, onClose, onSubm
             placeholder="YouTube or Zoom URL"
             className="w-full rounded-md border border-soft bg-canvas px-3 py-2 text-sm text-text outline-none ring-accent/40 placeholder:text-muted focus:ring"
           />
+          <input
+            value={experimentKey}
+            onChange={(e) => setExperimentKey(e.target.value)}
+            placeholder="Experiment key (optional, e.g. q2-proof-loop)"
+            className="w-full rounded-md border border-soft bg-canvas px-3 py-2 text-sm text-text outline-none ring-accent/40 placeholder:text-muted focus:ring"
+          />
+          <select
+            value={experimentVariant}
+            onChange={(e) => setExperimentVariant(e.target.value as "control" | "optimized" | "")}
+            className="w-full rounded-md border border-soft bg-canvas px-3 py-2 text-sm text-text outline-none ring-accent/40 focus:ring"
+          >
+            <option value="">No experiment variant</option>
+            <option value="control">Control</option>
+            <option value="optimized">Optimized</option>
+          </select>
 
           {localError ? <p className="text-sm text-red-300">{localError}</p> : null}
           {error ? <p className="text-sm text-red-300">{error}</p> : null}
