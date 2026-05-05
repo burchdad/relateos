@@ -16,6 +16,23 @@ type MapResult = {
   unmapped_fields: string[];
 };
 
+type UploadResult = {
+  file_name: string;
+  source_type: string;
+  sheet_name: string | null;
+  rows_processed: number;
+  rows_skipped: number;
+  contacts_created: number;
+  contacts_updated: number;
+  organizations_created: number;
+  relationships_created: number;
+  relationship_edges_created: number;
+  suggested_column_mapping: Record<string, string>;
+  unmapped_columns: string[];
+  stored_extra_fields: string[];
+  warnings: string[];
+};
+
 export default function ImportsPage() {
   const API_URL = useMemo(resolveApiUrl, []);
   const [sourceType, setSourceType] = useState("contacts");
@@ -23,6 +40,10 @@ export default function ImportsPage() {
   const [sampleData, setSampleData] = useState("");
   const [mapping, setMapping] = useState<MapResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [sheetName, setSheetName] = useState("");
+  const [uploadingWorkbook, setUploadingWorkbook] = useState(false);
+  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
 
   // Engagement import
   const [engageRows, setEngageRows] = useState("");
@@ -76,11 +97,132 @@ export default function ImportsPage() {
     }
   };
 
+  const handleWorkbookUpload = async () => {
+    if (!uploadFile) return;
+    setUploadingWorkbook(true);
+    setUploadResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", uploadFile);
+      formData.append("source_type", sourceType);
+      if (sheetName.trim()) formData.append("sheet_name", sheetName.trim());
+
+      const res = await fetch(`${API_URL}/imports/upload`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (res.ok) {
+        setUploadResult(await res.json());
+      }
+    } finally {
+      setUploadingWorkbook(false);
+    }
+  };
+
   return (
     <div className="p-6 space-y-8">
       <div>
         <h2 className="text-xl font-semibold text-text">Import Intelligence</h2>
-        <p className="text-sm text-muted mt-1">AI-assisted column mapping and bulk import from any source.</p>
+        <p className="text-sm text-muted mt-1">AI-assisted column mapping plus large Excel import for contacts, organizations, and relationship links.</p>
+      </div>
+
+      <div className="rounded-xl border border-accent/30 bg-panel p-6 space-y-4">
+        <div>
+          <h3 className="font-semibold text-text">Workbook Import</h3>
+          <p className="text-sm text-muted mt-1">Upload a .xlsx, .xlsm, or .csv file. The importer maps contact fields, creates organizations, links relationship rows, and preserves unmapped columns in metadata so no spreadsheet data is lost.</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="text-xs text-muted uppercase tracking-wide block mb-1">Source Type</label>
+            <select value={sourceType} onChange={e => setSourceType(e.target.value)}
+              className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60">
+              {SOURCE_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-muted uppercase tracking-wide block mb-1">Excel / CSV File</label>
+            <input
+              type="file"
+              accept=".xlsx,.xlsm,.csv"
+              onChange={e => setUploadFile(e.target.files?.[0] ?? null)}
+              className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text file:mr-3 file:border-0 file:bg-accent/15 file:px-3 file:py-1.5 file:text-accent"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted uppercase tracking-wide block mb-1">Sheet Name (optional)</label>
+            <input
+              value={sheetName}
+              onChange={e => setSheetName(e.target.value)}
+              placeholder="Leave blank for first sheet"
+              className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button onClick={handleWorkbookUpload} disabled={uploadingWorkbook || !uploadFile}
+            className="rounded-lg bg-accent/20 border border-accent/40 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition disabled:opacity-50">
+            {uploadingWorkbook ? "Importing Workbook…" : "Upload & Import Workbook"}
+          </button>
+          <p className="text-xs text-muted">Designed for larger files. Imports run in batches and dedupe by email/phone before creating contacts.</p>
+        </div>
+
+        {uploadResult && (
+          <div className="rounded-lg border border-green-400/30 bg-green-400/5 p-4 space-y-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-sm text-green-400 font-medium">Workbook Import Complete</p>
+                <p className="text-xs text-muted mt-1">{uploadResult.file_name}{uploadResult.sheet_name ? ` · Sheet: ${uploadResult.sheet_name}` : ""}</p>
+              </div>
+              <div className="text-xs text-muted">{uploadResult.rows_processed.toLocaleString()} processed · {uploadResult.rows_skipped.toLocaleString()} skipped</div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              {[
+                ["Contacts Created", uploadResult.contacts_created],
+                ["Contacts Updated", uploadResult.contacts_updated],
+                ["Organizations", uploadResult.organizations_created],
+                ["Relationships", uploadResult.relationships_created],
+                ["Edges", uploadResult.relationship_edges_created],
+              ].map(([label, value]) => (
+                <div key={label as string} className="rounded-lg border border-green-400/20 bg-base p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-muted">{label as string}</p>
+                  <p className="text-lg font-semibold text-text mt-1">{Number(value).toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
+
+            <div>
+              <p className="text-xs text-muted uppercase tracking-wide mb-2">Detected Mapping</p>
+              <div className="grid md:grid-cols-2 gap-2">
+                {Object.entries(uploadResult.suggested_column_mapping).map(([column, target]) => (
+                  <div key={column} className="flex items-center gap-2 text-xs rounded-lg border border-soft bg-base px-3 py-2">
+                    <span className="text-muted">{column}</span>
+                    <span className="text-muted">→</span>
+                    <span className="text-accent font-mono">{target}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {uploadResult.stored_extra_fields.length > 0 && (
+              <div>
+                <p className="text-xs text-muted uppercase tracking-wide mb-1">Extra Fields Preserved In Metadata</p>
+                <p className="text-xs text-muted">{uploadResult.stored_extra_fields.join(", ")}</p>
+              </div>
+            )}
+
+            {uploadResult.warnings.length > 0 && (
+              <div className="space-y-1">
+                {uploadResult.warnings.map((warning, index) => (
+                  <p key={index} className="text-xs text-yellow-300">{warning}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* AI Import Mapper */}

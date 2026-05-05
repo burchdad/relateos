@@ -86,3 +86,21 @@ class ImportMapResponse(BaseModel):
     confidence: float
     warnings: list[str]
     unmapped_fields: list[str]
+
+
+class ImportUploadResponse(BaseModel):
+    file_name: str
+    source_type: str
+    sheet_name: str | None = None
+    rows_processed: int
+    rows_skipped: int
+    contacts_created: int
+    contacts_updated: int
+    organizations_created: int
+    relationships_created: int
+    relationship_edges_created: int
+    suggested_column_mapping: dict[str, str]
+    unmapped_columns: list[str]
+    stored_extra_fields: list[str]
+    warnings: list[str]
+

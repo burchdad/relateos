@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -13,8 +13,10 @@ from app.schemas.content_asset import (
     FunnelCampaignOut,
     ImportMapRequest,
     ImportMapResponse,
+    ImportUploadResponse,
 )
 from app.services.content_asset_service import ContentAssetService
+from app.services.import_service import ImportService
 
 router = APIRouter(tags=["content-assets"])
 
@@ -65,4 +67,28 @@ def create_funnel_campaign(payload: FunnelCampaignCreate, db: Session = Depends(
 
 @router.post("/imports/map", response_model=ImportMapResponse)
 def map_import(payload: ImportMapRequest):
-    return ContentAssetService.map_import(payload)
+    return ImportService.map_import(payload)
+
+
+@router.post("/imports/upload", response_model=ImportUploadResponse)
+async def upload_import(
+    file: UploadFile = File(...),
+    source_type: str = Form("contacts"),
+    sheet_name: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="File name is required")
+    payload = await file.read()
+    if not payload:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    try:
+        return ImportService.import_contacts_file(
+            db,
+            file_name=file.filename,
+            file_bytes=payload,
+            source_type=source_type,
+            sheet_name=sheet_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
