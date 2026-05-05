@@ -1,18 +1,110 @@
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
+from email.utils import parseaddr
 
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.entities import Meeting, MeetingAttendee, Person
+from app.schemas.engagement import EngagementCaptureRequest
 from app.schemas.meeting import (
     AttendeeImportRequest,
+    InboundInviteRequest,
+    InboundInviteResponse,
     MeetingCreate,
     MeetingFollowUpResponse,
     MeetingUpdate,
 )
+from app.services.engagement_service import EngagementService
+
+
+MEETING_URL_PATTERN = re.compile(
+    r'(https?://(?:[a-zA-Z0-9-]+\.)?(?:zoom\.us|meet\.google\.com|teams\.microsoft\.com|webex\.com|skool\.com)[^\s<>"]*)',
+    flags=re.IGNORECASE,
+)
+
+
+def _clean(value: str | None) -> str:
+    return (value or "").strip()
+
+
+def _parse_datetime(value: str | None) -> datetime | None:
+    raw = _clean(value)
+    if not raw:
+        return None
+
+    try:
+        from dateutil import parser as dt_parser
+
+        parsed = dt_parser.parse(raw)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _extract_ics_value(ical_text: str | None, key: str) -> str | None:
+    if not ical_text:
+        return None
+    pattern = re.compile(rf"^{re.escape(key)}(?:;[^:]+)?:\s*(.+)$", flags=re.MULTILINE | re.IGNORECASE)
+    match = pattern.search(ical_text)
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
+def _extract_meeting_url(*texts: str | None) -> str | None:
+    for text in texts:
+        if not text:
+            continue
+        match = MEETING_URL_PATTERN.search(text)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _detect_platform(url: str | None, explicit_platform: str | None) -> str | None:
+    explicit = _clean(explicit_platform).lower()
+    if explicit:
+        return explicit
+    value = _clean(url).lower()
+    if "zoom.us" in value:
+        return "zoom"
+    if "meet.google.com" in value:
+        return "google_meet"
+    if "teams.microsoft.com" in value:
+        return "teams"
+    if "webex.com" in value:
+        return "webex"
+    if "skool.com" in value:
+        return "skool"
+    return None
+
+
+def _extract_attendees_from_ics(ical_text: str | None) -> list[dict[str, str | None]]:
+    if not ical_text:
+        return []
+
+    attendees: list[dict[str, str | None]] = []
+    for line in ical_text.splitlines():
+        if not line.upper().startswith("ATTENDEE"):
+            continue
+
+        role_match = re.search(r"ROLE=([^;:]+)", line, flags=re.IGNORECASE)
+        cn_match = re.search(r"CN=([^;:]+)", line, flags=re.IGNORECASE)
+        email_match = re.search(r"mailto:([^\s;:]+)", line, flags=re.IGNORECASE)
+        attendees.append(
+            {
+                "name": cn_match.group(1).strip() if cn_match else None,
+                "email": email_match.group(1).strip().lower() if email_match else None,
+                "role": role_match.group(1).strip().lower() if role_match else None,
+            }
+        )
+    return attendees
 
 
 class MeetingService:
@@ -165,4 +257,133 @@ class MeetingService:
             followup_drafts=followup_drafts,
             contacts_to_create=contacts_to_create,
             deal_opportunities=[],
+        )
+
+    @staticmethod
+    def ingest_invite(db: Session, payload: InboundInviteRequest) -> InboundInviteResponse:
+        ical_title = _extract_ics_value(payload.ical_text, "SUMMARY")
+        ical_start = _extract_ics_value(payload.ical_text, "DTSTART")
+        ical_end = _extract_ics_value(payload.ical_text, "DTEND")
+        ical_desc = _extract_ics_value(payload.ical_text, "DESCRIPTION")
+        ical_url = _extract_ics_value(payload.ical_text, "URL")
+
+        title = _clean(payload.event_title) or _clean(ical_title) or _clean(payload.subject) or "Inbound Meeting Invite"
+        scheduled_at = payload.starts_at or _parse_datetime(ical_start)
+        ended_at = payload.ends_at or _parse_datetime(ical_end)
+        description = _clean(payload.description) or _clean(ical_desc)
+        meeting_url = _clean(payload.meeting_url) or _clean(ical_url) or _extract_meeting_url(description, payload.raw_payload.get("body", ""))
+        platform = _detect_platform(meeting_url, payload.platform)
+
+        meeting = Meeting(
+            id=uuid.uuid4(),
+            title=title,
+            platform=platform,
+            meeting_url=meeting_url or None,
+            scheduled_at=scheduled_at,
+            ended_at=ended_at,
+            summary=(
+                "Auto-captured by agent mailbox intake."
+                + (f" Provider: {payload.provider}." if payload.provider else "")
+            ),
+            transcript=description[:6000] if description else None,
+            action_items=[],
+        )
+        db.add(meeting)
+        db.flush()
+
+        attendees_from_payload = [
+            {
+                "name": _clean(a.name) or None,
+                "email": _clean(a.email).lower() or None,
+                "role": _clean(a.role) or None,
+            }
+            for a in payload.attendees
+            if _clean(a.name) or _clean(a.email)
+        ]
+        attendees_from_ics = _extract_attendees_from_ics(payload.ical_text)
+
+        merged: dict[str, dict[str, str | None]] = {}
+        for attendee in attendees_from_payload + attendees_from_ics:
+            email_key = (attendee.get("email") or "").lower()
+            key = email_key or f"name::{(attendee.get('name') or '').lower()}"
+            if not key or key == "name::":
+                continue
+            existing = merged.get(key, {})
+            merged[key] = {
+                "name": attendee.get("name") or existing.get("name"),
+                "email": attendee.get("email") or existing.get("email"),
+                "role": attendee.get("role") or existing.get("role"),
+            }
+
+        attendees_added = 0
+        contacts_created = 0
+
+        for attendee in merged.values():
+            contact_id = None
+            attendee_email = attendee.get("email")
+            attendee_name = attendee.get("name")
+
+            if attendee_email and payload.auto_create_contacts:
+                from app.services.contact_service import ContactService
+
+                existing = db.query(Person).filter(Person.email == attendee_email).first()
+                contact = ContactService.find_or_create_by_email(db, attendee_email, attendee_name)
+                contact_id = contact.id
+                if existing is None:
+                    contacts_created += 1
+                if contact.source is None:
+                    contact.source = "meeting_invite"
+
+            db.add(
+                MeetingAttendee(
+                    id=uuid.uuid4(),
+                    meeting_id=meeting.id,
+                    contact_id=contact_id,
+                    name=attendee_name,
+                    email=attendee_email,
+                    attendance_status="invited",
+                    duration_seconds=0,
+                    followup_status="not_started",
+                )
+            )
+            attendees_added += 1
+
+        sender_name, sender_email = parseaddr(_clean(payload.from_email) or "")
+        sender_final_email = (sender_email or _clean(payload.from_email)).strip().lower() or None
+        sender_final_name = _clean(payload.from_name) or _clean(sender_name) or None
+
+        engagement_event_id = None
+        if sender_final_email or sender_final_name:
+            capture = EngagementService.capture(
+                db,
+                EngagementCaptureRequest(
+                    name=sender_final_name,
+                    email=sender_final_email,
+                    event_type="meeting_invite_received",
+                    source_platform=platform or payload.provider,
+                    occurred_at=scheduled_at,
+                    notes=f"Invite captured for '{title}'.",
+                    raw_payload={
+                        "meeting_id": str(meeting.id),
+                        "meeting_title": title,
+                        "meeting_url": meeting_url,
+                        "provider": payload.provider,
+                        "source_mailbox": payload.source_mailbox,
+                    },
+                    auto_create_contact=payload.auto_create_contacts,
+                ),
+            )
+            engagement_event_id = str(capture.get("id")) if capture.get("id") else None
+
+        db.commit()
+        db.refresh(meeting)
+
+        return InboundInviteResponse(
+            meeting_id=meeting.id,
+            title=meeting.title,
+            platform=meeting.platform,
+            meeting_url=meeting.meeting_url,
+            attendees_added=attendees_added,
+            contacts_created=contacts_created,
+            engagement_event_id=engagement_event_id,
         )

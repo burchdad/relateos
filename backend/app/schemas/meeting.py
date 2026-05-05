@@ -87,3 +87,37 @@ class MeetingFollowUpResponse(BaseModel):
     followup_drafts: list[dict]
     contacts_to_create: list[dict]
     deal_opportunities: list[dict]
+
+
+class InviteAttendeeIn(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    role: str | None = None
+
+
+class InboundInviteRequest(BaseModel):
+    provider: str | None = None
+    source_mailbox: str | None = None
+    subject: str | None = None
+    from_email: str | None = None
+    from_name: str | None = None
+    event_title: str | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    meeting_url: str | None = None
+    platform: str | None = None
+    description: str | None = None
+    ical_text: str | None = None
+    attendees: list[InviteAttendeeIn] = Field(default_factory=list)
+    auto_create_contacts: bool = True
+    raw_payload: dict = Field(default_factory=dict)
+
+
+class InboundInviteResponse(BaseModel):
+    meeting_id: UUID
+    title: str
+    platform: str | None = None
+    meeting_url: str | None = None
+    attendees_added: int
+    contacts_created: int
+    engagement_event_id: str | None = None

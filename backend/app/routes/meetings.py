@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.meeting import (
     AttendeeImportRequest,
+    InboundInviteRequest,
+    InboundInviteResponse,
     MeetingCreate,
     MeetingFollowUpResponse,
     MeetingOut,
@@ -53,3 +55,8 @@ def generate_followups(meeting_id: uuid.UUID, db: Session = Depends(get_db)):
         return MeetingService.generate_followups(db, meeting_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/inbound-invite", response_model=InboundInviteResponse, status_code=201)
+def ingest_inbound_invite(payload: InboundInviteRequest, db: Session = Depends(get_db)):
+    return MeetingService.ingest_invite(db, payload)
