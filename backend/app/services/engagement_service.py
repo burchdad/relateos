@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 import json
+import logging
 from typing import Any
 
 from openai import OpenAI
@@ -110,7 +111,23 @@ def _heuristic_intel(
 
 
 class EngagementService:
-    _openai_client: OpenAI | None = OpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+    _openai_client: OpenAI | None = None
+
+    @staticmethod
+    def _get_openai_client() -> OpenAI | None:
+        if not settings.openai_api_key:
+            return None
+        if EngagementService._openai_client is not None:
+            return EngagementService._openai_client
+
+        try:
+            EngagementService._openai_client = OpenAI(api_key=settings.openai_api_key)
+            return EngagementService._openai_client
+        except Exception as exc:
+            # Keep the API boot-safe when OpenAI/httpx runtime is mismatched.
+            logging.getLogger(__name__).warning("OpenAI client unavailable, using heuristic enrichment only: %s", exc)
+            EngagementService._openai_client = None
+            return None
 
     @staticmethod
     def _touch_contact_engagement(db: Session, contact_id: uuid.UUID | None, occurred_at: datetime) -> None:
@@ -131,7 +148,8 @@ class EngagementService:
         notes: str | None,
         raw_payload: dict[str, Any],
     ) -> dict[str, Any] | None:
-        if not EngagementService._openai_client:
+        client = EngagementService._get_openai_client()
+        if not client:
             return None
 
         prompt = {
@@ -142,7 +160,7 @@ class EngagementService:
             "raw_payload": raw_payload,
         }
         try:
-            response = EngagementService._openai_client.chat.completions.create(
+            response = client.chat.completions.create(
                 model=settings.openai_model,
                 temperature=0.2,
                 messages=[
