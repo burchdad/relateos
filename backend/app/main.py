@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import inspect, text
@@ -148,6 +149,22 @@ _CORS_REGEX = re.compile(
     r"|http://localhost(:\d+)?"
     r"|http://127\.0\.0\.1(:\d+)?"
 )
+
+
+@app.exception_handler(HTTPException)
+async def _http_exception_cors_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """Re-implement FastAPI's default HTTPException handler so CORS headers are always included."""
+    origin = request.headers.get("origin", "")
+    headers: dict[str, str] = dict(exc.headers or {})
+    if origin and (origin in allowed_origins or _CORS_REGEX.match(origin)):
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers.setdefault("Vary", "Origin")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=headers,
+    )
 
 
 @app.exception_handler(Exception)
