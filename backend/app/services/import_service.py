@@ -273,7 +273,7 @@ def _read_uploaded_rows(file_name: str, file_bytes: bytes, sheet_name: str | Non
     if suffix == "csv":
         text = file_bytes.decode("utf-8-sig", errors="replace")
         reader = csv.reader(io.StringIO(text))
-        raw_rows = [list(row) for row in reader if any(_value_present(value) for value in row)]
+        raw_rows = [list(row) for row in reader]
         _, headers, rows = _rows_to_records(raw_rows)
         return None, headers, rows
 
@@ -283,7 +283,6 @@ def _read_uploaded_rows(file_name: str, file_bytes: bytes, sheet_name: str | Non
     workbook = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
     worksheet = workbook[sheet_name] if sheet_name and sheet_name in workbook.sheetnames else workbook.active
     raw_rows = [list(row) for row in worksheet.iter_rows(values_only=True)]
-    raw_rows = [row for row in raw_rows if any(_value_present(value) for value in row)]
     if not raw_rows:
         return worksheet.title, [], []
 
