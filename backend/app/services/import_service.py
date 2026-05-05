@@ -7,6 +7,7 @@ import uuid
 from collections import defaultdict
 from datetime import date, datetime
 from typing import Any
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
 
@@ -337,6 +338,18 @@ def _download_google_sheet(sheet_url: str, sheet_name: str | None) -> tuple[str,
             if not content:
                 raise ValueError("Google Sheets export returned an empty file")
             return file_name, content
+    except HTTPError as exc:
+        if exc.code in {401, 403}:
+            raise ValueError(
+                "Google denied access to this sheet. Set sharing to 'Anyone with the link can view' or publish the sheet to the web, then retry."
+            ) from exc
+        if exc.code == 404:
+            raise ValueError(
+                "Google Sheet not found. Confirm the sheet URL and tab (gid) are correct."
+            ) from exc
+        raise ValueError(
+            f"Could not fetch Google Sheet (HTTP {exc.code}). Make sure the sheet is publicly accessible."
+        ) from exc
     except Exception as exc:
         raise ValueError(
             "Could not fetch Google Sheet. Make sure the sheet is shared publicly or published, and the URL is valid."
