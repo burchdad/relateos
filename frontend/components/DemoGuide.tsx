@@ -5,24 +5,66 @@ import { useEffect, useMemo, useState } from "react";
 type DemoStep = {
   title: string;
   script: string;
+  location: string;
+  talkTrack: string;
 };
 
 const STEPS: DemoStep[] = [
   {
-    title: "Step 1: Open Dashboard",
-    script: "This tells me exactly who I should talk to today.",
+    title: "Step 1: Start On Dashboard",
+    script: "Open Dashboard and lead with priority clarity.",
+    location: "/dashboard",
+    talkTrack:
+      "This is our control tower. In seconds, I can see who needs outreach now, why they are high priority, and what should happen next.",
   },
   {
-    title: "Step 2: Click A Contact",
-    script: "It knows why they matter, what is going on, and what I should say.",
+    title: "Step 2: Enter Relationships Context",
+    script: "Move into Relationships to show decision context and relationship momentum.",
+    location: "/relationships",
+    talkTrack:
+      "Each relationship includes context, timeline, and recommended next action, so reps are not guessing what to do or say.",
   },
   {
-    title: "Step 3: Show Message",
-    script: "And it writes it in my voice, not generic automation.",
+    title: "Step 3: Show Message + Action",
+    script: "Generate an AI message in your voice and execute the next touchpoint.",
+    location: "/relationships",
+    talkTrack:
+      "RelateOS drafts messages that sound like me, then logs interactions so the system gets smarter after every action.",
   },
   {
-    title: "Step 4: Click Send",
-    script: "Now it logs the interaction, updates relationship context, and keeps momentum moving.",
+    title: "Step 4: Unified Import Intelligence",
+    script: "Open the new Imports wizard and pick source in one flow.",
+    location: "/imports",
+    talkTrack:
+      "Instead of separate import blocks, we now choose source type once, analyze workbook or Google Sheet, review mappings, then commit with confidence.",
+  },
+  {
+    title: "Step 5: Analyze Before Commit",
+    script: "Run Analyze to preview detected tabs, headers, mappings, and sample rows.",
+    location: "/imports",
+    talkTrack:
+      "This is BI-style safety: analyze first, select tabs, override mappings, then run import. It reduces bad writes and preserves unmapped fields.",
+  },
+  {
+    title: "Step 6: AI Event Capture Automation",
+    script: "Show that engagement events are now auto-enriched by AI on create/import/capture.",
+    location: "/signals",
+    talkTrack:
+      "Every event now gets structured intelligence: summary, intent, engagement score, tags, confidence, and suggested next action.",
+  },
+  {
+    title: "Step 7: Agent Mailbox Invite Intake",
+    script: "Demo inbound invite ingestion for agent mailbox workflows.",
+    location: "/meetings",
+    talkTrack:
+      "Forward an invite to the agent mailbox and we auto-create meeting, parse attendees, and log a meeting_invite_received engagement signal.",
+  },
+  {
+    title: "Step 8: Close With Compound Intelligence",
+    script: "Return to Dashboard to show closed-loop execution.",
+    location: "/dashboard",
+    talkTrack:
+      "This is the full loop: capture activity automatically, enrich with AI, and turn it into prioritized actions that move pipeline every day.",
   },
 ];
 
@@ -69,6 +111,10 @@ export default function DemoGuide() {
         <p className="text-[11px] uppercase tracking-[0.2em] text-accent">Guided Demo</p>
         <h3 className="mt-2 text-lg font-semibold text-text">{step.title}</h3>
         <p className="mt-2 text-sm leading-6 text-muted">{step.script}</p>
+        <p className="mt-2 rounded-md border border-soft bg-base px-2 py-1 text-[11px] text-muted">
+          Navigate: <span className="font-mono text-text">{step.location}</span>
+        </p>
+        <p className="mt-2 text-sm leading-6 text-text">{step.talkTrack}</p>
 
         <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-soft">
           <div
