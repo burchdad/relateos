@@ -35,6 +35,26 @@ type UploadResult = {
   warnings: string[];
 };
 
+type AnalyzeSheet = {
+  sheet_name: string;
+  detected_header_row: number | null;
+  row_count: number;
+  raw_columns: string[];
+  sample_rows: Record<string, unknown>[];
+  suggested_column_mapping: Record<string, string>;
+  confidence: number;
+  unmapped_columns: string[];
+  warnings: string[];
+};
+
+type AnalyzeResult = {
+  file_name: string;
+  source_type: string;
+  sheets: AnalyzeSheet[];
+  allowed_targets: string[];
+  warnings: string[];
+};
+
 export default function ImportsPage() {
   const API_URL = useMemo(resolveApiUrl, []);
   const [sourceType, setSourceType] = useState("contacts");
@@ -51,6 +71,12 @@ export default function ImportsPage() {
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [sheetUrl, setSheetUrl] = useState("");
   const [importingUrl, setImportingUrl] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState<AnalyzeResult | null>(null);
+  const [showAnalysisModal, setShowAnalysisModal] = useState(false);
+  const [selectedAnalyzeSheets, setSelectedAnalyzeSheets] = useState<string[]>([]);
+  const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
+  const [importError, setImportError] = useState<string>("");
 
   // Engagement import
   const [engageRows, setEngageRows] = useState("");
@@ -104,10 +130,29 @@ export default function ImportsPage() {
     }
   };
 
-  const handleWorkbookUpload = async () => {
+  const buildMappingOverrides = () => {
+    return Object.fromEntries(Object.entries(mappingOverrides).filter(([, target]) => Boolean(target)));
+  };
+
+  const loadAnalysisIntoEditor = (result: AnalyzeResult) => {
+    const defaultSheets = result.sheets.map(s => s.sheet_name);
+    setSelectedAnalyzeSheets(defaultSheets);
+    const merged: Record<string, string> = {};
+    result.sheets.forEach(sheet => {
+      Object.entries(sheet.suggested_column_mapping).forEach(([column, target]) => {
+        if (!merged[column]) merged[column] = target;
+      });
+    });
+    setMappingOverrides(merged);
+    if (!headerRow && result.sheets[0]?.detected_header_row) {
+      setHeaderRow(String(result.sheets[0].detected_header_row));
+    }
+  };
+
+  const handleAnalyzeWorkbook = async () => {
     if (!uploadFile) return;
-    setUploadingWorkbook(true);
-    setUploadResult(null);
+    setAnalyzing(true);
+    setImportError("");
     try {
       const formData = new FormData();
       formData.append("file", uploadFile);
@@ -117,25 +162,27 @@ export default function ImportsPage() {
       if (headerRow.trim()) formData.append("header_row", headerRow.trim());
       formData.append("include_all_sheets", String(includeAllSheets));
 
-      const res = await fetch(`${API_URL}/imports/upload`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (res.ok) {
-        setUploadResult(await res.json());
+      const res = await fetch(`${API_URL}/imports/analyze/upload`, { method: "POST", body: formData });
+      const body = await res.json();
+      if (!res.ok) {
+        setImportError(String(body?.detail || "Analyze failed"));
+        return;
       }
+      const result = body as AnalyzeResult;
+      setAnalysis(result);
+      loadAnalysisIntoEditor(result);
+      setShowAnalysisModal(true);
     } finally {
-      setUploadingWorkbook(false);
+      setAnalyzing(false);
     }
   };
 
-  const handleGoogleSheetImport = async () => {
+  const handleAnalyzeGoogleSheet = async () => {
     if (!sheetUrl.trim()) return;
-    setImportingUrl(true);
-    setUploadResult(null);
+    setAnalyzing(true);
+    setImportError("");
     try {
-      const res = await fetch(`${API_URL}/imports/url`, {
+      const res = await fetch(`${API_URL}/imports/analyze/url`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -147,9 +194,83 @@ export default function ImportsPage() {
           include_all_sheets: includeAllSheets,
         }),
       });
-      if (res.ok) {
-        setUploadResult(await res.json());
+      const body = await res.json();
+      if (!res.ok) {
+        setImportError(String(body?.detail || "Analyze failed"));
+        return;
       }
+      const result = body as AnalyzeResult;
+      setAnalysis(result);
+      loadAnalysisIntoEditor(result);
+      setShowAnalysisModal(true);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleWorkbookUpload = async () => {
+    if (!uploadFile) return;
+    setUploadingWorkbook(true);
+    setUploadResult(null);
+    setImportError("");
+    try {
+      const formData = new FormData();
+      formData.append("file", uploadFile);
+      formData.append("source_type", sourceType);
+      if (sheetName.trim()) formData.append("sheet_name", sheetName.trim());
+      const selectedCsv = selectedAnalyzeSheets.join(",");
+      const selectedOrInputSheets = selectedCsv || sheetNamesCsv.trim();
+      if (selectedOrInputSheets) formData.append("sheet_names", selectedOrInputSheets);
+      if (headerRow.trim()) formData.append("header_row", headerRow.trim());
+      formData.append("include_all_sheets", String(includeAllSheets));
+      formData.append("mapping_override_json", JSON.stringify(buildMappingOverrides()));
+
+      const res = await fetch(`${API_URL}/imports/upload`, {
+        method: "POST",
+        body: formData,
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setImportError(String(body?.detail || "Import failed"));
+        return;
+      }
+      setUploadResult(body as UploadResult);
+      setShowAnalysisModal(false);
+    } finally {
+      setUploadingWorkbook(false);
+    }
+  };
+
+  const handleGoogleSheetImport = async () => {
+    if (!sheetUrl.trim()) return;
+    setImportingUrl(true);
+    setUploadResult(null);
+    setImportError("");
+    try {
+      const selectedOrInputSheets = selectedAnalyzeSheets.length
+        ? selectedAnalyzeSheets
+        : sheetNamesCsv.split(",").map(s => s.trim()).filter(Boolean);
+
+      const res = await fetch(`${API_URL}/imports/url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_type: sourceType,
+          sheet_url: sheetUrl.trim(),
+          sheet_name: sheetName.trim() || null,
+          sheet_names: selectedOrInputSheets,
+          header_row: headerRow.trim() ? Number(headerRow.trim()) : null,
+          include_all_sheets: includeAllSheets,
+          mapping_override: buildMappingOverrides(),
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setImportError(String(body?.detail || "Import failed"));
+        return;
+      }
+      setUploadResult(body as UploadResult);
+      setShowAnalysisModal(false);
     } finally {
       setImportingUrl(false);
     }
@@ -226,12 +347,16 @@ export default function ImportsPage() {
           Import all sheets when Sheet Name is blank
         </label>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={handleAnalyzeWorkbook} disabled={analyzing || !uploadFile}
+            className="rounded-lg border border-soft px-4 py-2 text-sm font-medium text-text hover:bg-base transition disabled:opacity-50">
+            {analyzing ? "Analyzing…" : "Analyze Workbook"}
+          </button>
           <button onClick={handleWorkbookUpload} disabled={uploadingWorkbook || !uploadFile}
             className="rounded-lg bg-accent/20 border border-accent/40 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition disabled:opacity-50">
             {uploadingWorkbook ? "Importing Workbook…" : "Upload & Import Workbook"}
           </button>
-          <p className="text-xs text-muted">Designed for larger files. Imports run in batches and dedupe by email/phone before creating contacts.</p>
+          <p className="text-xs text-muted">Designed for larger files. Analyze first to review mappings and selected tabs before write.</p>
         </div>
 
         {uploadResult && (
@@ -353,6 +478,10 @@ export default function ImportsPage() {
         </label>
 
         <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={handleAnalyzeGoogleSheet} disabled={analyzing || !sheetUrl.trim()}
+            className="rounded-lg border border-soft px-4 py-2 text-sm font-medium text-text hover:bg-base transition disabled:opacity-50">
+            {analyzing ? "Analyzing…" : "Analyze Google Sheet"}
+          </button>
           <button onClick={handleGoogleSheetImport} disabled={importingUrl || !sheetUrl.trim()}
             className="rounded-lg bg-accent/20 border border-accent/40 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition disabled:opacity-50">
             {importingUrl ? "Importing Google Sheet…" : "Import From Google Sheets URL"}
@@ -360,6 +489,90 @@ export default function ImportsPage() {
           <p className="text-xs text-muted">Public sheets only for now. Private/authenticated Google Sheets will need Google API credentials in the next step.</p>
         </div>
       </div>
+
+      {showAnalysisModal && analysis && (
+        <div className="fixed inset-0 z-50 bg-black/60 p-4 md:p-8 overflow-y-auto">
+          <div className="max-w-6xl mx-auto rounded-2xl border border-soft bg-panel p-6 space-y-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-text">Import Analysis Preview</h3>
+                <p className="text-xs text-muted mt-1">Review tabs, mappings, and sample rows before import commit.</p>
+              </div>
+              <button onClick={() => setShowAnalysisModal(false)} className="rounded-lg border border-soft px-3 py-1.5 text-sm text-text">Close</button>
+            </div>
+
+            <div className="rounded-lg border border-soft bg-base p-4 space-y-3">
+              <p className="text-xs text-muted uppercase tracking-wide">Detected Tabs</p>
+              <div className="grid md:grid-cols-2 gap-3">
+                {analysis.sheets.map(sheet => (
+                  <label key={sheet.sheet_name} className="rounded-lg border border-soft p-3 text-sm space-y-1">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedAnalyzeSheets.includes(sheet.sheet_name)}
+                        onChange={e => {
+                          if (e.target.checked) {
+                            setSelectedAnalyzeSheets(prev => [...prev, sheet.sheet_name]);
+                          } else {
+                            setSelectedAnalyzeSheets(prev => prev.filter(name => name !== sheet.sheet_name));
+                          }
+                        }}
+                      />
+                      <span className="font-medium text-text">{sheet.sheet_name}</span>
+                    </div>
+                    <p className="text-xs text-muted">{sheet.row_count.toLocaleString()} rows · header row {sheet.detected_header_row ?? "auto"} · {Math.round(sheet.confidence * 100)}% confidence</p>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-soft bg-base p-4 space-y-3">
+              <p className="text-xs text-muted uppercase tracking-wide">Mapping Overrides</p>
+              <div className="max-h-72 overflow-y-auto space-y-2">
+                {Array.from(new Set(analysis.sheets.flatMap(sheet => sheet.raw_columns))).map(column => (
+                  <div key={column} className="grid grid-cols-1 md:grid-cols-2 gap-2 items-center">
+                    <span className="text-xs text-muted">{column}</span>
+                    <select
+                      value={mappingOverrides[column] ?? ""}
+                      onChange={e => setMappingOverrides(prev => ({ ...prev, [column]: e.target.value }))}
+                      className="rounded-md border border-soft bg-panel px-2 py-1.5 text-xs text-text"
+                    >
+                      <option value="">(auto/no override)</option>
+                      {analysis.allowed_targets.map(target => (
+                        <option key={target} value={target}>{target}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-soft bg-base p-4 space-y-2">
+              <p className="text-xs text-muted uppercase tracking-wide">Sample Preview</p>
+              {analysis.sheets.slice(0, 2).map(sheet => (
+                <div key={sheet.sheet_name} className="space-y-1">
+                  <p className="text-xs text-text font-medium">{sheet.sheet_name}</p>
+                  <pre className="text-[11px] text-muted overflow-auto bg-panel border border-soft rounded-md p-2">{JSON.stringify(sheet.sample_rows.slice(0, 2), null, 2)}</pre>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button onClick={() => setShowAnalysisModal(false)} className="rounded-lg border border-soft px-4 py-2 text-sm text-text">Cancel</button>
+              <button
+                onClick={sheetUrl.trim() ? handleGoogleSheetImport : handleWorkbookUpload}
+                className="rounded-lg bg-accent/20 border border-accent/40 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30"
+              >
+                Run Import With Reviewed Settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {importError && (
+        <div className="rounded-lg border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-300">{importError}</div>
+      )}
 
       {/* AI Import Mapper */}
       <div className="rounded-xl border border-soft bg-panel p-6 space-y-4">

@@ -18,7 +18,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.entities import Organization, Person, Relationship, RelationshipEdge
-from app.schemas.content_asset import ImportMapRequest, ImportMapResponse, ImportUploadResponse
+from app.schemas.content_asset import (
+    ImportAnalyzeResponse,
+    ImportAnalyzeSheet,
+    ImportMapRequest,
+    ImportMapResponse,
+    ImportUploadResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +107,7 @@ _SOURCE_TYPE_TABLE_MAP: dict[str, str] = {
 }
 
 _ALLOWED_AI_FIELDS = sorted(set(_COLUMN_HINTS.values()))
+_ALLOWED_IMPORT_TARGETS = sorted(set(_ALLOWED_AI_FIELDS + ["metadata.raw"]))
 _BATCH_SIZE = 500
 
 
@@ -531,7 +538,7 @@ class ImportService:
                 f"Raw columns: {payload.raw_columns}\n"
                 f"Sample rows: {payload.sample_rows[:5]}\n\n"
                 "Map only the unmapped columns to one of these canonical fields:\n"
-                f"{_ALLOWED_AI_FIELDS + ['metadata.raw']}\n\n"
+                f"{_ALLOWED_IMPORT_TARGETS}\n\n"
                 "Return a JSON object where each key is an unmapped column and each value is a canonical field name. "
                 "If a column should simply be preserved without a direct structured field, map it to metadata.raw. "
                 "Return only valid JSON."
@@ -546,7 +553,7 @@ class ImportService:
             results: dict[str, str] = {}
             for column, target in parsed.items():
                 canonical = str(target)
-                if column in unmapped_fields and canonical in _ALLOWED_AI_FIELDS + ["metadata.raw"]:
+                if column in unmapped_fields and canonical in _ALLOWED_IMPORT_TARGETS:
                     results[column] = canonical
             return results
         except Exception as exc:
@@ -604,6 +611,159 @@ class ImportService:
         )
 
     @staticmethod
+    def _apply_mapping_override(
+        headers: list[str],
+        mapping: dict[str, str],
+        warnings: list[str],
+        mapping_override: dict[str, str] | None,
+    ) -> dict[str, str]:
+        if not mapping_override:
+            return mapping
+
+        output = dict(mapping)
+        header_set = set(headers)
+        for column, target in mapping_override.items():
+            if column not in header_set:
+                if len(warnings) < 20:
+                    warnings.append(f"Mapping override ignored for unknown column: {column}")
+                continue
+            if target not in _ALLOWED_IMPORT_TARGETS:
+                if len(warnings) < 20:
+                    warnings.append(f"Mapping override ignored for unsupported target {target} on column {column}")
+                continue
+            output[column] = target
+        return output
+
+    @staticmethod
+    def analyze_import_file(
+        *,
+        file_name: str,
+        file_bytes: bytes,
+        source_type: str,
+        sheet_name: str | None = None,
+        sheet_names: list[str] | None = None,
+        header_row: int | None = None,
+        include_all_sheets: bool = True,
+    ) -> ImportAnalyzeResponse:
+        suffix = file_name.lower().rsplit(".", 1)[-1] if "." in file_name else ""
+        warnings: list[str] = []
+
+        if suffix == "csv":
+            text = file_bytes.decode("utf-8-sig", errors="replace")
+            raw_rows = [list(row) for row in csv.reader(io.StringIO(text))]
+            header_index, headers, rows = _rows_to_records(raw_rows, header_row=header_row)
+            mapping = ImportService.map_import(
+                ImportMapRequest(source_type=source_type, raw_columns=headers, sample_rows=rows[:10])
+            )
+            sheet = ImportAnalyzeSheet(
+                sheet_name="csv",
+                detected_header_row=header_index + 1,
+                row_count=len(rows),
+                raw_columns=headers,
+                sample_rows=rows[:10],
+                suggested_column_mapping=mapping.suggested_column_mapping,
+                confidence=mapping.confidence,
+                unmapped_columns=mapping.unmapped_fields,
+                warnings=mapping.warnings,
+            )
+            return ImportAnalyzeResponse(
+                file_name=file_name,
+                source_type=source_type,
+                sheets=[sheet],
+                allowed_targets=_ALLOWED_IMPORT_TARGETS,
+                warnings=warnings,
+            )
+
+        if suffix not in {"xlsx", "xlsm"}:
+            raise ValueError("Unsupported file format. Please upload .xlsx, .xlsm, or .csv")
+
+        workbook = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+        selected_names = [name for name in (sheet_names or []) if name in workbook.sheetnames]
+        if sheet_names and not selected_names:
+            raise ValueError("None of the provided sheet_names were found in the workbook")
+
+        if selected_names:
+            target_sheet_names = selected_names
+        elif include_all_sheets and not sheet_name:
+            target_sheet_names = list(workbook.sheetnames)
+        elif sheet_name and sheet_name in workbook.sheetnames:
+            target_sheet_names = [sheet_name]
+        else:
+            target_sheet_names = [workbook.active.title]
+
+        analyzed: list[ImportAnalyzeSheet] = []
+        for ws_name in target_sheet_names:
+            ws = workbook[ws_name]
+            raw_rows = [list(row) for row in ws.iter_rows(values_only=True)]
+            if not raw_rows:
+                continue
+            header_index, headers, rows = _rows_to_records(raw_rows, header_row=header_row)
+            mapping = ImportService.map_import(
+                ImportMapRequest(source_type=source_type, raw_columns=headers, sample_rows=rows[:10])
+            )
+            analyzed.append(
+                ImportAnalyzeSheet(
+                    sheet_name=ws_name,
+                    detected_header_row=header_index + 1,
+                    row_count=len(rows),
+                    raw_columns=headers,
+                    sample_rows=rows[:10],
+                    suggested_column_mapping=mapping.suggested_column_mapping,
+                    confidence=mapping.confidence,
+                    unmapped_columns=mapping.unmapped_fields,
+                    warnings=mapping.warnings,
+                )
+            )
+
+        if not analyzed:
+            warnings.append("No data rows found in selected sheets.")
+
+        return ImportAnalyzeResponse(
+            file_name=file_name,
+            source_type=source_type,
+            sheets=analyzed,
+            allowed_targets=_ALLOWED_IMPORT_TARGETS,
+            warnings=warnings,
+        )
+
+    @staticmethod
+    def analyze_import_url(
+        *,
+        sheet_url: str,
+        source_type: str,
+        sheet_name: str | None = None,
+        sheet_names: list[str] | None = None,
+        header_row: int | None = None,
+        include_all_sheets: bool = True,
+    ) -> ImportAnalyzeResponse:
+        normalized_url = str(sheet_url or "").strip()
+        if not normalized_url:
+            raise ValueError("Google Sheets URL is required")
+        if "docs.google.com/spreadsheets/" not in normalized_url:
+            raise ValueError("Only public Google Sheets URLs are supported right now")
+
+        force_workbook_export = bool(include_all_sheets or sheet_names)
+        file_name, payload = _download_google_sheet(
+            normalized_url,
+            sheet_name,
+            force_workbook_export=force_workbook_export,
+        )
+        response = ImportService.analyze_import_file(
+            file_name=file_name,
+            file_bytes=payload,
+            source_type=source_type,
+            sheet_name=sheet_name,
+            sheet_names=sheet_names,
+            header_row=header_row,
+            include_all_sheets=include_all_sheets,
+        )
+        response.warnings = [
+            "Analysis completed from Google Sheets URL. Private/authenticated sheets are not supported yet.",
+            *response.warnings,
+        ]
+        return response
+
+    @staticmethod
     def import_contacts_file(
         db: Session,
         *,
@@ -614,6 +774,7 @@ class ImportService:
         sheet_names: list[str] | None = None,
         header_row: int | None = None,
         include_all_sheets: bool = False,
+        mapping_override: dict[str, str] | None = None,
     ) -> ImportUploadResponse:
         resolved_sheet_name, imported_sheet_names, header_row_used, headers, rows = _read_uploaded_rows(
             file_name,
@@ -626,10 +787,14 @@ class ImportService:
         mapping_response = ImportService.map_import(
             ImportMapRequest(source_type=source_type, raw_columns=headers, sample_rows=rows[:10])
         )
-        mapping = mapping_response.suggested_column_mapping
-        target_map = _build_target_map(mapping)
-
         warnings = list(mapping_response.warnings)
+        mapping = ImportService._apply_mapping_override(
+            headers,
+            mapping_response.suggested_column_mapping,
+            warnings,
+            mapping_override,
+        )
+        target_map = _build_target_map(mapping)
         stats = {
             "rows_processed": 0,
             "rows_skipped": 0,
@@ -1030,6 +1195,7 @@ class ImportService:
         sheet_names: list[str] | None = None,
         header_row: int | None = None,
         include_all_sheets: bool = False,
+        mapping_override: dict[str, str] | None = None,
     ) -> ImportUploadResponse:
         normalized_url = str(sheet_url or "").strip()
         if not normalized_url:
@@ -1052,6 +1218,7 @@ class ImportService:
             sheet_names=sheet_names,
             header_row=header_row,
             include_all_sheets=include_all_sheets,
+            mapping_override=mapping_override,
         )
         result.warnings = [
             "Imported from Google Sheets URL. Private/authenticated sheets are not supported yet.",

@@ -13,6 +13,8 @@ from app.schemas.content_asset import (
     FunnelCampaignOut,
     ImportMapRequest,
     ImportMapResponse,
+    ImportAnalyzeResponse,
+    ImportAnalyzeUrlRequest,
     ImportUrlRequest,
     ImportUploadResponse,
 )
@@ -71,6 +73,50 @@ def map_import(payload: ImportMapRequest):
     return ImportService.map_import(payload)
 
 
+@router.post("/imports/analyze/upload", response_model=ImportAnalyzeResponse)
+async def analyze_upload_import(
+    file: UploadFile = File(...),
+    source_type: str = Form("contacts"),
+    sheet_name: str | None = Form(None),
+    sheet_names: str | None = Form(None),
+    header_row: int | None = Form(None),
+    include_all_sheets: bool = Form(True),
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="File name is required")
+    payload = await file.read()
+    if not payload:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    selected_sheet_names = [item.strip() for item in (sheet_names or "").split(",") if item.strip()]
+    try:
+        return ImportService.analyze_import_file(
+            file_name=file.filename,
+            file_bytes=payload,
+            source_type=source_type,
+            sheet_name=sheet_name,
+            sheet_names=selected_sheet_names,
+            header_row=header_row,
+            include_all_sheets=include_all_sheets,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/imports/analyze/url", response_model=ImportAnalyzeResponse)
+def analyze_url_import(payload: ImportAnalyzeUrlRequest):
+    try:
+        return ImportService.analyze_import_url(
+            sheet_url=payload.sheet_url,
+            source_type=payload.source_type,
+            sheet_name=payload.sheet_name,
+            sheet_names=payload.sheet_names,
+            header_row=payload.header_row,
+            include_all_sheets=payload.include_all_sheets,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/imports/upload", response_model=ImportUploadResponse)
 async def upload_import(
     file: UploadFile = File(...),
@@ -79,6 +125,7 @@ async def upload_import(
     sheet_names: str | None = Form(None),
     header_row: int | None = Form(None),
     include_all_sheets: bool = Form(False),
+    mapping_override_json: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     if not file.filename:
@@ -87,6 +134,12 @@ async def upload_import(
     if not payload:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
     selected_sheet_names = [item.strip() for item in (sheet_names or "").split(",") if item.strip()]
+    mapping_override: dict[str, str] = {}
+    if mapping_override_json:
+        import json
+        parsed = json.loads(mapping_override_json)
+        if isinstance(parsed, dict):
+            mapping_override = {str(k): str(v) for k, v in parsed.items()}
     try:
         return ImportService.import_contacts_file(
             db,
@@ -97,6 +150,7 @@ async def upload_import(
             sheet_names=selected_sheet_names,
             header_row=header_row,
             include_all_sheets=include_all_sheets,
+            mapping_override=mapping_override,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -117,6 +171,7 @@ def import_from_url(payload: ImportUrlRequest, db: Session = Depends(get_db)):
             sheet_names=payload.sheet_names,
             header_row=payload.header_row,
             include_all_sheets=payload.include_all_sheets,
+            mapping_override=payload.mapping_override,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

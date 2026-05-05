@@ -107,6 +107,26 @@ class ImportUploadResponse(BaseModel):
     warnings: list[str]
 
 
+class ImportAnalyzeSheet(BaseModel):
+    sheet_name: str
+    detected_header_row: int | None = None
+    row_count: int
+    raw_columns: list[str]
+    sample_rows: list[dict] = Field(default_factory=list)
+    suggested_column_mapping: dict[str, str]
+    confidence: float
+    unmapped_columns: list[str]
+    warnings: list[str]
+
+
+class ImportAnalyzeResponse(BaseModel):
+    file_name: str
+    source_type: str
+    sheets: list[ImportAnalyzeSheet]
+    allowed_targets: list[str]
+    warnings: list[str]
+
+
 class ImportUrlRequest(BaseModel):
     source_type: str = "contacts"
     sheet_url: str
@@ -114,5 +134,15 @@ class ImportUrlRequest(BaseModel):
     sheet_names: list[str] = Field(default_factory=list)
     header_row: int | None = Field(default=None, ge=1)
     include_all_sheets: bool = False
+    mapping_override: dict[str, str] = Field(default_factory=dict)
+
+
+class ImportAnalyzeUrlRequest(BaseModel):
+    source_type: str = "contacts"
+    sheet_url: str
+    sheet_name: str | None = None
+    sheet_names: list[str] = Field(default_factory=list)
+    header_row: int | None = Field(default=None, ge=1)
+    include_all_sheets: bool = True
 
 
