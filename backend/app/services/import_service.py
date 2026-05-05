@@ -28,10 +28,14 @@ _COLUMN_HINTS: dict[str, str] = {
     "email": "person.email",
     "phone": "person.phone",
     "mobile": "person.phone",
+    "number": "person.phone",
+    "cell": "person.phone",
     "company": "organization.name",
     "organization": "organization.name",
     "title": "person.primary_role",
     "role": "person.primary_role",
+    "main asset class": "person.tags",
+    "asset class": "person.tags",
     "secondary role": "person.secondary_roles",
     "secondary roles": "person.secondary_roles",
     "source": "person.source",
@@ -40,8 +44,15 @@ _COLUMN_HINTS: dict[str, str] = {
     "status": "person.relationship_stage",
     "notes": "person.notes_summary",
     "note": "person.notes_summary",
+    "what i'm looking for": "person.notes_summary",
+    "looking for": "person.notes_summary",
     "tags": "person.tags",
     "tag": "person.tags",
+    "request type": "relationship.type",
+    "target location": "metadata.raw",
+    "target locations": "metadata.raw",
+    "telegram": "metadata.raw",
+    "telegram id": "metadata.raw",
     "lifetime value": "person.lifetime_value",
     "ltv": "person.lifetime_value",
     "referral value": "person.referral_value",
@@ -184,17 +195,77 @@ def _build_target_map(mapping: dict[str, str]) -> dict[str, list[str]]:
     return dict(target_map)
 
 
+def _make_unique_headers(values: list[Any]) -> list[str]:
+    headers: list[str] = []
+    seen: dict[str, int] = defaultdict(int)
+    for index, value in enumerate(values, start=1):
+        base = str(value or "").strip() or f"Column {index}"
+        seen[base] += 1
+        headers.append(base if seen[base] == 1 else f"{base} ({seen[base]})")
+    return headers
+
+
+def _score_header_candidate(values: list[Any]) -> float:
+    normalized = [_normalize_header(value) for value in values if _value_present(value)]
+    if not normalized:
+        return -1.0
+
+    hint_matches = 0
+    short_label_count = 0
+    narrative_penalty = 0.0
+    for item in normalized:
+        if any(hint in item or item in hint for hint in _COLUMN_HINTS):
+            hint_matches += 1
+        if len(item) <= 32:
+            short_label_count += 1
+        if len(item) > 48:
+            narrative_penalty += 1.5
+
+    unique_count = len(set(normalized))
+    if len(normalized) == 1 and len(normalized[0]) > 40:
+        return -2.0
+
+    return hint_matches * 3.0 + short_label_count * 0.35 + unique_count * 0.2 - narrative_penalty
+
+
+def _detect_header_row(raw_rows: list[list[Any]]) -> int:
+    search_window = raw_rows[:20]
+    best_index = 0
+    best_score = float("-inf")
+    for index, row in enumerate(search_window):
+        score = _score_header_candidate(row)
+        if score > best_score:
+            best_score = score
+            best_index = index
+    return best_index
+
+
+def _rows_to_records(raw_rows: list[list[Any]]) -> tuple[int, list[str], list[dict[str, Any]]]:
+    if not raw_rows:
+        return 0, [], []
+
+    header_index = _detect_header_row(raw_rows)
+    headers = _make_unique_headers(raw_rows[header_index])
+    width = max(len(headers), max(len(row) for row in raw_rows[header_index:]))
+    if len(headers) < width:
+        headers.extend([f"Column {index}" for index in range(len(headers) + 1, width + 1)])
+
+    rows: list[dict[str, Any]] = []
+    for raw_row in raw_rows[header_index + 1:]:
+        padded = list(raw_row) + [None] * (len(headers) - len(raw_row))
+        normalized = {header: _serialize_cell(value) for header, value in zip(headers, padded)}
+        if any(_value_present(value) for value in normalized.values()):
+            rows.append(normalized)
+    return header_index, headers, rows
+
+
 def _read_uploaded_rows(file_name: str, file_bytes: bytes, sheet_name: str | None) -> tuple[str | None, list[str], list[dict[str, Any]]]:
     suffix = file_name.lower().rsplit(".", 1)[-1] if "." in file_name else ""
     if suffix == "csv":
         text = file_bytes.decode("utf-8-sig", errors="replace")
-        reader = csv.DictReader(io.StringIO(text))
-        headers = [str(header or "").strip() for header in (reader.fieldnames or [])]
-        rows = []
-        for row in reader:
-            normalized = {header: _serialize_cell(row.get(header)) for header in headers}
-            if any(_value_present(value) for value in normalized.values()):
-                rows.append(normalized)
+        reader = csv.reader(io.StringIO(text))
+        raw_rows = [list(row) for row in reader if any(_value_present(value) for value in row)]
+        _, headers, rows = _rows_to_records(raw_rows)
         return None, headers, rows
 
     if suffix not in {"xlsx", "xlsm"}:
@@ -202,21 +273,12 @@ def _read_uploaded_rows(file_name: str, file_bytes: bytes, sheet_name: str | Non
 
     workbook = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
     worksheet = workbook[sheet_name] if sheet_name and sheet_name in workbook.sheetnames else workbook.active
-    iterator = worksheet.iter_rows(values_only=True)
-    header_row = next(iterator, None)
-    if not header_row:
+    raw_rows = [list(row) for row in worksheet.iter_rows(values_only=True)]
+    raw_rows = [row for row in raw_rows if any(_value_present(value) for value in row)]
+    if not raw_rows:
         return worksheet.title, [], []
 
-    headers = []
-    for index, value in enumerate(header_row, start=1):
-        header = str(value or "").strip() or f"Column {index}"
-        headers.append(header)
-
-    rows: list[dict[str, Any]] = []
-    for raw_row in iterator:
-        normalized = {header: _serialize_cell(value) for header, value in zip(headers, raw_row)}
-        if any(_value_present(value) for value in normalized.values()):
-            rows.append(normalized)
+    _, headers, rows = _rows_to_records(raw_rows)
     return worksheet.title, headers, rows
 
 
