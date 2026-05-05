@@ -20,6 +20,7 @@ type UploadResult = {
   file_name: string;
   source_type: string;
   sheet_name: string | null;
+  imported_sheet_names: string[];
   header_row_used: number | null;
   rows_processed: number;
   rows_skipped: number;
@@ -43,6 +44,7 @@ export default function ImportsPage() {
   const [loading, setLoading] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [sheetName, setSheetName] = useState("");
+  const [sheetNamesCsv, setSheetNamesCsv] = useState("");
   const [headerRow, setHeaderRow] = useState("");
   const [includeAllSheets, setIncludeAllSheets] = useState(true);
   const [uploadingWorkbook, setUploadingWorkbook] = useState(false);
@@ -111,6 +113,7 @@ export default function ImportsPage() {
       formData.append("file", uploadFile);
       formData.append("source_type", sourceType);
       if (sheetName.trim()) formData.append("sheet_name", sheetName.trim());
+      if (sheetNamesCsv.trim()) formData.append("sheet_names", sheetNamesCsv.trim());
       if (headerRow.trim()) formData.append("header_row", headerRow.trim());
       formData.append("include_all_sheets", String(includeAllSheets));
 
@@ -139,6 +142,7 @@ export default function ImportsPage() {
           source_type: sourceType,
           sheet_url: sheetUrl.trim(),
           sheet_name: sheetName.trim() || null,
+          sheet_names: sheetNamesCsv.split(",").map(s => s.trim()).filter(Boolean),
           header_row: headerRow.trim() ? Number(headerRow.trim()) : null,
           include_all_sheets: includeAllSheets,
         }),
@@ -164,7 +168,7 @@ export default function ImportsPage() {
           <p className="text-sm text-muted mt-1">Upload a .xlsx, .xlsm, or .csv file. The importer maps contact fields, creates organizations, links relationship rows, and preserves unmapped columns in metadata so no spreadsheet data is lost.</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <label className="text-xs text-muted uppercase tracking-wide block mb-1">Source Type</label>
             <select value={sourceType} onChange={e => setSourceType(e.target.value)}
@@ -201,6 +205,15 @@ export default function ImportsPage() {
               className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
             />
           </div>
+          <div>
+            <label className="text-xs text-muted uppercase tracking-wide block mb-1">Sheet Names (optional)</label>
+            <input
+              value={sheetNamesCsv}
+              onChange={e => setSheetNamesCsv(e.target.value)}
+              placeholder="Value Add Resources, Funding - ACTIVE Deals"
+              className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+            />
+          </div>
         </div>
 
         <label className="flex items-center gap-2 text-xs text-muted">
@@ -230,6 +243,7 @@ export default function ImportsPage() {
                   {uploadResult.file_name}
                   {uploadResult.sheet_name ? ` · Sheet: ${uploadResult.sheet_name}` : ""}
                   {uploadResult.header_row_used ? ` · Header Row: ${uploadResult.header_row_used}` : ""}
+                  {uploadResult.imported_sheet_names?.length ? ` · Imported Tabs: ${uploadResult.imported_sheet_names.join(", ")}` : ""}
                 </p>
               </div>
               <div className="text-xs text-muted">{uploadResult.rows_processed.toLocaleString()} processed · {uploadResult.rows_skipped.toLocaleString()} skipped</div>
@@ -287,7 +301,7 @@ export default function ImportsPage() {
           <p className="text-sm text-muted mt-1">Paste a public Google Sheets URL and import it directly. If the URL includes a specific `gid`, that tab will be imported automatically. If not, you can optionally name the sheet tab below.</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="text-xs text-muted uppercase tracking-wide block mb-1">Google Sheets URL</label>
             <input
@@ -314,6 +328,15 @@ export default function ImportsPage() {
               value={headerRow}
               onChange={e => setHeaderRow(e.target.value)}
               placeholder="e.g. 4"
+              className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted uppercase tracking-wide block mb-1">Sheet Names (optional)</label>
+            <input
+              value={sheetNamesCsv}
+              onChange={e => setSheetNamesCsv(e.target.value)}
+              placeholder="Comma-separated tab names"
               className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
             />
           </div>

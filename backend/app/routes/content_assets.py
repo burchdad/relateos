@@ -76,6 +76,7 @@ async def upload_import(
     file: UploadFile = File(...),
     source_type: str = Form("contacts"),
     sheet_name: str | None = Form(None),
+    sheet_names: str | None = Form(None),
     header_row: int | None = Form(None),
     include_all_sheets: bool = Form(False),
     db: Session = Depends(get_db),
@@ -85,6 +86,7 @@ async def upload_import(
     payload = await file.read()
     if not payload:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    selected_sheet_names = [item.strip() for item in (sheet_names or "").split(",") if item.strip()]
     try:
         return ImportService.import_contacts_file(
             db,
@@ -92,6 +94,7 @@ async def upload_import(
             file_bytes=payload,
             source_type=source_type,
             sheet_name=sheet_name,
+            sheet_names=selected_sheet_names,
             header_row=header_row,
             include_all_sheets=include_all_sheets,
         )
@@ -111,6 +114,7 @@ def import_from_url(payload: ImportUrlRequest, db: Session = Depends(get_db)):
             sheet_url=payload.sheet_url,
             source_type=payload.source_type,
             sheet_name=payload.sheet_name,
+            sheet_names=payload.sheet_names,
             header_row=payload.header_row,
             include_all_sheets=payload.include_all_sheets,
         )

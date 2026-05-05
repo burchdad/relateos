@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import io
 import json
 import logging
@@ -113,6 +114,71 @@ def _bounded_text(value: Any, max_len: int) -> str | None:
     if not text:
         return None
     return text[:max_len]
+
+
+def _store_full_import_value(person: Person, key: str, value: Any) -> None:
+    metadata = dict(person.metadata_json or {})
+    full_values = dict(metadata.get("full_import_values") or {})
+    full_values[key] = _serialize_cell(value)
+    metadata["full_import_values"] = full_values
+    person.metadata_json = metadata
+
+
+def _ai_compact_value(field_name: str, value: str, max_len: int) -> str | None:
+    if not settings.openai_api_key:
+        return None
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=settings.openai_api_key)
+        prompt = (
+            f"Create a compact label for field '{field_name}' that is <= {max_len} characters.\n"
+            "Preserve core meaning and use title case with no punctuation except spaces.\n"
+            f"Source value: {value}\n"
+            "Return JSON: {\"label\": \"...\"}."
+        )
+        raw = client.chat.completions.create(
+            model=settings.openai_model or "gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            response_format={"type": "json_object"},
+        ).choices[0].message.content or "{}"
+        parsed = json.loads(raw)
+        label = str(parsed.get("label") or "").strip()
+        if label and len(label) <= max_len:
+            return label
+        return None
+    except Exception:
+        return None
+
+
+def _fit_db_text(
+    *,
+    person: Person,
+    field_name: str,
+    raw_value: Any,
+    max_len: int,
+    warnings: list[str],
+) -> str | None:
+    text = str(raw_value or "").strip()
+    if not text:
+        return None
+    if len(text) <= max_len:
+        return text
+
+    _store_full_import_value(person, field_name, text)
+    compact = _ai_compact_value(field_name, text, max_len)
+    if compact:
+        if len(warnings) < 10:
+            warnings.append(f"Preserved full {field_name} in metadata and stored AI compact label.")
+        return compact
+
+    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
+    token = f"import_{digest}"
+    token = token[:max_len]
+    if len(warnings) < 10:
+        warnings.append(f"Preserved full {field_name} in metadata and stored stable token: {token}")
+    return token
 
 
 def _normalize_email(value: Any) -> str | None:
@@ -280,26 +346,55 @@ def _read_uploaded_rows(
     file_name: str,
     file_bytes: bytes,
     sheet_name: str | None,
+    sheet_names: list[str] | None = None,
     header_row: int | None = None,
     include_all_sheets: bool = False,
-) -> tuple[str | None, int | None, list[str], list[dict[str, Any]]]:
+) -> tuple[str | None, list[str], int | None, list[str], list[dict[str, Any]]]:
     suffix = file_name.lower().rsplit(".", 1)[-1] if "." in file_name else ""
     if suffix == "csv":
         text = file_bytes.decode("utf-8-sig", errors="replace")
         reader = csv.reader(io.StringIO(text))
         raw_rows = [list(row) for row in reader]
         header_index, headers, rows = _rows_to_records(raw_rows, header_row=header_row)
-        return None, header_index + 1, headers, rows
+        return None, ["csv"], header_index + 1, headers, rows
 
     if suffix not in {"xlsx", "xlsm"}:
         raise ValueError("Unsupported file format. Please upload .xlsx, .xlsm, or .csv")
 
     workbook = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    selected_sheet_names = [name for name in (sheet_names or []) if name in workbook.sheetnames]
+    if sheet_names and not selected_sheet_names:
+        raise ValueError("None of the provided sheet_names were found in the workbook")
+
+    if selected_sheet_names:
+        merged_headers: list[str] = []
+        merged_rows: list[dict[str, Any]] = []
+        header_rows_used: set[int] = set()
+
+        for ws_name in selected_sheet_names:
+            worksheet = workbook[ws_name]
+            raw_rows = [list(row) for row in worksheet.iter_rows(values_only=True)]
+            if not raw_rows:
+                continue
+            header_index, headers, rows = _rows_to_records(raw_rows, header_row=header_row)
+            header_rows_used.add(header_index + 1)
+            for header in headers:
+                if header not in merged_headers:
+                    merged_headers.append(header)
+            merged_rows.extend(rows)
+
+        if len(header_rows_used) == 1:
+            header_row_used: int | None = next(iter(header_rows_used))
+        else:
+            header_row_used = None
+        return f"Selected Sheets ({len(selected_sheet_names)})", selected_sheet_names, header_row_used, merged_headers, merged_rows
+
     if include_all_sheets and not sheet_name:
         merged_headers: list[str] = []
         merged_rows: list[dict[str, Any]] = []
         header_rows_used: set[int] = set()
         included_sheet_count = 0
+        included_sheet_names: list[str] = []
 
         for ws_name in workbook.sheetnames:
             worksheet = workbook[ws_name]
@@ -312,6 +407,7 @@ def _read_uploaded_rows(
                 continue
 
             included_sheet_count += 1
+            included_sheet_names.append(ws_name)
             header_rows_used.add(header_index + 1)
             for header in headers:
                 if header not in merged_headers:
@@ -319,21 +415,21 @@ def _read_uploaded_rows(
             merged_rows.extend(rows)
 
         if included_sheet_count == 0:
-            return "All Sheets (0)", None, [], []
+            return "All Sheets (0)", [], None, [], []
 
         if len(header_rows_used) == 1:
             header_row_used: int | None = next(iter(header_rows_used))
         else:
             header_row_used = None
-        return f"All Sheets ({included_sheet_count})", header_row_used, merged_headers, merged_rows
+        return f"All Sheets ({included_sheet_count})", included_sheet_names, header_row_used, merged_headers, merged_rows
 
     worksheet = workbook[sheet_name] if sheet_name and sheet_name in workbook.sheetnames else workbook.active
     raw_rows = [list(row) for row in worksheet.iter_rows(values_only=True)]
     if not raw_rows:
-        return worksheet.title, None, [], []
+        return worksheet.title, [worksheet.title], None, [], []
 
     header_index, headers, rows = _rows_to_records(raw_rows, header_row=header_row)
-    return worksheet.title, header_index + 1, headers, rows
+    return worksheet.title, [worksheet.title], header_index + 1, headers, rows
 
 
 def _chunked(values: list[str], size: int = 500) -> list[list[str]]:
@@ -356,13 +452,17 @@ def _extract_gid(sheet_url: str) -> str | None:
     return None
 
 
-def _build_google_export_request(sheet_url: str, sheet_name: str | None) -> tuple[str, str]:
+def _build_google_export_request(
+    sheet_url: str,
+    sheet_name: str | None,
+    force_workbook_export: bool = False,
+) -> tuple[str, str]:
     sheet_id = _extract_google_sheet_id(sheet_url)
     if not sheet_id:
         raise ValueError("Invalid Google Sheets URL. Expected a docs.google.com/spreadsheets link.")
 
     gid = _extract_gid(sheet_url)
-    if gid and not sheet_name:
+    if gid and not sheet_name and not force_workbook_export:
         export_url = (
             f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?"
             + urlencode({"format": "csv", "gid": gid})
@@ -376,8 +476,16 @@ def _build_google_export_request(sheet_url: str, sheet_name: str | None) -> tupl
     return export_url, f"google-sheet-{sheet_id}.xlsx"
 
 
-def _download_google_sheet(sheet_url: str, sheet_name: str | None) -> tuple[str, bytes]:
-    export_url, file_name = _build_google_export_request(sheet_url, sheet_name)
+def _download_google_sheet(
+    sheet_url: str,
+    sheet_name: str | None,
+    force_workbook_export: bool = False,
+) -> tuple[str, bytes]:
+    export_url, file_name = _build_google_export_request(
+        sheet_url,
+        sheet_name,
+        force_workbook_export=force_workbook_export,
+    )
     request = Request(
         export_url,
         headers={
@@ -454,10 +562,20 @@ class ImportService:
         for column in payload.raw_columns:
             normalized = _normalize_header(column)
             target = None
+            best_score = -1
             for hint, candidate in _COLUMN_HINTS.items():
-                if hint in normalized:
-                    target = candidate
-                    break
+                score = -1
+                if normalized == hint:
+                    score = 300
+                elif normalized.startswith(f"{hint} ") or normalized.endswith(f" {hint}"):
+                    score = 220
+                elif f" {hint} " in f" {normalized} ":
+                    score = 180
+                elif hint in normalized:
+                    score = 120 - max(0, len(normalized) - len(hint))
+                if score > best_score:
+                    best_score = score
+                    target = candidate if score > 0 else target
             if target:
                 mapping[column] = target
             else:
@@ -493,13 +611,15 @@ class ImportService:
         file_bytes: bytes,
         source_type: str,
         sheet_name: str | None = None,
+        sheet_names: list[str] | None = None,
         header_row: int | None = None,
         include_all_sheets: bool = False,
     ) -> ImportUploadResponse:
-        resolved_sheet_name, header_row_used, headers, rows = _read_uploaded_rows(
+        resolved_sheet_name, imported_sheet_names, header_row_used, headers, rows = _read_uploaded_rows(
             file_name,
             file_bytes,
             sheet_name,
+            sheet_names=sheet_names,
             header_row=header_row,
             include_all_sheets=include_all_sheets,
         )
@@ -605,17 +725,31 @@ class ImportService:
         def ensure_relationship(person: Person, row: dict[str, Any]) -> None:
             relationship = relationship_cache.get(person.id)
             relationship_type_raw = _first_value(row, target_map.get("relationship.type", [])) or person.primary_role or "lead"
-            relationship_type = _bounded_text(relationship_type_raw, 50) or "lead"
-            if len(str(relationship_type_raw or "").strip()) > 50 and len(warnings) < 10:
-                warnings.append(
-                    f"Row relationship type exceeded 50 chars and was truncated: {str(relationship_type_raw).strip()[:80]}"
-                )
+            relationship_type = _fit_db_text(
+                person=person,
+                field_name="relationship.type",
+                raw_value=relationship_type_raw,
+                max_len=50,
+                warnings=warnings,
+            ) or "lead"
 
             lifecycle_stage_raw = person.relationship_stage or "new"
-            lifecycle_stage = _bounded_text(lifecycle_stage_raw, 50) or "new"
+            lifecycle_stage = _fit_db_text(
+                person=person,
+                field_name="relationship.lifecycle_stage",
+                raw_value=lifecycle_stage_raw,
+                max_len=50,
+                warnings=warnings,
+            ) or "new"
             strength = person.relationship_strength_score or 0.0
             owner_user_id_raw = _first_value(row, target_map.get("relationship.owner_user_id", []))
-            owner_user_id = _bounded_text(owner_user_id_raw, 100)
+            owner_user_id = _fit_db_text(
+                person=person,
+                field_name="relationship.owner_user_id",
+                raw_value=owner_user_id_raw,
+                max_len=100,
+                warnings=warnings,
+            )
             if not relationship:
                 relationship = Relationship(
                     id=uuid.uuid4(),
@@ -724,16 +858,30 @@ class ImportService:
                 updated = True
 
             role_raw = _first_value(row, target_map.get("person.primary_role", []))
-            role = _bounded_text(role_raw, 50)
-            if len(str(role_raw or "").strip()) > 50 and len(warnings) < 10:
-                warnings.append(
-                    f"Primary role exceeded 50 chars and was truncated: {str(role_raw).strip()[:80]}"
-                )
+            role = _fit_db_text(
+                person=person,
+                field_name="person.primary_role",
+                raw_value=role_raw,
+                max_len=50,
+                warnings=warnings,
+            )
             secondary_roles = _parse_roles(_first_value(row, target_map.get("person.secondary_roles", [])))
             relationship_stage_raw = _first_value(row, target_map.get("person.relationship_stage", []))
-            relationship_stage = _bounded_text(relationship_stage_raw, 50)
+            relationship_stage = _fit_db_text(
+                person=person,
+                field_name="person.relationship_stage",
+                raw_value=relationship_stage_raw,
+                max_len=50,
+                warnings=warnings,
+            )
             source_raw = _first_value(row, target_map.get("person.source", [])) or source_type
-            source = _bounded_text(source_raw, 50) or source_type
+            source = _fit_db_text(
+                person=person,
+                field_name="person.source",
+                raw_value=source_raw,
+                max_len=50,
+                warnings=warnings,
+            ) or source_type
             notes_summary = str(_first_value(row, target_map.get("person.notes_summary", [])) or "").strip() or None
             tags = _parse_tags(_first_value(row, target_map.get("person.tags", [])))
             lifetime_value = _parse_float(_first_value(row, target_map.get("person.lifetime_value", [])))
@@ -822,7 +970,16 @@ class ImportService:
                 edge_specs.append((parent_person, person, "reports_to"))
 
             for source_person, target_person, relationship_type in edge_specs:
-                edge_key = (str(source_person.id), str(target_person.id), relationship_type)
+                raw_edge_relationship_type = str(relationship_type or "").strip() or "introduced_by"
+                edge_relationship_type = raw_edge_relationship_type
+                edge_evidence: dict[str, Any] = {"source": "excel_import", "file_name": file_name}
+                if len(raw_edge_relationship_type) > 50:
+                    edge_digest = hashlib.sha1(raw_edge_relationship_type.encode("utf-8")).hexdigest()[:12]
+                    edge_relationship_type = f"edge_{edge_digest}"
+                    edge_evidence["full_relationship_type"] = raw_edge_relationship_type
+                    if len(warnings) < 10:
+                        warnings.append("Preserved full relationship edge type in evidence and stored stable edge token.")
+                edge_key = (str(source_person.id), str(target_person.id), edge_relationship_type)
                 if edge_key in existing_edge_keys:
                     continue
                 db.add(
@@ -831,9 +988,9 @@ class ImportService:
                         source_contact_id=source_person.id,
                         target_contact_id=target_person.id,
                         organization_id=organization.id if organization else None,
-                        relationship_type=relationship_type,
+                        relationship_type=edge_relationship_type,
                         strength=relationship_strength or 1.0,
-                        evidence={"source": "excel_import", "file_name": file_name},
+                        evidence=edge_evidence,
                     )
                 )
                 existing_edge_keys.add(edge_key)
@@ -848,6 +1005,7 @@ class ImportService:
             file_name=file_name,
             source_type=source_type,
             sheet_name=resolved_sheet_name,
+            imported_sheet_names=imported_sheet_names,
             header_row_used=header_row_used,
             rows_processed=stats["rows_processed"],
             rows_skipped=stats["rows_skipped"],
@@ -869,6 +1027,7 @@ class ImportService:
         sheet_url: str,
         source_type: str,
         sheet_name: str | None = None,
+        sheet_names: list[str] | None = None,
         header_row: int | None = None,
         include_all_sheets: bool = False,
     ) -> ImportUploadResponse:
@@ -878,13 +1037,19 @@ class ImportService:
         if "docs.google.com/spreadsheets/" not in normalized_url:
             raise ValueError("Only public Google Sheets URLs are supported right now")
 
-        file_name, payload = _download_google_sheet(normalized_url, sheet_name)
+        force_workbook_export = bool(include_all_sheets or sheet_names)
+        file_name, payload = _download_google_sheet(
+            normalized_url,
+            sheet_name,
+            force_workbook_export=force_workbook_export,
+        )
         result = ImportService.import_contacts_file(
             db,
             file_name=file_name,
             file_bytes=payload,
             source_type=source_type,
             sheet_name=sheet_name,
+            sheet_names=sheet_names,
             header_row=header_row,
             include_all_sheets=include_all_sheets,
         )
