@@ -30,6 +30,13 @@ from app.routes.style_profiles import router as style_profiles_router
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_CORS_ORIGIN_REGEX = (
+    r"https://.*\.vercel\.app"
+    r"|https://.*\.railway\.app"
+    r"|http://localhost(:\d+)?"
+    r"|http://127\.0\.0\.1(:\d+)?"
+)
+
 # Log the database URL being used (mask password for security)
 db_url = os.getenv("DATABASE_URL") or settings.database_url
 masked_url = db_url.split("@")[0] + "@" + db_url.split("@")[1] if "@" in db_url else db_url
@@ -116,7 +123,10 @@ if not allowed_origins:
     allowed_origins = ["*"]
 
 allow_credentials = "*" not in allowed_origins
-allow_origin_regex = settings.cors_origin_regex.strip() or None
+configured_origin_regex = settings.cors_origin_regex.strip()
+allow_origin_regex = "|".join(
+    part for part in [configured_origin_regex, DEFAULT_CORS_ORIGIN_REGEX] if part
+) or None
 
 logger.info("Resolved CORS origins: %s", allowed_origins)
 if allow_origin_regex:
