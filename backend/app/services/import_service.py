@@ -104,7 +104,15 @@ _BATCH_SIZE = 500
 
 
 def _normalize_header(value: Any) -> str:
-    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+    cleaned = re.sub(r"[^a-z0-9]+", " ", str(value or "").strip().lower())
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _bounded_text(value: Any, max_len: int) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return text[:max_len]
 
 
 def _normalize_email(value: Any) -> str | None:
@@ -543,10 +551,18 @@ class ImportService:
 
         def ensure_relationship(person: Person, row: dict[str, Any]) -> None:
             relationship = relationship_cache.get(person.id)
-            relationship_type = str(_first_value(row, target_map.get("relationship.type", [])) or person.primary_role or "lead")
-            lifecycle_stage = person.relationship_stage or "new"
+            relationship_type_raw = _first_value(row, target_map.get("relationship.type", [])) or person.primary_role or "lead"
+            relationship_type = _bounded_text(relationship_type_raw, 50) or "lead"
+            if len(str(relationship_type_raw or "").strip()) > 50 and len(warnings) < 10:
+                warnings.append(
+                    f"Row relationship type exceeded 50 chars and was truncated: {str(relationship_type_raw).strip()[:80]}"
+                )
+
+            lifecycle_stage_raw = person.relationship_stage or "new"
+            lifecycle_stage = _bounded_text(lifecycle_stage_raw, 50) or "new"
             strength = person.relationship_strength_score or 0.0
-            owner_user_id = str(_first_value(row, target_map.get("relationship.owner_user_id", [])) or "").strip() or None
+            owner_user_id_raw = _first_value(row, target_map.get("relationship.owner_user_id", []))
+            owner_user_id = _bounded_text(owner_user_id_raw, 100)
             if not relationship:
                 relationship = Relationship(
                     id=uuid.uuid4(),
@@ -654,10 +670,17 @@ class ImportService:
                 person.organization_id = organization.id
                 updated = True
 
-            role = str(_first_value(row, target_map.get("person.primary_role", [])) or "").strip() or None
+            role_raw = _first_value(row, target_map.get("person.primary_role", []))
+            role = _bounded_text(role_raw, 50)
+            if len(str(role_raw or "").strip()) > 50 and len(warnings) < 10:
+                warnings.append(
+                    f"Primary role exceeded 50 chars and was truncated: {str(role_raw).strip()[:80]}"
+                )
             secondary_roles = _parse_roles(_first_value(row, target_map.get("person.secondary_roles", [])))
-            relationship_stage = str(_first_value(row, target_map.get("person.relationship_stage", [])) or "").strip() or None
-            source = str(_first_value(row, target_map.get("person.source", [])) or "").strip() or source_type
+            relationship_stage_raw = _first_value(row, target_map.get("person.relationship_stage", []))
+            relationship_stage = _bounded_text(relationship_stage_raw, 50)
+            source_raw = _first_value(row, target_map.get("person.source", [])) or source_type
+            source = _bounded_text(source_raw, 50) or source_type
             notes_summary = str(_first_value(row, target_map.get("person.notes_summary", [])) or "").strip() or None
             tags = _parse_tags(_first_value(row, target_map.get("person.tags", [])))
             lifetime_value = _parse_float(_first_value(row, target_map.get("person.lifetime_value", [])))
