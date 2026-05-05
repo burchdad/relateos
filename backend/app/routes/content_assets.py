@@ -1,0 +1,68 @@
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.schemas.content_asset import (
+    ContentAssetCreate,
+    ContentAssetOut,
+    ContentAssetUpdate,
+    ContentFunnelGenerateResponse,
+    FunnelCampaignCreate,
+    FunnelCampaignOut,
+    ImportMapRequest,
+    ImportMapResponse,
+)
+from app.services.content_asset_service import ContentAssetService
+
+router = APIRouter(tags=["content-assets"])
+
+
+@router.get("/content-assets", response_model=list[ContentAssetOut])
+def list_content_assets(db: Session = Depends(get_db)):
+    return ContentAssetService.list_all(db)
+
+
+@router.post("/content-assets", response_model=ContentAssetOut, status_code=201)
+def create_content_asset(payload: ContentAssetCreate, db: Session = Depends(get_db)):
+    return ContentAssetService.create(db, payload)
+
+
+@router.get("/content-assets/{asset_id}", response_model=ContentAssetOut)
+def get_content_asset(asset_id: uuid.UUID, db: Session = Depends(get_db)):
+    asset = ContentAssetService.get_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Content asset not found")
+    return asset
+
+
+@router.put("/content-assets/{asset_id}", response_model=ContentAssetOut)
+def update_content_asset(asset_id: uuid.UUID, payload: ContentAssetUpdate, db: Session = Depends(get_db)):
+    asset = ContentAssetService.update(db, asset_id, payload)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Content asset not found")
+    return asset
+
+
+@router.post("/content-assets/{asset_id}/generate-funnel", response_model=ContentFunnelGenerateResponse)
+def generate_funnel(asset_id: uuid.UUID, db: Session = Depends(get_db)):
+    asset = ContentAssetService.get_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Content asset not found")
+    return ContentAssetService.generate_funnel(asset_id, db)
+
+
+@router.get("/funnel-campaigns", response_model=list[FunnelCampaignOut])
+def list_funnel_campaigns(db: Session = Depends(get_db)):
+    return ContentAssetService.list_funnel_campaigns(db)
+
+
+@router.post("/funnel-campaigns", response_model=FunnelCampaignOut, status_code=201)
+def create_funnel_campaign(payload: FunnelCampaignCreate, db: Session = Depends(get_db)):
+    return ContentAssetService.create_funnel_campaign(db, payload)
+
+
+@router.post("/imports/map", response_model=ImportMapResponse)
+def map_import(payload: ImportMapRequest):
+    return ContentAssetService.map_import(payload)

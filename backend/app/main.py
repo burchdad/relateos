@@ -13,10 +13,17 @@ from sqlalchemy import inspect, text
 from app.core.config import settings
 from app.core.database import Base, engine
 from app.routes.ai import router as ai_router
+from app.routes.contacts import router as contacts_router
 from app.routes.content import router as content_router
+from app.routes.content_assets import router as content_assets_router
 from app.routes.dashboard import router as dashboard_router
+from app.routes.deals import router as deals_router
+from app.routes.engagement import router as engagement_router
 from app.routes.events import router as events_router
 from app.routes.interactions import router as interactions_router
+from app.routes.meetings import router as meetings_router
+from app.routes.network import router as network_router
+from app.routes.organizations import router as organizations_router
 from app.routes.relateos import router as relateos_router
 from app.routes.relationships import router as relationships_router
 from app.routes.style_profiles import router as style_profiles_router
@@ -132,6 +139,14 @@ app.include_router(dashboard_router, prefix=settings.api_v1_prefix)
 app.include_router(events_router, prefix=settings.api_v1_prefix)
 app.include_router(relateos_router, prefix=settings.api_v1_prefix)
 app.include_router(style_profiles_router, prefix=settings.api_v1_prefix)
+# Network Intelligence routes
+app.include_router(contacts_router, prefix=settings.api_v1_prefix)
+app.include_router(organizations_router, prefix=settings.api_v1_prefix)
+app.include_router(deals_router, prefix=settings.api_v1_prefix)
+app.include_router(network_router, prefix=settings.api_v1_prefix)
+app.include_router(engagement_router, prefix=settings.api_v1_prefix)
+app.include_router(meetings_router, prefix=settings.api_v1_prefix)
+app.include_router(content_assets_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health")

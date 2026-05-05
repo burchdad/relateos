@@ -180,3 +180,198 @@ export type CampaignInsights = {
     suggested_weight_adjustments: Record<string, number>;
   };
 };
+
+// ============================================================
+// Network Intelligence Types (Phase 1)
+// ============================================================
+
+export type Contact = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  phone: string | null;
+  primary_role: string | null;
+  secondary_roles: string[];
+  organization_id: string | null;
+  source: string | null;
+  relationship_stage: string | null;
+  relationship_strength_score: number;
+  lifetime_value: number;
+  referral_value: number;
+  last_engaged_at: string | null;
+  notes_summary: string | null;
+  ai_profile_summary: string | null;
+  data_quality_score: number;
+  enrichment_status: string | null;
+  tags: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Organization = {
+  id: string;
+  name: string;
+  org_type: string;
+  parent_organization_id: string | null;
+  owner_user_id: string | null;
+  description: string | null;
+  website: string | null;
+  location: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DealParticipant = {
+  id: string;
+  deal_id: string;
+  contact_id: string | null;
+  role: string;
+  split_percentage: number;
+  split_amount: number;
+  referral_fee: number;
+  notes: string | null;
+  created_at: string;
+};
+
+export type Deal = {
+  id: string;
+  title: string;
+  description: string | null;
+  deal_type: string;
+  status: string;
+  primary_contact_id: string | null;
+  organization_id: string | null;
+  source_contact_id: string | null;
+  referred_by_contact_id: string | null;
+  amount: number;
+  expected_value: number;
+  actual_value: number;
+  probability: number;
+  close_date: string | null;
+  participants: DealParticipant[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type NetworkNode = {
+  id: string;
+  label: string;
+  type: string;
+  role: string | null;
+  organization_id: string | null;
+  lifetime_value: number;
+  deal_count: number;
+  relationship_strength_score: number;
+  size: number;
+  color_group: string;
+};
+
+export type NetworkEdge = {
+  id: string;
+  source: string;
+  target: string;
+  relationship_type: string;
+  strength: number;
+  revenue_attributed: number;
+  deal_count: number;
+};
+
+export type NetworkGraph = {
+  nodes: NetworkNode[];
+  edges: NetworkEdge[];
+};
+
+export type TopPartnerEntry = {
+  contact_id: string;
+  name: string;
+  revenue: number;
+  deal_count: number;
+  referral_count: number;
+};
+
+export type Scoreboard = {
+  total_network_revenue: number;
+  trailing_30_day_revenue: number;
+  trailing_90_day_revenue: number;
+  top_partners_by_revenue: TopPartnerEntry[];
+  top_referrers: TopPartnerEntry[];
+  most_active_contacts: { id: string; name: string; lifetime_value: number }[];
+  deals_in_flight: number;
+  referral_fees_pending: number;
+  gamification_leaderboard: {
+    rank: number;
+    contact_id: string;
+    name: string;
+    score: number;
+    revenue: number;
+    deal_count: number;
+    referral_count: number;
+  }[];
+};
+
+export type MeetingAttendee = {
+  id: string;
+  meeting_id: string;
+  contact_id: string | null;
+  name: string | null;
+  email: string | null;
+  attendance_status: string;
+  joined_at: string | null;
+  left_at: string | null;
+  duration_seconds: number;
+  followup_status: string;
+  created_at: string;
+};
+
+export type Meeting = {
+  id: string;
+  title: string;
+  platform: string | null;
+  meeting_url: string | null;
+  scheduled_at: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  transcript: string | null;
+  summary: string | null;
+  action_items: string[];
+  attendees: MeetingAttendee[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type ContentAsset = {
+  id: string;
+  title: string;
+  content_type: string;
+  source_url: string | null;
+  transcript: string | null;
+  summary: string | null;
+  ai_angles: Record<string, unknown>;
+  target_audience: Record<string, unknown>;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FunnelCampaign = {
+  id: string;
+  title: string;
+  description: string | null;
+  campaign_type: string;
+  content_asset_id: string | null;
+  target_segment: Record<string, unknown>;
+  status: string;
+  metrics: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type NaturalLanguageDealResult = {
+  parsed: Partial<Deal>;
+  confidence: number;
+  missing_fields: string[];
+  needs_confirmation: boolean;
+  raw_input: string;
+};
+

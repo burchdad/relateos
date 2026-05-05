@@ -13,12 +13,20 @@ type NavItem = {
 const coreNav: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: "DB" },
   { href: "/relationships", label: "Relationships", icon: "RL" },
+  { href: "/contacts", label: "Contacts", icon: "CO" },
+  { href: "/deals", label: "Deals", icon: "DL" },
+  { href: "/organizations", label: "Partners", icon: "PT" },
   { href: "/content", label: "Content", icon: "CT" },
   { href: "/events", label: "Events", icon: "EV" },
 ];
 
 const intelligenceNav: NavItem[] = [
-  { href: "/relateos", label: "RelateOS", icon: "AI" },
+  { href: "/network/graph", label: "Network Graph", icon: "NG" },
+  { href: "/scoreboard", label: "Scoreboard", icon: "SB" },
+  { href: "/meetings", label: "Meetings", icon: "MT" },
+  { href: "/imports", label: "Imports", icon: "IM" },
+  { href: "/funnels", label: "Content Funnels", icon: "CF" },
+  { href: "/relateos", label: "RelateOS AI", icon: "AI" },
   { href: "/signals", label: "Signals", icon: "SG" },
 ];
 
@@ -62,8 +70,8 @@ export default function SidebarNav() {
   return (
     <aside className="border-b border-soft bg-panel/85 px-3 py-4 md:min-h-screen md:border-b-0 md:border-r md:px-4 md:py-6">
       <div className="mb-5 px-2">
-        <p className="text-[11px] uppercase tracking-[0.2em] text-accent">RelateOS</p>
-        <h1 className="mt-1 text-lg font-semibold tracking-tight text-text">Operating Console</h1>
+        <p className="text-[11px] uppercase tracking-[0.2em] text-accent">TR3 / RelateOS</p>
+        <h1 className="mt-1 text-lg font-semibold tracking-tight text-text">Network Intelligence</h1>
       </div>
 
       <nav className="grid gap-5 md:sticky md:top-5">
