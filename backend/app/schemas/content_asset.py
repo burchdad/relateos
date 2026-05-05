@@ -111,5 +111,6 @@ class ImportUrlRequest(BaseModel):
     sheet_url: str
     sheet_name: str | None = None
     header_row: int | None = Field(default=None, ge=1)
+    include_all_sheets: bool = False
 
 

@@ -77,6 +77,7 @@ async def upload_import(
     source_type: str = Form("contacts"),
     sheet_name: str | None = Form(None),
     header_row: int | None = Form(None),
+    include_all_sheets: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     if not file.filename:
@@ -92,6 +93,7 @@ async def upload_import(
             source_type=source_type,
             sheet_name=sheet_name,
             header_row=header_row,
+            include_all_sheets=include_all_sheets,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -110,6 +112,7 @@ def import_from_url(payload: ImportUrlRequest, db: Session = Depends(get_db)):
             source_type=payload.source_type,
             sheet_name=payload.sheet_name,
             header_row=payload.header_row,
+            include_all_sheets=payload.include_all_sheets,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

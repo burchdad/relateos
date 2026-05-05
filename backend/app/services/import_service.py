@@ -281,6 +281,7 @@ def _read_uploaded_rows(
     file_bytes: bytes,
     sheet_name: str | None,
     header_row: int | None = None,
+    include_all_sheets: bool = False,
 ) -> tuple[str | None, int | None, list[str], list[dict[str, Any]]]:
     suffix = file_name.lower().rsplit(".", 1)[-1] if "." in file_name else ""
     if suffix == "csv":
@@ -294,6 +295,38 @@ def _read_uploaded_rows(
         raise ValueError("Unsupported file format. Please upload .xlsx, .xlsm, or .csv")
 
     workbook = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    if include_all_sheets and not sheet_name:
+        merged_headers: list[str] = []
+        merged_rows: list[dict[str, Any]] = []
+        header_rows_used: set[int] = set()
+        included_sheet_count = 0
+
+        for ws_name in workbook.sheetnames:
+            worksheet = workbook[ws_name]
+            raw_rows = [list(row) for row in worksheet.iter_rows(values_only=True)]
+            if not raw_rows:
+                continue
+
+            header_index, headers, rows = _rows_to_records(raw_rows, header_row=header_row)
+            if not headers and not rows:
+                continue
+
+            included_sheet_count += 1
+            header_rows_used.add(header_index + 1)
+            for header in headers:
+                if header not in merged_headers:
+                    merged_headers.append(header)
+            merged_rows.extend(rows)
+
+        if included_sheet_count == 0:
+            return "All Sheets (0)", None, [], []
+
+        if len(header_rows_used) == 1:
+            header_row_used: int | None = next(iter(header_rows_used))
+        else:
+            header_row_used = None
+        return f"All Sheets ({included_sheet_count})", header_row_used, merged_headers, merged_rows
+
     worksheet = workbook[sheet_name] if sheet_name and sheet_name in workbook.sheetnames else workbook.active
     raw_rows = [list(row) for row in worksheet.iter_rows(values_only=True)]
     if not raw_rows:
@@ -461,12 +494,14 @@ class ImportService:
         source_type: str,
         sheet_name: str | None = None,
         header_row: int | None = None,
+        include_all_sheets: bool = False,
     ) -> ImportUploadResponse:
         resolved_sheet_name, header_row_used, headers, rows = _read_uploaded_rows(
             file_name,
             file_bytes,
             sheet_name,
             header_row=header_row,
+            include_all_sheets=include_all_sheets,
         )
         mapping_response = ImportService.map_import(
             ImportMapRequest(source_type=source_type, raw_columns=headers, sample_rows=rows[:10])
@@ -835,6 +870,7 @@ class ImportService:
         source_type: str,
         sheet_name: str | None = None,
         header_row: int | None = None,
+        include_all_sheets: bool = False,
     ) -> ImportUploadResponse:
         normalized_url = str(sheet_url or "").strip()
         if not normalized_url:
@@ -850,6 +886,7 @@ class ImportService:
             source_type=source_type,
             sheet_name=sheet_name,
             header_row=header_row,
+            include_all_sheets=include_all_sheets,
         )
         result.warnings = [
             "Imported from Google Sheets URL. Private/authenticated sheets are not supported yet.",

@@ -44,6 +44,7 @@ export default function ImportsPage() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [sheetName, setSheetName] = useState("");
   const [headerRow, setHeaderRow] = useState("");
+  const [includeAllSheets, setIncludeAllSheets] = useState(true);
   const [uploadingWorkbook, setUploadingWorkbook] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [sheetUrl, setSheetUrl] = useState("");
@@ -111,6 +112,7 @@ export default function ImportsPage() {
       formData.append("source_type", sourceType);
       if (sheetName.trim()) formData.append("sheet_name", sheetName.trim());
       if (headerRow.trim()) formData.append("header_row", headerRow.trim());
+      formData.append("include_all_sheets", String(includeAllSheets));
 
       const res = await fetch(`${API_URL}/imports/upload`, {
         method: "POST",
@@ -138,6 +140,7 @@ export default function ImportsPage() {
           sheet_url: sheetUrl.trim(),
           sheet_name: sheetName.trim() || null,
           header_row: headerRow.trim() ? Number(headerRow.trim()) : null,
+          include_all_sheets: includeAllSheets,
         }),
       });
       if (res.ok) {
@@ -199,6 +202,16 @@ export default function ImportsPage() {
             />
           </div>
         </div>
+
+        <label className="flex items-center gap-2 text-xs text-muted">
+          <input
+            type="checkbox"
+            checked={includeAllSheets}
+            onChange={e => setIncludeAllSheets(e.target.checked)}
+            className="rounded border border-soft bg-base"
+          />
+          Import all sheets when Sheet Name is blank
+        </label>
 
         <div className="flex items-center gap-3">
           <button onClick={handleWorkbookUpload} disabled={uploadingWorkbook || !uploadFile}
@@ -305,6 +318,16 @@ export default function ImportsPage() {
             />
           </div>
         </div>
+
+        <label className="flex items-center gap-2 text-xs text-muted">
+          <input
+            type="checkbox"
+            checked={includeAllSheets}
+            onChange={e => setIncludeAllSheets(e.target.checked)}
+            className="rounded border border-soft bg-base"
+          />
+          Import all sheets when Sheet Name is blank
+        </label>
 
         <div className="flex items-center gap-3 flex-wrap">
           <button onClick={handleGoogleSheetImport} disabled={importingUrl || !sheetUrl.trim()}
