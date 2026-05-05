@@ -93,6 +93,10 @@ async def upload_import(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("import upload failed")
+        raise HTTPException(status_code=500, detail=f"Import failed: {exc}") from exc
 
 
 @router.post("/imports/url", response_model=ImportUploadResponse)
@@ -106,3 +110,7 @@ def import_from_url(payload: ImportUrlRequest, db: Session = Depends(get_db)):
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("import url failed")
+        raise HTTPException(status_code=500, detail=f"Import failed: {exc}") from exc

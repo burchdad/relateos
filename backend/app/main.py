@@ -1,11 +1,12 @@
 import logging
 import os
 import json
+import re
 import time
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import inspect, text
@@ -140,6 +141,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_CORS_REGEX = re.compile(
+    r"https://.*\.vercel\.app"
+    r"|https://.*\.railway\.app"
+    r"|http://localhost(:\d+)?"
+    r"|http://127\.0\.0\.1(:\d+)?"
+)
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Ensure CORS headers are present even on unhandled 500 errors."""
+    origin = request.headers.get("origin", "")
+    headers: dict[str, str] = {}
+    if origin and (origin in allowed_origins or _CORS_REGEX.match(origin)):
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Vary"] = "Origin"
+    logger.exception("Unhandled server error: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+        headers=headers,
+    )
 
 app.include_router(relationships_router, prefix=settings.api_v1_prefix)
 app.include_router(interactions_router, prefix=settings.api_v1_prefix)
