@@ -44,6 +44,8 @@ export default function ImportsPage() {
   const [sheetName, setSheetName] = useState("");
   const [uploadingWorkbook, setUploadingWorkbook] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+  const [sheetUrl, setSheetUrl] = useState("");
+  const [importingUrl, setImportingUrl] = useState(false);
 
   // Engagement import
   const [engageRows, setEngageRows] = useState("");
@@ -117,6 +119,28 @@ export default function ImportsPage() {
       }
     } finally {
       setUploadingWorkbook(false);
+    }
+  };
+
+  const handleGoogleSheetImport = async () => {
+    if (!sheetUrl.trim()) return;
+    setImportingUrl(true);
+    setUploadResult(null);
+    try {
+      const res = await fetch(`${API_URL}/imports/url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_type: sourceType,
+          sheet_url: sheetUrl.trim(),
+          sheet_name: sheetName.trim() || null,
+        }),
+      });
+      if (res.ok) {
+        setUploadResult(await res.json());
+      }
+    } finally {
+      setImportingUrl(false);
     }
   };
 
@@ -223,6 +247,42 @@ export default function ImportsPage() {
             )}
           </div>
         )}
+      </div>
+
+      <div className="rounded-xl border border-soft bg-panel p-6 space-y-4">
+        <div>
+          <h3 className="font-semibold text-text">Google Sheets Import</h3>
+          <p className="text-sm text-muted mt-1">Paste a public Google Sheets URL and import it directly. If the URL includes a specific `gid`, that tab will be imported automatically. If not, you can optionally name the sheet tab below.</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs text-muted uppercase tracking-wide block mb-1">Google Sheets URL</label>
+            <input
+              value={sheetUrl}
+              onChange={e => setSheetUrl(e.target.value)}
+              placeholder="https://docs.google.com/spreadsheets/d/.../edit#gid=0"
+              className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted uppercase tracking-wide block mb-1">Sheet Name (optional)</label>
+            <input
+              value={sheetName}
+              onChange={e => setSheetName(e.target.value)}
+              placeholder="Optional override when importing whole workbook"
+              className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={handleGoogleSheetImport} disabled={importingUrl || !sheetUrl.trim()}
+            className="rounded-lg bg-accent/20 border border-accent/40 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition disabled:opacity-50">
+            {importingUrl ? "Importing Google Sheet…" : "Import From Google Sheets URL"}
+          </button>
+          <p className="text-xs text-muted">Public sheets only for now. Private/authenticated Google Sheets will need Google API credentials in the next step.</p>
+        </div>
       </div>
 
       {/* AI Import Mapper */}

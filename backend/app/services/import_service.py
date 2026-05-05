@@ -7,6 +7,8 @@ import uuid
 from collections import defaultdict
 from datetime import date, datetime
 from typing import Any
+from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.request import Request, urlopen
 
 from openpyxl import load_workbook
 from sqlalchemy import func, or_
@@ -220,6 +222,63 @@ def _read_uploaded_rows(file_name: str, file_bytes: bytes, sheet_name: str | Non
 
 def _chunked(values: list[str], size: int = 500) -> list[list[str]]:
     return [values[index:index + size] for index in range(0, len(values), size)]
+
+
+def _extract_google_sheet_id(sheet_url: str) -> str | None:
+    match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", sheet_url)
+    return match.group(1) if match else None
+
+
+def _extract_gid(sheet_url: str) -> str | None:
+    parsed = urlparse(sheet_url)
+    query_gid = parse_qs(parsed.query).get("gid", [None])[0]
+    if query_gid:
+        return query_gid
+    fragment_match = re.search(r"gid=(\d+)", parsed.fragment or "")
+    if fragment_match:
+        return fragment_match.group(1)
+    return None
+
+
+def _build_google_export_request(sheet_url: str, sheet_name: str | None) -> tuple[str, str]:
+    sheet_id = _extract_google_sheet_id(sheet_url)
+    if not sheet_id:
+        raise ValueError("Invalid Google Sheets URL. Expected a docs.google.com/spreadsheets link.")
+
+    gid = _extract_gid(sheet_url)
+    if gid and not sheet_name:
+        export_url = (
+            f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?"
+            + urlencode({"format": "csv", "gid": gid})
+        )
+        return export_url, f"google-sheet-{sheet_id}-{gid}.csv"
+
+    export_url = (
+        f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?"
+        + urlencode({"format": "xlsx"})
+    )
+    return export_url, f"google-sheet-{sheet_id}.xlsx"
+
+
+def _download_google_sheet(sheet_url: str, sheet_name: str | None) -> tuple[str, bytes]:
+    export_url, file_name = _build_google_export_request(sheet_url, sheet_name)
+    request = Request(
+        export_url,
+        headers={
+            "User-Agent": "RelateOS Importer/1.0",
+            "Accept": "text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;q=0.9,*/*;q=0.8",
+        },
+    )
+    try:
+        with urlopen(request, timeout=60) as response:
+            content = response.read()
+            if not content:
+                raise ValueError("Google Sheets export returned an empty file")
+            return file_name, content
+    except Exception as exc:
+        raise ValueError(
+            "Could not fetch Google Sheet. Make sure the sheet is shared publicly or published, and the URL is valid."
+        ) from exc
 
 
 class ImportService:
@@ -650,3 +709,31 @@ class ImportService:
             stored_extra_fields=sorted(stored_extra_fields),
             warnings=warnings,
         )
+
+    @staticmethod
+    def import_contacts_from_url(
+        db: Session,
+        *,
+        sheet_url: str,
+        source_type: str,
+        sheet_name: str | None = None,
+    ) -> ImportUploadResponse:
+        normalized_url = str(sheet_url or "").strip()
+        if not normalized_url:
+            raise ValueError("Google Sheets URL is required")
+        if "docs.google.com/spreadsheets/" not in normalized_url:
+            raise ValueError("Only public Google Sheets URLs are supported right now")
+
+        file_name, payload = _download_google_sheet(normalized_url, sheet_name)
+        result = ImportService.import_contacts_file(
+            db,
+            file_name=file_name,
+            file_bytes=payload,
+            source_type=source_type,
+            sheet_name=sheet_name,
+        )
+        result.warnings = [
+            "Imported from Google Sheets URL. Private/authenticated sheets are not supported yet.",
+            *result.warnings,
+        ]
+        return result

@@ -13,6 +13,7 @@ from app.schemas.content_asset import (
     FunnelCampaignOut,
     ImportMapRequest,
     ImportMapResponse,
+    ImportUrlRequest,
     ImportUploadResponse,
 )
 from app.services.content_asset_service import ContentAssetService
@@ -89,6 +90,19 @@ async def upload_import(
             file_bytes=payload,
             source_type=source_type,
             sheet_name=sheet_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/imports/url", response_model=ImportUploadResponse)
+def import_from_url(payload: ImportUrlRequest, db: Session = Depends(get_db)):
+    try:
+        return ImportService.import_contacts_from_url(
+            db,
+            sheet_url=payload.sheet_url,
+            source_type=payload.source_type,
+            sheet_name=payload.sheet_name,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -104,3 +104,10 @@ class ImportUploadResponse(BaseModel):
     stored_extra_fields: list[str]
     warnings: list[str]
 
+
+class ImportUrlRequest(BaseModel):
+    source_type: str = "contacts"
+    sheet_url: str
+    sheet_name: str | None = None
+
+
