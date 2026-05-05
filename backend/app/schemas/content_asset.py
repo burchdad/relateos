@@ -92,6 +92,7 @@ class ImportUploadResponse(BaseModel):
     file_name: str
     source_type: str
     sheet_name: str | None = None
+    header_row_used: int | None = None
     rows_processed: int
     rows_skipped: int
     contacts_created: int
@@ -109,5 +110,6 @@ class ImportUrlRequest(BaseModel):
     source_type: str = "contacts"
     sheet_url: str
     sheet_name: str | None = None
+    header_row: int | None = Field(default=None, ge=1)
 
 

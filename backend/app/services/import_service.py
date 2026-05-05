@@ -249,11 +249,19 @@ def _detect_header_row(raw_rows: list[list[Any]]) -> int:
     return best_index
 
 
-def _rows_to_records(raw_rows: list[list[Any]]) -> tuple[int, list[str], list[dict[str, Any]]]:
+def _rows_to_records(
+    raw_rows: list[list[Any]],
+    header_row: int | None = None,
+) -> tuple[int, list[str], list[dict[str, Any]]]:
     if not raw_rows:
         return 0, [], []
 
-    header_index = _detect_header_row(raw_rows)
+    if header_row is not None:
+        header_index = header_row - 1
+        if header_index < 0 or header_index >= len(raw_rows):
+            raise ValueError(f"Header row {header_row} is out of range for this sheet")
+    else:
+        header_index = _detect_header_row(raw_rows)
     headers = _make_unique_headers(raw_rows[header_index])
     width = max(len(headers), max(len(row) for row in raw_rows[header_index:]))
     if len(headers) < width:
@@ -268,14 +276,19 @@ def _rows_to_records(raw_rows: list[list[Any]]) -> tuple[int, list[str], list[di
     return header_index, headers, rows
 
 
-def _read_uploaded_rows(file_name: str, file_bytes: bytes, sheet_name: str | None) -> tuple[str | None, list[str], list[dict[str, Any]]]:
+def _read_uploaded_rows(
+    file_name: str,
+    file_bytes: bytes,
+    sheet_name: str | None,
+    header_row: int | None = None,
+) -> tuple[str | None, int | None, list[str], list[dict[str, Any]]]:
     suffix = file_name.lower().rsplit(".", 1)[-1] if "." in file_name else ""
     if suffix == "csv":
         text = file_bytes.decode("utf-8-sig", errors="replace")
         reader = csv.reader(io.StringIO(text))
         raw_rows = [list(row) for row in reader]
-        _, headers, rows = _rows_to_records(raw_rows)
-        return None, headers, rows
+        header_index, headers, rows = _rows_to_records(raw_rows, header_row=header_row)
+        return None, header_index + 1, headers, rows
 
     if suffix not in {"xlsx", "xlsm"}:
         raise ValueError("Unsupported file format. Please upload .xlsx, .xlsm, or .csv")
@@ -284,10 +297,10 @@ def _read_uploaded_rows(file_name: str, file_bytes: bytes, sheet_name: str | Non
     worksheet = workbook[sheet_name] if sheet_name and sheet_name in workbook.sheetnames else workbook.active
     raw_rows = [list(row) for row in worksheet.iter_rows(values_only=True)]
     if not raw_rows:
-        return worksheet.title, [], []
+        return worksheet.title, None, [], []
 
-    _, headers, rows = _rows_to_records(raw_rows)
-    return worksheet.title, headers, rows
+    header_index, headers, rows = _rows_to_records(raw_rows, header_row=header_row)
+    return worksheet.title, header_index + 1, headers, rows
 
 
 def _chunked(values: list[str], size: int = 500) -> list[list[str]]:
@@ -447,8 +460,14 @@ class ImportService:
         file_bytes: bytes,
         source_type: str,
         sheet_name: str | None = None,
+        header_row: int | None = None,
     ) -> ImportUploadResponse:
-        resolved_sheet_name, headers, rows = _read_uploaded_rows(file_name, file_bytes, sheet_name)
+        resolved_sheet_name, header_row_used, headers, rows = _read_uploaded_rows(
+            file_name,
+            file_bytes,
+            sheet_name,
+            header_row=header_row,
+        )
         mapping_response = ImportService.map_import(
             ImportMapRequest(source_type=source_type, raw_columns=headers, sample_rows=rows[:10])
         )
@@ -794,6 +813,7 @@ class ImportService:
             file_name=file_name,
             source_type=source_type,
             sheet_name=resolved_sheet_name,
+            header_row_used=header_row_used,
             rows_processed=stats["rows_processed"],
             rows_skipped=stats["rows_skipped"],
             contacts_created=stats["contacts_created"],
@@ -814,6 +834,7 @@ class ImportService:
         sheet_url: str,
         source_type: str,
         sheet_name: str | None = None,
+        header_row: int | None = None,
     ) -> ImportUploadResponse:
         normalized_url = str(sheet_url or "").strip()
         if not normalized_url:
@@ -828,6 +849,7 @@ class ImportService:
             file_bytes=payload,
             source_type=source_type,
             sheet_name=sheet_name,
+            header_row=header_row,
         )
         result.warnings = [
             "Imported from Google Sheets URL. Private/authenticated sheets are not supported yet.",

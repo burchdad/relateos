@@ -20,6 +20,7 @@ type UploadResult = {
   file_name: string;
   source_type: string;
   sheet_name: string | null;
+  header_row_used: number | null;
   rows_processed: number;
   rows_skipped: number;
   contacts_created: number;
@@ -42,6 +43,7 @@ export default function ImportsPage() {
   const [loading, setLoading] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [sheetName, setSheetName] = useState("");
+  const [headerRow, setHeaderRow] = useState("");
   const [uploadingWorkbook, setUploadingWorkbook] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [sheetUrl, setSheetUrl] = useState("");
@@ -108,6 +110,7 @@ export default function ImportsPage() {
       formData.append("file", uploadFile);
       formData.append("source_type", sourceType);
       if (sheetName.trim()) formData.append("sheet_name", sheetName.trim());
+      if (headerRow.trim()) formData.append("header_row", headerRow.trim());
 
       const res = await fetch(`${API_URL}/imports/upload`, {
         method: "POST",
@@ -134,6 +137,7 @@ export default function ImportsPage() {
           source_type: sourceType,
           sheet_url: sheetUrl.trim(),
           sheet_name: sheetName.trim() || null,
+          header_row: headerRow.trim() ? Number(headerRow.trim()) : null,
         }),
       });
       if (res.ok) {
@@ -157,7 +161,7 @@ export default function ImportsPage() {
           <p className="text-sm text-muted mt-1">Upload a .xlsx, .xlsm, or .csv file. The importer maps contact fields, creates organizations, links relationship rows, and preserves unmapped columns in metadata so no spreadsheet data is lost.</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="text-xs text-muted uppercase tracking-wide block mb-1">Source Type</label>
             <select value={sourceType} onChange={e => setSourceType(e.target.value)}
@@ -183,6 +187,17 @@ export default function ImportsPage() {
               className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
             />
           </div>
+          <div>
+            <label className="text-xs text-muted uppercase tracking-wide block mb-1">Header Row (optional)</label>
+            <input
+              type="number"
+              min={1}
+              value={headerRow}
+              onChange={e => setHeaderRow(e.target.value)}
+              placeholder="e.g. 4"
+              className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -198,7 +213,11 @@ export default function ImportsPage() {
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <p className="text-sm text-green-400 font-medium">Workbook Import Complete</p>
-                <p className="text-xs text-muted mt-1">{uploadResult.file_name}{uploadResult.sheet_name ? ` · Sheet: ${uploadResult.sheet_name}` : ""}</p>
+                <p className="text-xs text-muted mt-1">
+                  {uploadResult.file_name}
+                  {uploadResult.sheet_name ? ` · Sheet: ${uploadResult.sheet_name}` : ""}
+                  {uploadResult.header_row_used ? ` · Header Row: ${uploadResult.header_row_used}` : ""}
+                </p>
               </div>
               <div className="text-xs text-muted">{uploadResult.rows_processed.toLocaleString()} processed · {uploadResult.rows_skipped.toLocaleString()} skipped</div>
             </div>
@@ -255,7 +274,7 @@ export default function ImportsPage() {
           <p className="text-sm text-muted mt-1">Paste a public Google Sheets URL and import it directly. If the URL includes a specific `gid`, that tab will be imported automatically. If not, you can optionally name the sheet tab below.</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="text-xs text-muted uppercase tracking-wide block mb-1">Google Sheets URL</label>
             <input
@@ -271,6 +290,17 @@ export default function ImportsPage() {
               value={sheetName}
               onChange={e => setSheetName(e.target.value)}
               placeholder="Optional override when importing whole workbook"
+              className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted uppercase tracking-wide block mb-1">Header Row (optional)</label>
+            <input
+              type="number"
+              min={1}
+              value={headerRow}
+              onChange={e => setHeaderRow(e.target.value)}
+              placeholder="e.g. 4"
               className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
             />
           </div>
