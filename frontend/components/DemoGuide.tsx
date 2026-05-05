@@ -11,60 +11,123 @@ type DemoStep = {
 
 const STEPS: DemoStep[] = [
   {
-    title: "Step 1: Start On Dashboard",
-    script: "Open Dashboard and lead with priority clarity.",
+    title: "Step 1: Dashboard",
+    script: "This is the home screen. It shows what matters first.",
     location: "/dashboard",
     talkTrack:
-      "This is our control tower. In seconds, I can see who needs outreach now, why they are high priority, and what should happen next.",
+      "Think of this like your mission board in a game. It tells you who needs attention now and what task to do next.",
   },
   {
-    title: "Step 2: Enter Relationships Context",
-    script: "Move into Relationships to show decision context and relationship momentum.",
+    title: "Step 2: Relationships",
+    script: "This page is your people tracker.",
     location: "/relationships",
     talkTrack:
-      "Each relationship includes context, timeline, and recommended next action, so reps are not guessing what to do or say.",
+      "Each person has a story card: where you are with them, what happened before, and what you should do next.",
   },
   {
-    title: "Step 3: Show Message + Action",
-    script: "Generate an AI message in your voice and execute the next touchpoint.",
-    location: "/relationships",
+    title: "Step 3: Contacts",
+    script: "This is your address book with smart memory.",
+    location: "/contacts",
     talkTrack:
-      "RelateOS drafts messages that sound like me, then logs interactions so the system gets smarter after every action.",
+      "It keeps names, emails, and details in one place so you can find the right person fast.",
   },
   {
-    title: "Step 4: Unified Import Intelligence",
-    script: "Open the new Imports wizard and pick source in one flow.",
-    location: "/imports",
+    title: "Step 4: Deals",
+    script: "This page tracks money opportunities.",
+    location: "/deals",
     talkTrack:
-      "Instead of separate import blocks, we now choose source type once, analyze workbook or Google Sheet, review mappings, then commit with confidence.",
+      "If a deal is open, won, or stuck, you can see it here like a score tracker.",
   },
   {
-    title: "Step 5: Analyze Before Commit",
-    script: "Run Analyze to preview detected tabs, headers, mappings, and sample rows.",
-    location: "/imports",
+    title: "Step 5: Partners",
+    script: "This page shows companies and groups you work with.",
+    location: "/organizations",
     talkTrack:
-      "This is BI-style safety: analyze first, select tabs, override mappings, then run import. It reduces bad writes and preserves unmapped fields.",
+      "People belong to companies, so this page helps you see the team around each relationship.",
   },
   {
-    title: "Step 6: AI Event Capture Automation",
-    script: "Show that engagement events are now auto-enriched by AI on create/import/capture.",
-    location: "/signals",
+    title: "Step 6: Content",
+    script: "This page is your content command center.",
+    location: "/content",
     talkTrack:
-      "Every event now gets structured intelligence: summary, intent, engagement score, tags, confidence, and suggested next action.",
+      "You can create or reuse content, send it to the right people, and track who responded.",
   },
   {
-    title: "Step 7: Agent Mailbox Invite Intake",
-    script: "Demo inbound invite ingestion for agent mailbox workflows.",
+    title: "Step 7: Events",
+    script: "This page manages live events like webinars.",
+    location: "/events",
+    talkTrack:
+      "You can schedule events and keep them connected to your relationships and campaigns.",
+  },
+  {
+    title: "Step 8: Network Graph",
+    script: "This page draws the connection map.",
+    location: "/network/graph",
+    talkTrack:
+      "It is like a spider web of people and companies so you can spot who connects to who.",
+  },
+  {
+    title: "Step 9: Scoreboard",
+    script: "This page is your points table.",
+    location: "/scoreboard",
+    talkTrack:
+      "It ranks what is going well and what needs help, so decisions are easier.",
+  },
+  {
+    title: "Step 10: Meetings",
+    script: "This page stores meeting memory.",
     location: "/meetings",
     talkTrack:
-      "Forward an invite to the agent mailbox and we auto-create meeting, parse attendees, and log a meeting_invite_received engagement signal.",
+      "Meeting invites can be captured by the agent mailbox, then RelateOS saves attendees, notes, and follow-ups.",
   },
   {
-    title: "Step 8: Close With Compound Intelligence",
-    script: "Return to Dashboard to show closed-loop execution.",
+    title: "Step 11: Imports",
+    script: "This is the new all-in-one data import wizard.",
+    location: "/imports",
+    talkTrack:
+      "Pick where data comes from, analyze it first, fix mappings, then import safely in one flow.",
+  },
+  {
+    title: "Step 12: Content Funnels",
+    script: "This page shows your content pipeline path.",
+    location: "/funnels",
+    talkTrack:
+      "It helps you move people from first touch to stronger engagement step by step.",
+  },
+  {
+    title: "Step 13: RelateOS AI",
+    script: "This is your AI helper page.",
+    location: "/relateos",
+    talkTrack:
+      "Use AI to get suggestions, summaries, and smart next actions faster.",
+  },
+  {
+    title: "Step 14: Signals",
+    script: "This page watches activity signals.",
+    location: "/signals",
+    talkTrack:
+      "When people interact, events are auto-captured and AI adds meaning like intent and urgency.",
+  },
+  {
+    title: "Step 15: Connections",
+    script: "This page is for connecting outside tools.",
+    location: "/connections",
+    talkTrack:
+      "Think of this as plugging in extra power-ups like email or calendar services.",
+  },
+  {
+    title: "Step 16: Settings",
+    script: "This page controls how your workspace behaves.",
+    location: "/settings",
+    talkTrack:
+      "You can change defaults and preferences so the app fits your team.",
+  },
+  {
+    title: "Step 17: Full Loop Recap",
+    script: "Go back to Dashboard and show the full story.",
     location: "/dashboard",
     talkTrack:
-      "This is the full loop: capture activity automatically, enrich with AI, and turn it into prioritized actions that move pipeline every day.",
+      "Simple version: capture what happened, understand it with AI, and take the best next step.",
   },
 ];
 
@@ -99,7 +162,7 @@ export default function DemoGuide() {
         onClick={restart}
         className="fixed bottom-5 right-5 z-40 rounded-full border border-soft bg-panel px-4 py-2 text-xs font-medium text-text shadow-card hover:bg-soft"
       >
-        Run Demo Script
+        Run Simple Demo Tour
       </button>
     );
   }
