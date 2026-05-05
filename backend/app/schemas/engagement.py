@@ -40,3 +40,14 @@ class EngagementImportRow(BaseModel):
 class EngagementImportRequest(BaseModel):
     rows: list[EngagementImportRow]
     auto_create_contacts: bool = True
+
+
+class EngagementCaptureRequest(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    event_type: str
+    source_platform: str | None = None
+    occurred_at: datetime | None = None
+    notes: str | None = None
+    raw_payload: dict = Field(default_factory=dict)
+    auto_create_contact: bool = True

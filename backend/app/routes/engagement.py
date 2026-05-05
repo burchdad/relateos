@@ -5,7 +5,12 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.engagement import EngagementEventCreate, EngagementEventOut, EngagementImportRequest
+from app.schemas.engagement import (
+    EngagementCaptureRequest,
+    EngagementEventCreate,
+    EngagementEventOut,
+    EngagementImportRequest,
+)
 from app.services.engagement_service import EngagementService
 
 router = APIRouter(prefix="/engagement-events", tags=["engagement"])
@@ -29,3 +34,8 @@ def create_event(payload: EngagementEventCreate, db: Session = Depends(get_db)):
 def import_events(payload: EngagementImportRequest, db: Session = Depends(get_db)):
     result = EngagementService.bulk_import(db, payload)
     return result
+
+
+@router.post("/capture")
+def capture_event(payload: EngagementCaptureRequest, db: Session = Depends(get_db)):
+    return EngagementService.capture(db, payload)
