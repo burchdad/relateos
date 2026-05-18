@@ -160,9 +160,11 @@ export default function DemoGuide() {
     return (
       <button
         onClick={restart}
-        className="fixed bottom-5 right-5 z-40 rounded-full border border-soft bg-panel px-4 py-2 text-xs font-medium text-text shadow-card hover:bg-soft"
+        aria-label="Run simple demo tour"
+        className="fixed bottom-4 right-4 z-40 rounded-full border border-soft bg-panel/95 px-3 py-2 text-xs font-medium text-text shadow-card backdrop-blur hover:bg-soft sm:bottom-5 sm:right-5 sm:px-4"
       >
-        Run Simple Demo Tour
+        <span className="hidden sm:inline">Run Simple Demo Tour</span>
+        <span className="sm:hidden">Demo</span>
       </button>
     );
   }
@@ -170,9 +172,14 @@ export default function DemoGuide() {
   return (
     <>
       <div className="fixed inset-0 z-40 bg-canvas/70 backdrop-blur-sm" aria-hidden="true" />
-      <aside className="fixed bottom-5 right-5 z-50 w-full max-w-sm rounded-2xl border border-soft bg-panel p-5 shadow-card">
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="demo-guide-title"
+        className="fixed inset-x-3 bottom-4 z-50 max-h-[calc(100vh-2rem)] overflow-y-auto rounded-xl border border-soft bg-panel p-4 shadow-card sm:inset-x-auto sm:bottom-5 sm:right-5 sm:w-full sm:max-w-sm sm:p-5"
+      >
         <p className="text-[11px] uppercase tracking-[0.2em] text-accent">Guided Demo</p>
-        <h3 className="mt-2 text-lg font-semibold text-text">{step.title}</h3>
+        <h3 id="demo-guide-title" className="mt-2 text-lg font-semibold text-text">{step.title}</h3>
         <p className="mt-2 text-sm leading-6 text-muted">{step.script}</p>
         <p className="mt-2 rounded-md border border-soft bg-base px-2 py-1 text-[11px] text-muted">
           Navigate: <span className="font-mono text-text">{step.location}</span>
@@ -216,7 +223,7 @@ export default function DemoGuide() {
             onClick={close}
             className="ml-auto rounded-md border border-soft px-3 py-1.5 text-sm text-text hover:bg-soft"
           >
-            Skip
+            Skip demo tour
           </button>
         </div>
       </aside>

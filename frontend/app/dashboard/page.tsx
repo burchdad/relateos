@@ -345,8 +345,8 @@ export default function DashboardPage() {
 
   return (
     <>
-      <main className="mx-auto min-h-screen max-w-6xl px-4 py-10 sm:px-6 lg:px-10">
-        <header className="mb-8 rounded-2xl border border-soft bg-panel/70 p-6">
+      <section className="mx-auto min-h-screen max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
+        <header className="mb-6 rounded-xl border border-soft bg-panel/70 p-5 sm:p-6">
         <p className="text-xs uppercase tracking-[0.2em] text-accent">RelateOS</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Today&apos;s Focus</h1>
         <p className="mt-3 max-w-2xl text-sm text-muted">
@@ -362,17 +362,35 @@ export default function DashboardPage() {
             }}
             className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-canvas hover:brightness-110"
           >
-            {showCreateForm ? "Close" : "Add Relationship + Context"}
+            Add Relationship + Context
           </button>
         </div>
         </header>
 
         {showCreateForm ? (
-          <form onSubmit={onCreateRelationship} className="mb-6 rounded-2xl border border-soft bg-panel/60 p-4">
-            <h2 className="text-base font-semibold text-text">Create Relationship With Context</h2>
-            <p className="mt-1 text-xs text-muted">This 15-second input unlocks summary, score signals, and first message instantly.</p>
+          <div className="fixed inset-0 z-50 bg-canvas/70 backdrop-blur-sm" role="presentation">
+            <form
+              onSubmit={onCreateRelationship}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="create-relationship-title"
+              className="ml-auto flex h-full w-full max-w-xl flex-col border-l border-soft bg-panel p-5 shadow-card"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 id="create-relationship-title" className="text-base font-semibold text-text">Create Relationship With Context</h2>
+                  <p className="mt-1 text-xs text-muted">Add the minimum context needed for scoring and a first message.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateForm(false)}
+                  className="rounded-md border border-soft px-3 py-1.5 text-sm text-text hover:bg-soft"
+                >
+                  Close
+                </button>
+              </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
               <input
                 value={form.firstName}
                 onChange={(e) => setForm((prev) => ({ ...prev, firstName: e.target.value }))}
@@ -442,7 +460,7 @@ export default function DashboardPage() {
 
             {createError ? <p className="mt-3 text-sm text-red-300">{createError}</p> : null}
 
-            <div className="mt-4 flex items-center gap-2">
+            <div className="mt-auto flex items-center gap-2 pt-5">
               <button
                 type="submit"
                 disabled={creating}
@@ -459,6 +477,7 @@ export default function DashboardPage() {
               </button>
             </div>
           </form>
+          </div>
         ) : null}
 
         {loading ? <p className="text-muted">Loading priorities...</p> : null}
@@ -488,11 +507,11 @@ export default function DashboardPage() {
           </section>
         ) : null}
         {!loading && campaignInsights ? (
-          <section className="mb-5 rounded-2xl border border-soft bg-panel/50 p-4">
+          <section className="mb-5 rounded-xl border border-soft bg-panel/50 p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-text">Proof View</h2>
-                <p className="mt-1 text-xs text-muted">Show the latest control vs optimized evidence without leaving the dashboard.</p>
+                <p className="mt-1 text-xs text-muted">Campaign evidence stays tucked away until there is enough signal to review.</p>
               </div>
               <Link href="/relateos" className="text-xs text-accent hover:underline">Open RelateOS</Link>
             </div>
@@ -517,33 +536,35 @@ export default function DashboardPage() {
 
         {!loading && !error && items.length > 0 ? (
           <>
-            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-soft bg-panel/50 p-3 text-sm">
-              <label className="flex items-center gap-2 text-text">
-                <input
-                  type="checkbox"
-                  checked={selectedIds.size > 0 && selectedIds.size === items.length}
-                  onChange={onToggleSelectAll}
-                  className="h-4 w-4 rounded border-soft bg-canvas text-accent focus:ring-accent"
-                />
-                Select all visible
-              </label>
-              <button
-                type="button"
-                onClick={onDeleteSelected}
-                disabled={deleting || selectedIds.size === 0}
-                className="rounded-md border border-red-400/50 px-3 py-1.5 text-sm text-red-200 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {deleting ? "Deleting..." : `Delete Selected (${selectedIds.size})`}
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedIds(new Set())}
-                disabled={deleting || selectedIds.size === 0}
-                className="rounded-md border border-soft px-3 py-1.5 text-sm text-text hover:bg-soft disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Clear selection
-              </button>
-            </div>
+            {selectedIds.size > 0 ? (
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-soft bg-panel/50 p-3 text-sm">
+                <label className="flex items-center gap-2 text-text">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.size > 0 && selectedIds.size === items.length}
+                    onChange={onToggleSelectAll}
+                    className="h-4 w-4 rounded border-soft bg-canvas text-accent focus:ring-accent"
+                  />
+                  Select all visible
+                </label>
+                <button
+                  type="button"
+                  onClick={onDeleteSelected}
+                  disabled={deleting || selectedIds.size === 0}
+                  className="rounded-md border border-red-400/50 px-3 py-1.5 text-sm text-red-200 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {deleting ? "Deleting..." : `Delete Selected (${selectedIds.size})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds(new Set())}
+                  disabled={deleting || selectedIds.size === 0}
+                  className="rounded-md border border-soft px-3 py-1.5 text-sm text-text hover:bg-soft disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Clear selection
+                </button>
+              </div>
+            ) : null}
             <DashboardList
               items={items}
               onSimulateSend={onSimulateSend}
@@ -557,7 +578,7 @@ export default function DashboardPage() {
             />
           </>
         ) : null}
-      </main>
+      </section>
       <DemoGuide />
     </>
   );

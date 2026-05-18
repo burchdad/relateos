@@ -5,8 +5,11 @@ type Props = {
   compact?: boolean;
 };
 
+type ProofSummary = CampaignInsights["proof_summary"];
+
 export default function CampaignProofPanel({ insights, compact = false }: Props) {
   const proof = insights.proof_summary;
+  const hasEvidence = proof.comparison || proof.sample_size_valid || proof.evidence_send_count > 0;
 
   return (
     <div className="rounded-md border border-soft bg-canvas/60 p-4 text-sm text-text">
@@ -28,14 +31,48 @@ export default function CampaignProofPanel({ insights, compact = false }: Props)
         </span>
       </div>
 
-      <div className={`mt-4 grid gap-3 ${compact ? "lg:grid-cols-2" : "sm:grid-cols-2 xl:grid-cols-4"}`}>
+      {!hasEvidence && compact ? (
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <SummaryMetric label="Confidence" value={`${proof.confidence_label} (${proof.confidence_score}/100)`} />
+          <SummaryMetric label="Evidence" value={`${proof.evidence_send_count}/${proof.minimum_sample_size} sends`} />
+          <SummaryMetric label="Lift" value="Pending" />
+        </div>
+      ) : null}
+
+      {compact ? (
+        <details className="mt-4 rounded-md border border-soft bg-panel/40 p-3">
+          <summary className="cursor-pointer text-xs font-medium uppercase tracking-wider text-accent">
+            View proof details
+          </summary>
+          <ProofDetails proof={proof} compact={compact} />
+        </details>
+      ) : (
+        <ProofDetails proof={proof} compact={compact} />
+      )}
+    </div>
+  );
+}
+
+function SummaryMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-soft bg-panel/50 p-3">
+      <p className="text-xs uppercase tracking-wider text-muted">{label}</p>
+      <p className="mt-1 font-semibold text-text">{value}</p>
+    </div>
+  );
+}
+
+function ProofDetails({ proof, compact }: { proof: ProofSummary; compact: boolean }) {
+  return (
+    <div className={compact ? "mt-4" : ""}>
+      <div className={`grid gap-3 ${compact ? "lg:grid-cols-2" : "sm:grid-cols-2 xl:grid-cols-4"}`}>
         <div className="rounded-md border border-soft bg-panel/50 p-3">
           <p className="text-xs uppercase tracking-wider text-muted">Confidence</p>
           <p className="mt-1 font-semibold text-text">
             {proof.confidence_label} ({proof.confidence_score}/100)
           </p>
           <p className="mt-1 text-xs text-muted">
-            Based on {proof.evidence_campaign_count} campaigns • {proof.evidence_send_count} sends
+            Based on {proof.evidence_campaign_count} campaigns / {proof.evidence_send_count} sends
           </p>
           <p className="mt-1 text-xs text-muted">Consistency: {proof.consistency_label}</p>
         </div>

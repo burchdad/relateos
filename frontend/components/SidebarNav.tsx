@@ -66,15 +66,36 @@ function NavSection({ title, items, pathname }: { title: string; items: NavItem[
 
 export default function SidebarNav() {
   const pathname = usePathname();
+  const mobileItems = [...coreNav, ...intelligenceNav, ...systemNav];
 
   return (
-    <aside className="border-b border-soft bg-panel/85 px-3 py-4 md:min-h-screen md:border-b-0 md:border-r md:px-4 md:py-6">
+    <aside className="sticky top-0 z-30 border-b border-soft bg-panel/95 px-3 py-3 backdrop-blur md:static md:min-h-screen md:border-b-0 md:border-r md:bg-panel/85 md:px-4 md:py-6">
       <div className="mb-5 px-2">
         <p className="text-[11px] uppercase tracking-[0.2em] text-accent">TR3 / RelateOS</p>
         <h1 className="mt-1 text-lg font-semibold tracking-tight text-text">Network Intelligence</h1>
       </div>
 
-      <nav className="grid gap-5 md:sticky md:top-5">
+      <nav className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden" aria-label="Primary navigation">
+        {mobileItems.map((item) => {
+          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
+                active
+                  ? "border-accent/60 bg-accent/15 text-text"
+                  : "border-soft/70 text-muted hover:bg-soft/40 hover:text-text"
+              }`}
+            >
+              <span className="text-[10px] font-semibold text-muted">{item.icon}</span>
+              <span className="font-medium">{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+
+      <nav className="hidden gap-5 md:sticky md:top-5 md:grid" aria-label="Primary navigation">
         <NavSection title="Core Navigation" items={coreNav} pathname={pathname} />
         <NavSection title="Intelligence Layer" items={intelligenceNav} pathname={pathname} />
         <NavSection title="System" items={systemNav} pathname={pathname} />
