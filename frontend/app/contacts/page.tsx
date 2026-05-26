@@ -2,13 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { resolveApiUrl } from "@/components/api";
+import { ROLE_OPTIONS, formatRole } from "@/components/roleTaxonomy";
 import type { Contact } from "@/components/types";
-
-const ROLES = [
-  "buyer", "seller", "lp_investor", "gp_partner", "operator", "vendor",
-  "broker", "agent", "lender", "coach", "student", "community_member",
-  "podcast_guest", "influencer", "unknown",
-];
 
 const STAGES = ["new", "aware", "engaged", "active", "partner", "dormant", "high_value"];
 
@@ -91,7 +86,7 @@ export default function ContactsPage() {
         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
           className="rounded-lg border border-soft bg-panel px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60">
           <option value="">All Roles</option>
-          {ROLES.map(r => <option key={r} value={r}>{r.replace(/_/g, " ")}</option>)}
+          {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
         <select value={stageFilter} onChange={e => setStageFilter(e.target.value)}
           className="rounded-lg border border-soft bg-panel px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60">
@@ -120,7 +115,7 @@ export default function ContactsPage() {
             <select value={form.primary_role} onChange={e => setForm(p => ({ ...p, primary_role: e.target.value }))}
               className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none">
               <option value="">Select Role</option>
-              {ROLES.map(r => <option key={r} value={r}>{r.replace(/_/g, " ")}</option>)}
+              {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
             <select value={form.relationship_stage} onChange={e => setForm(p => ({ ...p, relationship_stage: e.target.value }))}
               className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none">
@@ -162,7 +157,14 @@ export default function ContactsPage() {
                   <td className="px-4 py-3 font-medium text-text">
                     {c.first_name} {c.last_name}
                   </td>
-                  <td className="px-4 py-3 text-muted capitalize">{(c.primary_role || "—").replace(/_/g, " ")}</td>
+                  <td className="px-4 py-3 text-muted">
+                    {formatRole(c.primary_role)}
+                    {c.market_segment && c.market_segment !== "general" ? (
+                      <span className="ml-2 rounded-full border border-soft px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted">
+                        {c.market_segment.replace(/_/g, " ")}
+                      </span>
+                    ) : null}
+                  </td>
                   <td className={`px-4 py-3 capitalize font-medium ${stageColor(c.relationship_stage)}`}>
                     {c.relationship_stage || "—"}
                   </td>

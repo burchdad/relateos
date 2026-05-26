@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.entities import Deal, DealParticipant
 from app.schemas.deal import DealCreate, DealUpdate, NaturalLanguageDealResult
+from app.services.network_service import NetworkService
 
 
 class DealService:
@@ -45,9 +46,45 @@ class DealService:
             )
             db.add(participant)
 
+        DealService._update_network_edges(db, deal)
+
         db.commit()
         db.refresh(deal)
         return deal
+
+    @staticmethod
+    def _update_network_edges(db: Session, deal: Deal) -> None:
+        participant_ids = [p.contact_id for p in deal.participants if p.contact_id]
+        anchor_ids = [deal.primary_contact_id, deal.source_contact_id, deal.referred_by_contact_id]
+        contact_ids = []
+        for contact_id in anchor_ids + participant_ids:
+            if contact_id and contact_id not in contact_ids:
+                contact_ids.append(contact_id)
+
+        if len(contact_ids) < 2:
+            return
+
+        for idx, source_id in enumerate(contact_ids[:20]):
+            for target_id in contact_ids[idx + 1 : 20]:
+                try:
+                    NetworkService.upsert_edge(
+                        db,
+                        source_id,
+                        target_id,
+                        relationship_type="deal_collaboration",
+                        strength=1.5,
+                        organization_id=deal.organization_id,
+                        revenue_attributed=float(deal.actual_value or deal.expected_value or deal.amount or 0.0),
+                        deal_count=1,
+                        evidence={
+                            "source": "deal",
+                            "deal_id": str(deal.id),
+                            "deal_title": deal.title,
+                            "deal_status": deal.status,
+                        },
+                    )
+                except ValueError:
+                    continue
 
     @staticmethod
     def get_by_id(db: Session, deal_id: uuid.UUID) -> Deal | None:

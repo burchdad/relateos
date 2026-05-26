@@ -47,6 +47,8 @@ class Person(Base):
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
     # --- Network Intelligence fields ---
     primary_role: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    role_family: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    market_segment: Mapped[str | None] = mapped_column(String(50), nullable=True)
     secondary_roles: Mapped[list] = mapped_column(JSONB, default=list)
     organization_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True
@@ -412,6 +414,9 @@ class Meeting(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     action_items: Mapped[list] = mapped_column(JSONB, default=list)
     source_event_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    source_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    external_meeting_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    raw_report: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

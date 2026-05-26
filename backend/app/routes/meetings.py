@@ -10,6 +10,8 @@ from app.schemas.meeting import (
     InboundInviteResponse,
     MeetingCreate,
     MeetingFollowUpResponse,
+    MeetingIntelligenceReportRequest,
+    MeetingIntelligenceReportResponse,
     MeetingOut,
     MeetingUpdate,
 )
@@ -26,6 +28,16 @@ def list_meetings(db: Session = Depends(get_db)):
 @router.post("", response_model=MeetingOut, status_code=201)
 def create_meeting(payload: MeetingCreate, db: Session = Depends(get_db)):
     return MeetingService.create(db, payload)
+
+
+@router.post("/inbound-invite", response_model=InboundInviteResponse, status_code=201)
+def ingest_inbound_invite(payload: InboundInviteRequest, db: Session = Depends(get_db)):
+    return MeetingService.ingest_invite(db, payload)
+
+
+@router.post("/intelligence-report", response_model=MeetingIntelligenceReportResponse, status_code=201)
+def ingest_meeting_intelligence_report(payload: MeetingIntelligenceReportRequest, db: Session = Depends(get_db)):
+    return MeetingService.ingest_intelligence_report(db, payload)
 
 
 @router.get("/{meeting_id}", response_model=MeetingOut)
@@ -55,8 +67,3 @@ def generate_followups(meeting_id: uuid.UUID, db: Session = Depends(get_db)):
         return MeetingService.generate_followups(db, meeting_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.post("/inbound-invite", response_model=InboundInviteResponse, status_code=201)
-def ingest_inbound_invite(payload: InboundInviteRequest, db: Session = Depends(get_db)):
-    return MeetingService.ingest_invite(db, payload)

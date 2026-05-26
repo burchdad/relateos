@@ -16,6 +16,9 @@ export default function MeetingsPage() {
   const [importing, setImporting] = useState(false);
   const [followups, setFollowups] = useState<Record<string, unknown> | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [reportJson, setReportJson] = useState("");
+  const [reportStatus, setReportStatus] = useState("");
+  const [ingestingReport, setIngestingReport] = useState(false);
 
   const fetchMeetings = async () => {
     setLoading(true);
@@ -84,6 +87,34 @@ export default function MeetingsPage() {
     }
   };
 
+  const handleIngestReport = async () => {
+    if (!reportJson.trim()) return;
+    setIngestingReport(true);
+    setReportStatus("");
+    try {
+      const parsed = JSON.parse(reportJson);
+      const res = await fetch(`${API_URL}/meetings/intelligence-report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parsed),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setReportStatus(String(body?.detail || "Failed to ingest meeting report."));
+        return;
+      }
+      setReportStatus(
+        `Captured meeting ${body.meeting_id}: ${body.attendees_added} attendees, ${body.contacts_created} contacts, ${body.relationship_edges_created} graph edges.`
+      );
+      setReportJson("");
+      await fetchMeetings();
+    } catch (error) {
+      setReportStatus(error instanceof Error ? error.message : "Invalid JSON report.");
+    } finally {
+      setIngestingReport(false);
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -125,6 +156,31 @@ export default function MeetingsPage() {
           </form>
         </div>
       )}
+
+      <div className="rounded-xl border border-accent/30 bg-panel p-5 space-y-3">
+        <div>
+          <p className="font-medium text-text text-sm">Meeting Intelligence Intake</p>
+          <p className="text-xs text-muted mt-1">
+            Paste a Read.ai-style report JSON to capture transcript, summary, action items, attendees, and graph edges.
+          </p>
+        </div>
+        <textarea
+          value={reportJson}
+          onChange={e => setReportJson(e.target.value)}
+          placeholder='{"provider":"read_ai","title":"Investor call","summary":"...","action_items":[{"text":"Send deal packet"}],"participants":[{"name":"Alex Lee","email":"alex@example.com"}]}'
+          className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-28 resize-none"
+        />
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleIngestReport}
+            disabled={ingestingReport || !reportJson.trim()}
+            className="rounded-lg bg-accent/20 border border-accent/40 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition disabled:opacity-50"
+          >
+            {ingestingReport ? "Capturing..." : "Capture Report"}
+          </button>
+          {reportStatus ? <p className="text-xs text-muted">{reportStatus}</p> : null}
+        </div>
+      </div>
 
       <div className="grid md:grid-cols-3 gap-6">
         {/* Meeting list */}

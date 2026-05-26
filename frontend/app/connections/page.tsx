@@ -9,8 +9,39 @@ export default function ConnectionsPage() {
         </p>
       </header>
 
-      <section className="mt-4 rounded-2xl border border-soft bg-panel/50 p-5 text-sm text-muted">
-        Integration management surface is staged for provider onboarding and status checks.
+      <section className="mt-4 grid gap-3 md:grid-cols-2">
+        {[
+          {
+            name: "Read.ai",
+            status: "Intake endpoint ready",
+            detail: "Push meeting summaries, transcripts, action items, and participants into Meeting Intelligence.",
+          },
+          {
+            name: "Calendar + Gmail",
+            status: "Next",
+            detail: "Capture invites, attendees, and follow-up context from internal meeting flow.",
+          },
+          {
+            name: "Zoom / Meet",
+            status: "Provider-backed",
+            detail: "Use Read.ai first, then add native provider APIs where the client workflow requires it.",
+          },
+          {
+            name: "CRM",
+            status: "Planned",
+            detail: "Sync contacts, stages, and deal context once contact taxonomy is stable.",
+          },
+        ].map((item) => (
+          <article key={item.name} className="rounded-lg border border-soft bg-panel/50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-text">{item.name}</h2>
+              <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[11px] text-accent">
+                {item.status}
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-muted">{item.detail}</p>
+          </article>
+        ))}
       </section>
     </main>
   );

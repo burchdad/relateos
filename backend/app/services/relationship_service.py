@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.taxonomy import normalize_role, role_metadata
 from app.models import AIInsight, Interaction, Opportunity, Person, Relationship, RelationshipSignal
 from app.schemas.relationship import RelationshipCreate
 
@@ -36,16 +37,22 @@ def _next_suggested_action_at(last_interaction_timing: str) -> datetime:
 class RelationshipService:
     @staticmethod
     def create_person_and_relationship(db: Session, payload: RelationshipCreate) -> Relationship:
+        normalized_type = normalize_role(payload.type) or payload.type
+        taxonomy = role_metadata(normalized_type)
         person_metadata = {
             **(payload.person.metadata or {}),
             "interests": payload.interests,
             "current_status": payload.current_status,
             "last_interaction_timing": payload.last_interaction_timing,
+            "role_label": taxonomy.get("label"),
+            "role_family": taxonomy.get("role_family"),
+            "market_segment": taxonomy.get("market_segment"),
         }
         person_tags = {
             **(payload.person.tags or {}),
-            "role": payload.type,
+            "role": normalized_type,
             "status": payload.current_status,
+            "market_segment": taxonomy.get("market_segment"),
         }
 
         person = Person(
@@ -53,6 +60,9 @@ class RelationshipService:
             last_name=payload.person.last_name,
             email=payload.person.email,
             phone=payload.person.phone,
+            primary_role=normalized_type,
+            role_family=taxonomy.get("role_family"),
+            market_segment=taxonomy.get("market_segment"),
             tags=person_tags,
             metadata_json=person_metadata,
         )
@@ -68,7 +78,7 @@ class RelationshipService:
 
         relationship = Relationship(
             person_id=person.id,
-            type=payload.type,
+            type=normalized_type,
             lifecycle_stage=lifecycle_stage,
             relationship_strength=relationship_strength,
             owner_user_id=payload.owner_user_id,

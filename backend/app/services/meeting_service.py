@@ -8,17 +8,21 @@ from email.utils import parseaddr
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.taxonomy import normalize_role, role_metadata
 from app.models.entities import Meeting, MeetingAttendee, Person
-from app.schemas.engagement import EngagementCaptureRequest
+from app.schemas.engagement import EngagementCaptureRequest, EngagementEventCreate
 from app.schemas.meeting import (
     AttendeeImportRequest,
     InboundInviteRequest,
     InboundInviteResponse,
     MeetingCreate,
     MeetingFollowUpResponse,
+    MeetingIntelligenceReportRequest,
+    MeetingIntelligenceReportResponse,
     MeetingUpdate,
 )
 from app.services.engagement_service import EngagementService
+from app.services.network_service import NetworkService
 
 
 MEETING_URL_PATTERN = re.compile(
@@ -124,8 +128,59 @@ class MeetingService:
         return meeting
 
     @staticmethod
+    def _find_existing_report_meeting(
+        db: Session,
+        provider: str | None,
+        external_meeting_id: str | None,
+    ) -> Meeting | None:
+        if not provider or not external_meeting_id:
+            return None
+        return (
+            db.query(Meeting)
+            .filter(
+                Meeting.source_provider == provider,
+                Meeting.external_meeting_id == external_meeting_id,
+            )
+            .first()
+        )
+
+    @staticmethod
     def get_by_id(db: Session, meeting_id: uuid.UUID) -> Meeting | None:
         return db.query(Meeting).filter(Meeting.id == meeting_id).first()
+
+    @staticmethod
+    def _upsert_meeting_edges(
+        db: Session,
+        meeting: Meeting,
+        contact_ids: list[uuid.UUID],
+        *,
+        source: str,
+        reason: str,
+        strength: float = 1.0,
+    ) -> int:
+        unique_contact_ids = list(dict.fromkeys(contact_ids))
+        edges_created = 0
+        for idx, source_id in enumerate(unique_contact_ids[:25]):
+            for target_id in unique_contact_ids[idx + 1 : 25]:
+                try:
+                    _edge, created = NetworkService.upsert_edge(
+                        db,
+                        source_id,
+                        target_id,
+                        relationship_type="met_in_meeting",
+                        strength=strength,
+                        evidence={
+                            "source": source,
+                            "meeting_id": str(meeting.id),
+                            "meeting_title": meeting.title,
+                            "reason": reason,
+                        },
+                    )
+                    if created:
+                        edges_created += 1
+                except ValueError:
+                    continue
+        return edges_created
 
     @staticmethod
     def list_all(db: Session, limit: int = 50) -> list[Meeting]:
@@ -150,6 +205,7 @@ class MeetingService:
 
         contacts_created = 0
         attendees_added = 0
+        contact_ids: list[uuid.UUID] = []
 
         for row in payload.rows:
             contact_id = None
@@ -161,6 +217,7 @@ class MeetingService:
                     contact.source = "meeting"
                     contacts_created += 1
                     db.commit()
+                contact_ids.append(contact.id)
 
             attendee = MeetingAttendee(
                 id=uuid.uuid4(),
@@ -174,8 +231,140 @@ class MeetingService:
             db.add(attendee)
             attendees_added += 1
 
+        edges_created = MeetingService._upsert_meeting_edges(
+            db,
+            meeting,
+            contact_ids,
+            source="manual_attendee_import",
+            reason="Co-attended meeting captured by attendee import.",
+        )
         db.commit()
-        return {"attendees_added": attendees_added, "contacts_created": contacts_created}
+        return {
+            "attendees_added": attendees_added,
+            "contacts_created": contacts_created,
+            "relationship_edges_created": edges_created,
+        }
+
+    @staticmethod
+    def ingest_intelligence_report(
+        db: Session,
+        payload: MeetingIntelligenceReportRequest,
+    ) -> MeetingIntelligenceReportResponse:
+        provider = _clean(payload.provider).lower() or "read_ai"
+        meeting = MeetingService._find_existing_report_meeting(db, provider, payload.external_meeting_id)
+        if meeting is None:
+            meeting = Meeting(
+                id=uuid.uuid4(),
+                title=payload.title,
+                platform=payload.platform,
+                meeting_url=payload.meeting_url,
+                started_at=payload.started_at,
+                ended_at=payload.ended_at,
+                scheduled_at=payload.started_at,
+                source_provider=provider,
+                external_meeting_id=payload.external_meeting_id,
+            )
+            db.add(meeting)
+            db.flush()
+
+        meeting.title = payload.title or meeting.title
+        meeting.platform = payload.platform or meeting.platform
+        meeting.meeting_url = payload.meeting_url or meeting.meeting_url
+        meeting.started_at = payload.started_at or meeting.started_at
+        meeting.ended_at = payload.ended_at or meeting.ended_at
+        meeting.summary = payload.summary or meeting.summary
+        meeting.transcript = payload.transcript or meeting.transcript
+        meeting.action_items = [item.model_dump() for item in payload.action_items]
+        meeting.raw_report = payload.raw_payload or {
+            "provider": provider,
+            "external_meeting_id": payload.external_meeting_id,
+        }
+
+        contacts_created = 0
+        attendees_added = 0
+        contact_ids: list[uuid.UUID] = []
+
+        for participant in payload.participants:
+            contact_id = None
+            email = _clean(participant.email).lower() or None
+            name = _clean(participant.name) or None
+            if email and payload.auto_create_contacts:
+                from app.services.contact_service import ContactService
+
+                existing = db.query(Person).filter(Person.email == email).first()
+                contact = ContactService.find_or_create_by_email(db, email, name)
+                contact_id = contact.id
+                if existing is None:
+                    contacts_created += 1
+                if contact.source is None:
+                    contact.source = provider
+                if participant.role and not contact.primary_role:
+                    contact.primary_role = normalize_role(participant.role)
+                    metadata = role_metadata(contact.primary_role)
+                    contact.role_family = metadata.get("role_family")
+                    contact.market_segment = metadata.get("market_segment")
+                if contact_id not in contact_ids:
+                    contact_ids.append(contact_id)
+
+            existing_attendee = None
+            if email:
+                existing_attendee = (
+                    db.query(MeetingAttendee)
+                    .filter(MeetingAttendee.meeting_id == meeting.id, MeetingAttendee.email == email)
+                    .first()
+                )
+            if existing_attendee is None:
+                db.add(
+                    MeetingAttendee(
+                        id=uuid.uuid4(),
+                        meeting_id=meeting.id,
+                        contact_id=contact_id,
+                        name=name,
+                        email=email,
+                        attendance_status="attended",
+                        duration_seconds=participant.talk_time_seconds or 0,
+                    )
+                )
+                attendees_added += 1
+            else:
+                existing_attendee.contact_id = existing_attendee.contact_id or contact_id
+                existing_attendee.name = name or existing_attendee.name
+                existing_attendee.duration_seconds = participant.talk_time_seconds or existing_attendee.duration_seconds
+
+        edges_created = MeetingService._upsert_meeting_edges(
+            db,
+            meeting,
+            contact_ids,
+            source=provider,
+            reason="Co-attended meeting captured by meeting intelligence.",
+            strength=1.2,
+        )
+
+        if payload.summary or payload.action_items:
+            for contact_id in contact_ids[:50]:
+                EngagementService.create(
+                    db,
+                    EngagementEventCreate(
+                        contact_id=contact_id,
+                        event_type="meeting_summary_captured",
+                        source_platform=provider,
+                        summary=payload.summary,
+                        raw_payload={
+                            "meeting_id": str(meeting.id),
+                            "action_items": [item.model_dump() for item in payload.action_items],
+                        },
+                    ),
+                )
+
+        db.commit()
+        db.refresh(meeting)
+        return MeetingIntelligenceReportResponse(
+            meeting_id=meeting.id,
+            attendees_added=attendees_added,
+            contacts_created=contacts_created,
+            action_items_created=len(payload.action_items),
+            relationship_edges_created=edges_created,
+        )
 
     @staticmethod
     def generate_followups(db: Session, meeting_id: uuid.UUID) -> MeetingFollowUpResponse:
@@ -317,6 +506,7 @@ class MeetingService:
 
         attendees_added = 0
         contacts_created = 0
+        contact_ids: list[uuid.UUID] = []
 
         for attendee in merged.values():
             contact_id = None
@@ -333,6 +523,7 @@ class MeetingService:
                     contacts_created += 1
                 if contact.source is None:
                     contact.source = "meeting_invite"
+                contact_ids.append(contact.id)
 
             db.add(
                 MeetingAttendee(
@@ -347,6 +538,15 @@ class MeetingService:
                 )
             )
             attendees_added += 1
+
+        MeetingService._upsert_meeting_edges(
+            db,
+            meeting,
+            contact_ids,
+            source=platform or payload.provider or "meeting_invite",
+            reason="Co-invited attendees captured from calendar or mailbox intake.",
+            strength=0.8,
+        )
 
         sender_name, sender_email = parseaddr(_clean(payload.from_email) or "")
         sender_final_email = (sender_email or _clean(payload.from_email)).strip().lower() or None

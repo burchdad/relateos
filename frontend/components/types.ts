@@ -192,6 +192,8 @@ export type Contact = {
   email: string | null;
   phone: string | null;
   primary_role: string | null;
+  role_family: string | null;
+  market_segment: string | null;
   secondary_roles: string[];
   organization_id: string | null;
   source: string | null;
@@ -259,6 +261,9 @@ export type NetworkNode = {
   label: string;
   type: string;
   role: string | null;
+  role_label: string | null;
+  role_family: string | null;
+  market_segment: string | null;
   organization_id: string | null;
   lifetime_value: number;
   deal_count: number;
@@ -275,6 +280,7 @@ export type NetworkEdge = {
   strength: number;
   revenue_attributed: number;
   deal_count: number;
+  evidence: Record<string, unknown>;
 };
 
 export type NetworkGraph = {
@@ -335,6 +341,9 @@ export type Meeting = {
   transcript: string | null;
   summary: string | null;
   action_items: string[];
+  source_provider: string | null;
+  external_meeting_id: string | null;
+  raw_report: Record<string, unknown>;
   attendees: MeetingAttendee[];
   created_at: string;
   updated_at: string;

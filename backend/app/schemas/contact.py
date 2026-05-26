@@ -10,6 +10,8 @@ class ContactCreate(BaseModel):
     email: str | None = None
     phone: str | None = None
     primary_role: str | None = None
+    role_family: str | None = None
+    market_segment: str | None = None
     secondary_roles: list[str] = Field(default_factory=list)
     organization_id: UUID | None = None
     source: str | None = None
@@ -24,6 +26,8 @@ class ContactUpdate(BaseModel):
     email: str | None = None
     phone: str | None = None
     primary_role: str | None = None
+    role_family: str | None = None
+    market_segment: str | None = None
     secondary_roles: list[str] | None = None
     organization_id: UUID | None = None
     source: str | None = None
@@ -44,6 +48,8 @@ class ContactOut(BaseModel):
     email: str | None
     phone: str | None
     primary_role: str | None
+    role_family: str | None
+    market_segment: str | None
     secondary_roles: list
     organization_id: UUID | None
     source: str | None

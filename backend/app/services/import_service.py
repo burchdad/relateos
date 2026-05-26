@@ -17,6 +17,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.taxonomy import normalize_role, role_metadata
 from app.models.entities import Organization, Person, Relationship, RelationshipEdge
 from app.schemas.content_asset import (
     ImportAnalyzeResponse,
@@ -57,6 +58,12 @@ _COLUMN_HINTS: dict[str, str] = {
     "tags": "person.tags",
     "tag": "person.tags",
     "request type": "relationship.type",
+    "sf buyer": "person.primary_role",
+    "sf seller": "person.primary_role",
+    "cre buyer": "person.primary_role",
+    "cre seller": "person.primary_role",
+    "buyer type": "person.primary_role",
+    "seller type": "person.primary_role",
     "target location": "metadata.raw",
     "target locations": "metadata.raw",
     "telegram": "metadata.raw",
@@ -897,6 +904,7 @@ class ImportService:
                 max_len=50,
                 warnings=warnings,
             ) or "lead"
+            relationship_type = normalize_role(relationship_type) or relationship_type
 
             lifecycle_stage_raw = person.relationship_stage or "new"
             lifecycle_stage = _fit_db_text(
@@ -1054,7 +1062,10 @@ class ImportService:
             relationship_strength = _parse_float(_first_value(row, target_map.get("person.relationship_strength_score", [])))
 
             if role and person.primary_role != role:
-                person.primary_role = role
+                person.primary_role = normalize_role(role) or role
+                metadata = role_metadata(person.primary_role)
+                person.role_family = metadata.get("role_family")
+                person.market_segment = metadata.get("market_segment")
                 updated = True
             if secondary_roles and person.secondary_roles != secondary_roles:
                 person.secondary_roles = secondary_roles

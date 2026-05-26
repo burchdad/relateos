@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from uuid import UUID
 
 
@@ -7,6 +7,9 @@ class NetworkNode(BaseModel):
     label: str
     type: str
     role: str | None
+    role_label: str | None = None
+    role_family: str | None = None
+    market_segment: str | None = None
     organization_id: str | None
     lifetime_value: float
     deal_count: int
@@ -23,6 +26,7 @@ class NetworkEdge(BaseModel):
     strength: float
     revenue_attributed: float
     deal_count: int
+    evidence: dict = Field(default_factory=dict)
 
 
 class NetworkGraphResponse(BaseModel):

@@ -61,6 +61,9 @@ class MeetingOut(BaseModel):
     transcript: str | None
     summary: str | None
     action_items: list
+    source_provider: str | None = None
+    external_meeting_id: str | None = None
+    raw_report: dict = Field(default_factory=dict)
     attendees: list[MeetingAttendeeOut]
     created_at: datetime
     updated_at: datetime
@@ -121,3 +124,42 @@ class InboundInviteResponse(BaseModel):
     attendees_added: int
     contacts_created: int
     engagement_event_id: str | None = None
+
+
+class MeetingReportParticipant(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    role: str | None = None
+    talk_time_seconds: int | None = None
+
+
+class MeetingActionItemIn(BaseModel):
+    text: str
+    owner_name: str | None = None
+    owner_email: str | None = None
+    due_date: str | None = None
+    status: str | None = None
+
+
+class MeetingIntelligenceReportRequest(BaseModel):
+    provider: str = "read_ai"
+    external_meeting_id: str | None = None
+    title: str
+    platform: str | None = None
+    meeting_url: str | None = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    summary: str | None = None
+    transcript: str | None = None
+    action_items: list[MeetingActionItemIn] = Field(default_factory=list)
+    participants: list[MeetingReportParticipant] = Field(default_factory=list)
+    raw_payload: dict = Field(default_factory=dict)
+    auto_create_contacts: bool = True
+
+
+class MeetingIntelligenceReportResponse(BaseModel):
+    meeting_id: UUID
+    attendees_added: int
+    contacts_created: int
+    action_items_created: int
+    relationship_edges_created: int

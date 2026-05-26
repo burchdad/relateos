@@ -7,12 +7,13 @@ import CampaignProofPanel from "@/components/CampaignProofPanel";
 import DashboardList from "@/components/DashboardList";
 import DemoGuide from "@/components/DemoGuide";
 import { resolveApiUrl } from "@/components/api";
+import { ROLE_OPTIONS } from "@/components/roleTaxonomy";
 import { CampaignInsights, ContentCampaignStats, PriorityItem, ScoreExplanation } from "@/components/types";
 
 type RelationshipFormState = {
   firstName: string;
   lastName: string;
-  type: "lead" | "investor" | "agent" | "partner";
+  type: string;
   interests: string;
   currentStatus: "cold" | "active" | "hot" | "past_deal";
   lastInteractionTiming: "today" | "this_week" | "stale";
@@ -410,9 +411,11 @@ export default function DashboardPage() {
                 }
                 className="rounded-md border border-soft bg-canvas px-3 py-2 text-sm text-text outline-none ring-accent/40 focus:ring sm:col-span-1"
               >
+                {ROLE_OPTIONS.slice(0, 10).map((role) => (
+                  <option key={role.value} value={role.value}>{role.label}</option>
+                ))}
                 <option value="lead">Lead</option>
                 <option value="investor">Investor</option>
-                <option value="agent">Agent</option>
                 <option value="partner">Partner</option>
               </select>
               <select

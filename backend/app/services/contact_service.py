@@ -4,20 +4,30 @@ from typing import Any
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.core.taxonomy import normalize_role, role_metadata
 from app.models.entities import Person
 from app.schemas.contact import ContactCreate, ContactUpdate
+
+
+def _taxonomy_for_role(primary_role: str | None) -> tuple[str | None, str | None, str | None]:
+    normalized_role = normalize_role(primary_role)
+    metadata = role_metadata(normalized_role)
+    return normalized_role, metadata.get("role_family"), metadata.get("market_segment")
 
 
 class ContactService:
     @staticmethod
     def create(db: Session, payload: ContactCreate) -> Person:
+        primary_role, role_family, market_segment = _taxonomy_for_role(payload.primary_role)
         person = Person(
             id=uuid.uuid4(),
             first_name=payload.first_name,
             last_name=payload.last_name,
             email=payload.email,
             phone=payload.phone,
-            primary_role=payload.primary_role,
+            primary_role=primary_role,
+            role_family=payload.role_family or role_family,
+            market_segment=payload.market_segment or market_segment,
             secondary_roles=payload.secondary_roles,
             organization_id=payload.organization_id,
             source=payload.source,
@@ -77,7 +87,13 @@ class ContactService:
         person = db.query(Person).filter(Person.id == contact_id).first()
         if not person:
             return None
-        for field, value in payload.model_dump(exclude_unset=True).items():
+        updates = payload.model_dump(exclude_unset=True)
+        if "primary_role" in updates:
+            normalized, role_family, market_segment = _taxonomy_for_role(updates["primary_role"])
+            updates["primary_role"] = normalized
+            updates.setdefault("role_family", role_family)
+            updates.setdefault("market_segment", market_segment)
+        for field, value in updates.items():
             setattr(person, field, value)
         db.commit()
         db.refresh(person)

@@ -2,9 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resolveApiUrl } from "@/components/api";
+import { ROLE_OPTIONS, formatRole } from "@/components/roleTaxonomy";
 import type { NetworkGraph, NetworkNode, Contact } from "@/components/types";
 
 const COLOR_MAP: Record<string, string> = {
+  sf_buyer: "#22c55e",
+  sf_seller: "#f97316",
+  cre_buyer: "#38bdf8",
+  cre_seller: "#e879f9",
   capital: "#a78bfa",
   buyer: "#34d399",
   seller: "#f59e0b",
@@ -136,8 +141,6 @@ export default function NetworkGraphPage() {
     }
   };
 
-  const ROLES = ["buyer", "seller", "lp_investor", "gp_partner", "operator", "vendor", "broker", "agent", "community_member", "coach"];
-
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -149,7 +152,7 @@ export default function NetworkGraphPage() {
           <select value={roleFilter} onChange={e => { setRoleFilter(e.target.value); }}
             className="rounded-lg border border-soft bg-panel px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60">
             <option value="">All Roles</option>
-            {ROLES.map(r => <option key={r} value={r}>{r.replace(/_/g, " ")}</option>)}
+            {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
           <input type="number" placeholder="Min Revenue $" value={revenueMin || ""}
             onChange={e => setRevenueMin(Number(e.target.value))}
@@ -200,7 +203,10 @@ export default function NetworkGraphPage() {
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLOR_MAP[selectedNode.color_group] || "#6b7280" }} />
                 <h3 className="font-semibold text-text">{selectedNode.label}</h3>
               </div>
-              <p className="text-xs text-muted capitalize">{(selectedNode.role || "unknown").replace(/_/g, " ")}</p>
+              <p className="text-xs text-muted">{selectedNode.role_label || formatRole(selectedNode.role)}</p>
+              {selectedNode.market_segment && selectedNode.market_segment !== "general" ? (
+                <p className="mt-1 text-[11px] uppercase tracking-wide text-muted">{selectedNode.market_segment.replace(/_/g, " ")}</p>
+              ) : null}
             </div>
 
             <div className="grid grid-cols-2 gap-3">

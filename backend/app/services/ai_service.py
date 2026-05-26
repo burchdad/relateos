@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from openai import OpenAI
 
 from app.core.config import settings
+from app.core.taxonomy import role_metadata
 from app.models import AIInsight, Interaction, Opportunity, Relationship, RelationshipSignal
 from app.services.style_profile_service import DEFAULT_STYLE, get_style_profile
 
@@ -30,6 +31,26 @@ RELATIONSHIP_TYPE_MESSAGE_PLAYBOOK = {
         "intent": "align priorities and keep shared pipeline moving",
         "angle": "anchor on shared outcomes and one decision point",
         "cta": "propose a tight sync to confirm ownership and timing",
+    },
+    "sf_buyer": {
+        "intent": "confirm single-family buy box and near-term acquisition readiness",
+        "angle": "reference location, price band, rent potential, or repair appetite",
+        "cta": "ask whether they want fresh single-family opportunities this week",
+    },
+    "sf_seller": {
+        "intent": "understand seller motivation and timing for a residential property",
+        "angle": "ask about property status, timeline, and what outcome matters most",
+        "cta": "offer a simple valuation or next-step conversation",
+    },
+    "cre_buyer": {
+        "intent": "validate commercial acquisition criteria and capital timing",
+        "angle": "anchor on asset class, target returns, market, and deal size",
+        "cta": "ask for current CRE buy box and whether to send matching opportunities",
+    },
+    "cre_seller": {
+        "intent": "surface commercial seller timing, asset details, and disposition goals",
+        "angle": "reference asset type, occupancy, valuation, and desired exit path",
+        "cta": "ask if they want a confidential review or buyer matching conversation",
     },
 }
 
@@ -160,10 +181,14 @@ class AIService:
         person_metadata = rel.person.metadata_json if rel.person else {}
         interests = person_metadata.get("interests") or "their stated priorities"
         current_status = person_metadata.get("current_status") or rel.lifecycle_stage or "active"
+        taxonomy = role_metadata(rel.type)
 
         context_lines = [
             f"Person name: {rel.person.first_name} {rel.person.last_name}",
             f"Relationship type: {rel.type}",
+            f"Role label: {taxonomy.get('label', rel.type)}",
+            f"Market segment: {taxonomy.get('market_segment', 'general')}",
+            f"Role context: {taxonomy.get('message_context', rel.type)}",
             f"Lifecycle stage: {rel.lifecycle_stage}",
             f"Current status: {current_status}",
             f"Interests: {interests}",

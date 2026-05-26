@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.taxonomy import role_label, role_metadata
 from app.models.entities import Deal, DealParticipant, Person, RelationshipEdge
 from app.schemas.network import (
     NetworkEdge,
@@ -14,6 +15,10 @@ from app.schemas.network import (
 
 # Color groups per role
 ROLE_COLOR_MAP = {
+    "sf_buyer": "sf_buyer",
+    "sf_seller": "sf_seller",
+    "cre_buyer": "cre_buyer",
+    "cre_seller": "cre_seller",
     "gp_partner": "capital",
     "lp_investor": "capital",
     "buyer": "buyer",
@@ -31,6 +36,60 @@ ROLE_COLOR_MAP = {
 
 
 class NetworkService:
+    @staticmethod
+    def upsert_edge(
+        db: Session,
+        source_contact_id,
+        target_contact_id,
+        *,
+        relationship_type: str,
+        strength: float = 1.0,
+        organization_id=None,
+        revenue_attributed: float = 0.0,
+        deal_count: int = 0,
+        evidence: dict | None = None,
+    ) -> tuple[RelationshipEdge, bool]:
+        if not source_contact_id or not target_contact_id or source_contact_id == target_contact_id:
+            raise ValueError("source and target contacts must be different")
+
+        existing = (
+            db.query(RelationshipEdge)
+            .filter(
+                RelationshipEdge.source_contact_id == source_contact_id,
+                RelationshipEdge.target_contact_id == target_contact_id,
+                RelationshipEdge.relationship_type == relationship_type,
+            )
+            .first()
+        )
+        reverse = (
+            db.query(RelationshipEdge)
+            .filter(
+                RelationshipEdge.source_contact_id == target_contact_id,
+                RelationshipEdge.target_contact_id == source_contact_id,
+                RelationshipEdge.relationship_type == relationship_type,
+            )
+            .first()
+        )
+        edge = existing or reverse
+        created = edge is None
+        if edge is None:
+            edge = RelationshipEdge(
+                source_contact_id=source_contact_id,
+                target_contact_id=target_contact_id,
+                relationship_type=relationship_type,
+            )
+            db.add(edge)
+
+        edge.strength = max(float(edge.strength or 0.0), strength)
+        edge.organization_id = organization_id or edge.organization_id
+        edge.revenue_attributed = float(edge.revenue_attributed or 0.0) + float(revenue_attributed or 0.0)
+        edge.deal_count = int(edge.deal_count or 0) + int(deal_count or 0)
+        edge.evidence = {
+            **(edge.evidence or {}),
+            **(evidence or {}),
+        }
+        return edge, created
+
     @staticmethod
     def get_graph(
         db: Session,
@@ -68,12 +127,15 @@ class NetworkService:
                 label=f"{p.first_name} {p.last_name}",
                 type="contact",
                 role=p.primary_role,
+                role_label=role_label(p.primary_role),
+                role_family=p.role_family or role_metadata(p.primary_role).get("role_family"),
+                market_segment=p.market_segment or role_metadata(p.primary_role).get("market_segment"),
                 organization_id=str(p.organization_id) if p.organization_id else None,
                 lifetime_value=p.lifetime_value,
                 deal_count=deal_counts.get(str(p.id), 0),
                 relationship_strength_score=p.relationship_strength_score,
                 size=max(10.0, min(60.0, 10 + p.lifetime_value / 1000)),
-                color_group=ROLE_COLOR_MAP.get(p.primary_role or "", "other"),
+                color_group=ROLE_COLOR_MAP.get(p.primary_role or "", role_metadata(p.primary_role).get("color_group", "other")),
             )
             for p in people
         ]
@@ -99,6 +161,7 @@ class NetworkService:
                 strength=e.strength,
                 revenue_attributed=e.revenue_attributed,
                 deal_count=e.deal_count,
+                evidence=e.evidence or {},
             )
             for e in db_edges
         ]
