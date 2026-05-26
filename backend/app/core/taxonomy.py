@@ -62,6 +62,16 @@ ROLE_ALIASES = {
     "cre seller": "cre_seller",
     "cre_seller": "cre_seller",
     "commercial real estate seller": "cre_seller",
+    "lp": "lp_investor",
+    "limited partner": "lp_investor",
+    "investor": "lp_investor",
+    "gp": "gp_partner",
+    "general partner": "gp_partner",
+    "partner": "gp_partner",
+    "capital partner": "gp_partner",
+    "real estate agent": "agent",
+    "realtor": "agent",
+    "vendor partner": "vendor",
 }
 
 

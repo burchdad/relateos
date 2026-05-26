@@ -16,9 +16,20 @@ export default function MeetingsPage() {
   const [importing, setImporting] = useState(false);
   const [followups, setFollowups] = useState<Record<string, unknown> | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [reportForm, setReportForm] = useState({
+    title: "",
+    provider: "read_ai",
+    platform: "zoom",
+    meeting_url: "",
+    summary: "",
+    transcript: "",
+  });
+  const [participantText, setParticipantText] = useState("");
+  const [actionText, setActionText] = useState("");
   const [reportJson, setReportJson] = useState("");
   const [reportStatus, setReportStatus] = useState("");
   const [ingestingReport, setIngestingReport] = useState(false);
+  const [showAdvancedReport, setShowAdvancedReport] = useState(false);
 
   const fetchMeetings = async () => {
     setLoading(true);
@@ -87,16 +98,14 @@ export default function MeetingsPage() {
     }
   };
 
-  const handleIngestReport = async () => {
-    if (!reportJson.trim()) return;
+  const ingestReportPayload = async (payload: Record<string, unknown>) => {
     setIngestingReport(true);
     setReportStatus("");
     try {
-      const parsed = JSON.parse(reportJson);
       const res = await fetch(`${API_URL}/meetings/intelligence-report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parsed),
+        body: JSON.stringify(payload),
       });
       const body = await res.json();
       if (!res.ok) {
@@ -106,12 +115,51 @@ export default function MeetingsPage() {
       setReportStatus(
         `Captured meeting ${body.meeting_id}: ${body.attendees_added} attendees, ${body.contacts_created} contacts, ${body.relationship_edges_created} graph edges.`
       );
-      setReportJson("");
       await fetchMeetings();
     } catch (error) {
-      setReportStatus(error instanceof Error ? error.message : "Invalid JSON report.");
+      setReportStatus(error instanceof Error ? error.message : "Could not capture meeting report.");
     } finally {
       setIngestingReport(false);
+    }
+  };
+
+  const handleSimpleReportCapture = async () => {
+    if (!reportForm.title.trim()) {
+      setReportStatus("Add a meeting title before capturing.");
+      return;
+    }
+
+    const participants = participantText.split("\n").map(line => {
+      const [name = "", email = "", role = ""] = line.split(",").map(part => part.trim());
+      return { name, email, role };
+    }).filter(participant => participant.name || participant.email);
+
+    const action_items = actionText.split("\n")
+      .map(text => text.trim())
+      .filter(Boolean)
+      .map(text => ({ text }));
+
+    await ingestReportPayload({
+      ...reportForm,
+      title: reportForm.title.trim(),
+      participants,
+      action_items,
+      auto_create_contacts: true,
+    });
+
+    setReportForm({ title: "", provider: "read_ai", platform: "zoom", meeting_url: "", summary: "", transcript: "" });
+    setParticipantText("");
+    setActionText("");
+  };
+
+  const handleAdvancedJsonCapture = async () => {
+    if (!reportJson.trim()) return;
+    try {
+      const parsed = JSON.parse(reportJson);
+      await ingestReportPayload(parsed);
+      setReportJson("");
+    } catch (error) {
+      setReportStatus(error instanceof Error ? error.message : "Invalid JSON report.");
     }
   };
 
@@ -157,29 +205,107 @@ export default function MeetingsPage() {
         </div>
       )}
 
-      <div className="rounded-xl border border-accent/30 bg-panel p-5 space-y-3">
+      <div className="rounded-xl border border-accent/30 bg-panel p-5 space-y-4">
         <div>
-          <p className="font-medium text-text text-sm">Meeting Intelligence Intake</p>
+          <p className="font-medium text-text text-sm">Capture Meeting Notes</p>
           <p className="text-xs text-muted mt-1">
-            Paste a Read.ai-style report JSON to capture transcript, summary, action items, attendees, and graph edges.
+            Add a meeting summary, action items, and attendees. RelateOS will create contacts and update the network graph.
           </p>
         </div>
-        <textarea
-          value={reportJson}
-          onChange={e => setReportJson(e.target.value)}
-          placeholder='{"provider":"read_ai","title":"Investor call","summary":"...","action_items":[{"text":"Send deal packet"}],"participants":[{"name":"Alex Lee","email":"alex@example.com"}]}'
-          className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-28 resize-none"
-        />
-        <div className="flex items-center gap-3">
+        <div className="grid gap-3 md:grid-cols-2">
+          <input
+            required
+            value={reportForm.title}
+            onChange={e => setReportForm(p => ({ ...p, title: e.target.value }))}
+            placeholder="Meeting title"
+            className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+          />
+          <div className="grid grid-cols-2 gap-3">
+            <select
+              value={reportForm.platform}
+              onChange={e => setReportForm(p => ({ ...p, platform: e.target.value }))}
+              className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60"
+            >
+              {["zoom", "google_meet", "teams", "phone", "in_person", "other"].map(platform => (
+                <option key={platform} value={platform}>{platform.replace(/_/g, " ")}</option>
+              ))}
+            </select>
+            <select
+              value={reportForm.provider}
+              onChange={e => setReportForm(p => ({ ...p, provider: e.target.value }))}
+              className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60"
+            >
+              <option value="read_ai">Read.ai</option>
+              <option value="zoom_ai">Zoom AI</option>
+              <option value="manual">Manual notes</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <input
+            value={reportForm.meeting_url}
+            onChange={e => setReportForm(p => ({ ...p, meeting_url: e.target.value }))}
+            placeholder="Meeting link"
+            className="md:col-span-2 rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+          />
+          <textarea
+            value={reportForm.summary}
+            onChange={e => setReportForm(p => ({ ...p, summary: e.target.value }))}
+            placeholder="Meeting summary"
+            className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-28 resize-none"
+          />
+          <textarea
+            value={participantText}
+            onChange={e => setParticipantText(e.target.value)}
+            placeholder={"Attendees: one per line\nAlex Lee, alex@example.com, SF Buyer\nMorgan Smith, morgan@example.com, CRE Seller"}
+            className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-28 resize-none"
+          />
+          <textarea
+            value={actionText}
+            onChange={e => setActionText(e.target.value)}
+            placeholder={"Action items: one per line\nSend deal packet\nSchedule follow-up call"}
+            className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-24 resize-none"
+          />
+          <textarea
+            value={reportForm.transcript}
+            onChange={e => setReportForm(p => ({ ...p, transcript: e.target.value }))}
+            placeholder="Transcript or raw notes"
+            className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-24 resize-none"
+          />
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
           <button
-            onClick={handleIngestReport}
-            disabled={ingestingReport || !reportJson.trim()}
+            onClick={handleSimpleReportCapture}
+            disabled={ingestingReport || !reportForm.title.trim()}
             className="rounded-lg bg-accent/20 border border-accent/40 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition disabled:opacity-50"
           >
-            {ingestingReport ? "Capturing..." : "Capture Report"}
+            {ingestingReport ? "Capturing..." : "Capture Meeting"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowAdvancedReport(v => !v)}
+            className="px-3 py-2 text-xs text-muted hover:text-text transition"
+          >
+            {showAdvancedReport ? "Hide advanced JSON" : "Advanced JSON"}
           </button>
           {reportStatus ? <p className="text-xs text-muted">{reportStatus}</p> : null}
         </div>
+        {showAdvancedReport && (
+          <div className="rounded-lg border border-soft bg-base/60 p-3 space-y-3">
+            <textarea
+              value={reportJson}
+              onChange={e => setReportJson(e.target.value)}
+              placeholder='{"provider":"read_ai","title":"Investor call","summary":"...","action_items":[{"text":"Send deal packet"}],"participants":[{"name":"Alex Lee","email":"alex@example.com"}]}'
+              className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-28 resize-none"
+            />
+            <button
+              onClick={handleAdvancedJsonCapture}
+              disabled={ingestingReport || !reportJson.trim()}
+              className="rounded-lg bg-soft/30 border border-soft px-4 py-2 text-sm font-medium text-muted hover:text-text transition disabled:opacity-50"
+            >
+              Capture JSON
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="grid md:grid-cols-3 gap-6">

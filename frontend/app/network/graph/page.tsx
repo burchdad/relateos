@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resolveApiUrl } from "@/components/api";
-import { ROLE_OPTIONS, formatRole } from "@/components/roleTaxonomy";
+import { ROLE_OPTIONS, formatRole, getRoleColorGroup } from "@/components/roleTaxonomy";
 import type { NetworkGraph, NetworkNode, Contact } from "@/components/types";
 
 const COLOR_MAP: Record<string, string> = {
@@ -92,7 +92,8 @@ export default function NetworkGraphPage() {
     // Draw nodes
     for (const { x, y, node } of positions) {
       const r = node.size * 0.45;
-      const color = COLOR_MAP[node.color_group] || COLOR_MAP.other;
+      const colorGroup = getRoleColorGroup(node);
+      const color = COLOR_MAP[colorGroup] || COLOR_MAP.other;
       const isSelected = selectedNode?.id === node.id;
 
       // Glow for selected
@@ -200,7 +201,7 @@ export default function NetworkGraphPage() {
           <div className="w-72 shrink-0 rounded-xl border border-accent/40 bg-panel p-5 space-y-4 overflow-y-auto max-h-[600px]">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLOR_MAP[selectedNode.color_group] || "#6b7280" }} />
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLOR_MAP[getRoleColorGroup(selectedNode)] || "#6b7280" }} />
                 <h3 className="font-semibold text-text">{selectedNode.label}</h3>
               </div>
               <p className="text-xs text-muted">{selectedNode.role_label || formatRole(selectedNode.role)}</p>

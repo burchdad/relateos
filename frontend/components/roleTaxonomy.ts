@@ -20,7 +20,60 @@ export const ROLE_OPTIONS = [
 
 export const ROLE_LABELS = Object.fromEntries(ROLE_OPTIONS.map((role) => [role.value, role.label]));
 
+export const ROLE_COLOR_GROUPS: Record<string, string> = {
+  sf_buyer: "sf_buyer",
+  sf_seller: "sf_seller",
+  cre_buyer: "cre_buyer",
+  cre_seller: "cre_seller",
+  buyer: "buyer",
+  seller: "seller",
+  lp_investor: "capital",
+  gp_partner: "capital",
+  investor: "capital",
+  partner: "capital",
+  lender: "capital",
+  operator: "operator",
+  broker: "operator",
+  agent: "operator",
+  vendor: "vendor",
+  coach: "community",
+  student: "community",
+  community_member: "community",
+  podcast_guest: "community",
+  influencer: "community",
+  lead: "other",
+  unknown: "other",
+};
+
+export const normalizeRoleKey = (value: string | null | undefined) => {
+  if (!value) return "";
+  return value.trim().toLowerCase().replace(/[-\s]+/g, "_");
+};
+
 export const formatRole = (role: string | null | undefined) => {
-  if (!role) return "-";
-  return ROLE_LABELS[role] || role.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const normalized = normalizeRoleKey(role);
+  if (!normalized) return "-";
+  return ROLE_LABELS[normalized] || normalized.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
+
+export const getRoleColorGroup = (role: {
+  color_group?: string | null;
+  role?: string | null;
+  role_family?: string | null;
+  market_segment?: string | null;
+}) => {
+  const explicit = normalizeRoleKey(role.color_group);
+  if (explicit && explicit !== "other") return ROLE_COLOR_GROUPS[explicit] || explicit;
+
+  const roleKey = normalizeRoleKey(role.role);
+  if (ROLE_COLOR_GROUPS[roleKey]) return ROLE_COLOR_GROUPS[roleKey];
+
+  if (role.role_family === "buyer" && role.market_segment === "single_family") return "sf_buyer";
+  if (role.role_family === "seller" && role.market_segment === "single_family") return "sf_seller";
+  if (role.role_family === "buyer" && role.market_segment === "commercial_real_estate") return "cre_buyer";
+  if (role.role_family === "seller" && role.market_segment === "commercial_real_estate") return "cre_seller";
+  if (role.role_family === "buyer") return "buyer";
+  if (role.role_family === "seller") return "seller";
+
+  return "other";
 };

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.taxonomy import role_label, role_metadata
+from app.core.taxonomy import normalize_role, role_label, role_metadata
 from app.models.entities import Deal, DealParticipant, Person, RelationshipEdge
 from app.schemas.network import (
     NetworkEdge,
@@ -21,6 +21,7 @@ ROLE_COLOR_MAP = {
     "cre_seller": "cre_seller",
     "gp_partner": "capital",
     "lp_investor": "capital",
+    "investor": "capital",
     "buyer": "buyer",
     "seller": "seller",
     "vendor": "vendor",
@@ -32,6 +33,9 @@ ROLE_COLOR_MAP = {
     "community_member": "community",
     "podcast_guest": "community",
     "influencer": "community",
+    "partner": "capital",
+    "lender": "capital",
+    "lead": "other",
 }
 
 
@@ -105,7 +109,7 @@ class NetworkService:
         if organization_id:
             people_q = people_q.filter(Person.organization_id == organization_id)
         if role:
-            people_q = people_q.filter(Person.primary_role == role)
+            people_q = people_q.filter(Person.primary_role == normalize_role(role))
         if revenue_min > 0:
             people_q = people_q.filter(Person.lifetime_value >= revenue_min)
 
@@ -126,7 +130,7 @@ class NetworkService:
                 id=str(p.id),
                 label=f"{p.first_name} {p.last_name}",
                 type="contact",
-                role=p.primary_role,
+                role=normalize_role(p.primary_role),
                 role_label=role_label(p.primary_role),
                 role_family=p.role_family or role_metadata(p.primary_role).get("role_family"),
                 market_segment=p.market_segment or role_metadata(p.primary_role).get("market_segment"),
@@ -135,7 +139,7 @@ class NetworkService:
                 deal_count=deal_counts.get(str(p.id), 0),
                 relationship_strength_score=p.relationship_strength_score,
                 size=max(10.0, min(60.0, 10 + p.lifetime_value / 1000)),
-                color_group=ROLE_COLOR_MAP.get(p.primary_role or "", role_metadata(p.primary_role).get("color_group", "other")),
+                color_group=ROLE_COLOR_MAP.get(normalize_role(p.primary_role) or "", role_metadata(p.primary_role).get("color_group", "other")),
             )
             for p in people
         ]
