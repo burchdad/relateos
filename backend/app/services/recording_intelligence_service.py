@@ -33,6 +33,10 @@ GENERIC_ZOOM_TEXT_MARKERS = [
     "jane smith",
     "emily johnson",
     "skool's progress and future plans",
+    "skool's operations and future plans",
+    "updates and discussions regarding skool",
+    "implementation of new features discussed",
+    "review progress on action items",
 ]
 
 
@@ -246,6 +250,21 @@ class RecordingIntelligenceService:
         lowered = text.lower()
         if RecordingIntelligenceService._is_generic_zoom_text(text):
             return {"level": "low", "reason": "Rejected generic/sample transcript markers in caption text."}
+        if RecordingIntelligenceService._is_generic_zoom_text(ai_payload.get("summary")):
+            return {"level": "low", "reason": "Rejected generic AI summary that does not match real meeting content."}
+
+        participants = ai_payload.get("participants") or []
+        participant_names = [
+            str(item.get("name", "")).strip().lower()
+            for item in participants
+            if isinstance(item, dict)
+        ]
+        if participant_names and all(RecordingIntelligenceService._is_placeholder_name(name) for name in participant_names):
+            return {"level": "low", "reason": "Rejected placeholder attendee names generated from weak caption text."}
+
+        action_items = ai_payload.get("action_items") or []
+        if action_items and all(RecordingIntelligenceService._is_generic_action_item(item) for item in action_items):
+            return {"level": "low", "reason": "Rejected generic action items generated from weak caption text."}
 
         domain_terms = [
             "deal",
@@ -265,8 +284,6 @@ class RecordingIntelligenceService:
         ]
         domain_hits = sum(term in lowered for term in domain_terms)
         emails = len(set(EMAIL_PATTERN.findall(text)))
-        participants = ai_payload.get("participants") or []
-        action_items = ai_payload.get("action_items") or []
 
         if emails or domain_hits >= 2:
             return {"level": "high", "reason": "Transcript contains contact or real-estate domain signals."}
@@ -278,6 +295,25 @@ class RecordingIntelligenceService:
     def _is_generic_zoom_text(value: str | None) -> bool:
         lowered = (value or "").lower()
         return any(marker in lowered for marker in GENERIC_ZOOM_TEXT_MARKERS)
+
+    @staticmethod
+    def _is_placeholder_name(value: str | None) -> bool:
+        lowered = (value or "").strip().lower()
+        return lowered in {"john doe", "jane smith", "emily johnson"} or bool(re.fullmatch(r"participant\s+\d+", lowered))
+
+    @staticmethod
+    def _is_generic_action_item(value: object) -> bool:
+        text = value if isinstance(value, str) else value.get("text", "") if isinstance(value, dict) else ""
+        lowered = str(text).strip().lower()
+        return any(
+            marker in lowered
+            for marker in [
+                "implementation of new features",
+                "user feedback for the next meeting",
+                "schedule the next meeting",
+                "review progress on action items",
+            ]
+        )
 
     @staticmethod
     def _ai_extract(db: Session, meeting: Meeting, text: str) -> dict:
@@ -324,13 +360,14 @@ class RecordingIntelligenceService:
             meeting.summary = "Replay saved. Full AI notes require accessible captions, transcript, or audio."
         if RecordingIntelligenceService._is_generic_zoom_text(meeting.transcript):
             meeting.transcript = None
+        if meeting.action_items and all(RecordingIntelligenceService._is_generic_action_item(item) for item in meeting.action_items):
+            meeting.action_items = []
 
     @staticmethod
     def _remove_low_confidence_attendees(db: Session, meeting: Meeting) -> None:
-        placeholder_names = {"john doe", "jane smith", "emily johnson"}
         attendees = db.query(MeetingAttendee).filter(MeetingAttendee.meeting_id == meeting.id).all()
         for attendee in attendees:
             name = (attendee.name or "").strip().lower()
             email = (attendee.email or "").strip()
-            if name in placeholder_names and not email:
+            if RecordingIntelligenceService._is_placeholder_name(name) and not email:
                 db.delete(attendee)
