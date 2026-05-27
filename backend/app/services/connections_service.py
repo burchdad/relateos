@@ -109,7 +109,7 @@ class ConnectionsService:
                 continue
             if ConnectionsService._field_configured(stored, definition.get("env", {}), field_key):
                 configured_fields.append(field_key)
-            else:
+            elif field.get("required", True):
                 missing_fields.append(field_key)
 
         required_secret_fields = [field["key"] for field in fields if field.get("required", True) and field.get("secret", True)]
