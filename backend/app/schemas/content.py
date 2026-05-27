@@ -5,10 +5,25 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
+ContentSourceType = Literal[
+    "youtube",
+    "zoom",
+    "skool",
+    "facebook",
+    "instagram",
+    "tiktok",
+    "linkedin",
+    "podcast",
+    "newsletter",
+    "website",
+    "upload",
+]
+
+
 class ContentCreate(BaseModel):
     title: str = Field(min_length=2, max_length=255)
     description: str = Field(min_length=3)
-    source_type: Literal["youtube", "zoom", "upload"]
+    source_type: ContentSourceType
     source_url: str = Field(min_length=4)
     thumbnail_url: str | None = None
     owner_user_id: str | None = None

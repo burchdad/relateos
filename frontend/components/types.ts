@@ -40,11 +40,24 @@ export type ContentInsight = {
   created_at: string;
 };
 
+export type ContentSourceType =
+  | "youtube"
+  | "zoom"
+  | "skool"
+  | "facebook"
+  | "instagram"
+  | "tiktok"
+  | "linkedin"
+  | "podcast"
+  | "newsletter"
+  | "website"
+  | "upload";
+
 export type ContentItem = {
   id: string;
   title: string;
   description: string;
-  source_type: "youtube" | "zoom" | "upload";
+  source_type: ContentSourceType;
   source_url: string;
   thumbnail_url: string | null;
   owner_user_id: string | null;

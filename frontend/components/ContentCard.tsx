@@ -7,6 +7,20 @@ import ContentTargetsPanel from "@/components/ContentTargetsPanel";
 import FollowUpPanel from "@/components/FollowUpPanel";
 import { CampaignExecutionSummary, ContentCampaignStats, ContentFollowUpStep, ContentItem, ContentTarget } from "@/components/types";
 
+const SOURCE_LABELS: Record<string, string> = {
+  skool: "Skool",
+  youtube: "YouTube",
+  zoom: "Zoom",
+  facebook: "Facebook",
+  instagram: "Instagram",
+  tiktok: "TikTok",
+  linkedin: "LinkedIn",
+  podcast: "Podcast",
+  newsletter: "Newsletter",
+  website: "Website",
+  upload: "Upload",
+};
+
 const extractYouTubeId = (url: string): string | null => {
   try {
     const parsed = new URL(url);
@@ -81,7 +95,7 @@ export default function ContentCard({
       <div className="flex items-start justify-between gap-4">
         <div>
           <h3 className="text-lg font-semibold tracking-tight text-text">{item.title}</h3>
-          <p className="mt-1 text-xs uppercase tracking-wider text-muted">{item.source_type}</p>
+          <p className="mt-1 text-xs uppercase tracking-wider text-muted">{SOURCE_LABELS[item.source_type] || item.source_type}</p>
           {item.experiment_key ? (
             <p className="mt-2 text-xs text-muted">
               Experiment <span className="text-text">{item.experiment_key}</span>
@@ -112,7 +126,16 @@ export default function ContentCard({
           />
         </div>
       ) : item.thumbnail_url ? (
-        <img src={item.thumbnail_url} alt={item.title} className="mt-3 h-40 w-full rounded-lg border border-soft object-cover" />
+        <div
+          aria-label={`${item.title} preview`}
+          className="mt-3 h-40 w-full rounded-lg border border-soft bg-cover bg-center"
+          style={{ backgroundImage: `url(${item.thumbnail_url})` }}
+        />
+      ) : item.source_type === "skool" ? (
+        <div className="mt-3 rounded-lg border border-accent/30 bg-accent/10 p-4">
+          <p className="text-sm font-semibold text-text">Skool community source</p>
+          <p className="mt-1 text-xs text-muted">Use this item to track classroom posts, community discussions, recordings, and member-facing content from Skool.</p>
+        </div>
       ) : null}
 
       <div className="mt-3 rounded-md border border-soft bg-canvas/70 p-3 text-sm text-text/95">

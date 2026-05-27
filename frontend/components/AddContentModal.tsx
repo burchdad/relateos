@@ -1,6 +1,21 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import type { ContentSourceType } from "@/components/types";
+
+const SOURCE_OPTIONS: { value: ContentSourceType; label: string; placeholder: string }[] = [
+  { value: "skool", label: "Skool", placeholder: "https://www.skool.com/..." },
+  { value: "youtube", label: "YouTube", placeholder: "https://youtube.com/watch?v=..." },
+  { value: "facebook", label: "Facebook", placeholder: "https://facebook.com/..." },
+  { value: "instagram", label: "Instagram", placeholder: "https://instagram.com/..." },
+  { value: "tiktok", label: "TikTok", placeholder: "https://tiktok.com/..." },
+  { value: "linkedin", label: "LinkedIn", placeholder: "https://linkedin.com/..." },
+  { value: "zoom", label: "Zoom", placeholder: "Zoom recording or meeting URL" },
+  { value: "podcast", label: "Podcast", placeholder: "Podcast episode URL" },
+  { value: "newsletter", label: "Newsletter", placeholder: "Newsletter issue URL" },
+  { value: "website", label: "Website", placeholder: "Article, landing page, or resource URL" },
+  { value: "upload", label: "Upload Link", placeholder: "Drive, Dropbox, or file URL" },
+];
 
 type Props = {
   open: boolean;
@@ -10,7 +25,7 @@ type Props = {
   onSubmit: (payload: {
     title: string;
     description: string;
-    source_type: "youtube" | "zoom" | "upload";
+    source_type: ContentSourceType;
     source_url: string;
     experiment_key?: string;
     experiment_variant?: "control" | "optimized";
@@ -20,7 +35,7 @@ type Props = {
 export default function AddContentModal({ open, creating, error, onClose, onSubmit }: Props) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [sourceType, setSourceType] = useState<"youtube" | "zoom" | "upload">("youtube");
+  const [sourceType, setSourceType] = useState<ContentSourceType>("skool");
   const [sourceUrl, setSourceUrl] = useState("");
   const [experimentKey, setExperimentKey] = useState("");
   const [experimentVariant, setExperimentVariant] = useState<"control" | "optimized" | "">("");
@@ -50,7 +65,7 @@ export default function AddContentModal({ open, creating, error, onClose, onSubm
 
     setTitle("");
     setDescription("");
-    setSourceType("youtube");
+    setSourceType("skool");
     setSourceUrl("");
     setExperimentKey("");
     setExperimentVariant("");
@@ -82,17 +97,17 @@ export default function AddContentModal({ open, creating, error, onClose, onSubm
           />
           <select
             value={sourceType}
-            onChange={(e) => setSourceType(e.target.value as "youtube" | "zoom" | "upload")}
+            onChange={(e) => setSourceType(e.target.value as ContentSourceType)}
             className="w-full rounded-md border border-soft bg-canvas px-3 py-2 text-sm text-text outline-none ring-accent/40 focus:ring"
           >
-            <option value="youtube">YouTube</option>
-            <option value="zoom">Zoom</option>
-            <option value="upload">Upload Link</option>
+            {SOURCE_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </select>
           <input
             value={sourceUrl}
             onChange={(e) => setSourceUrl(e.target.value)}
-            placeholder="YouTube or Zoom URL"
+            placeholder={SOURCE_OPTIONS.find(option => option.value === sourceType)?.placeholder || "Source URL"}
             className="w-full rounded-md border border-soft bg-canvas px-3 py-2 text-sm text-text outline-none ring-accent/40 placeholder:text-muted focus:ring"
           />
           <input

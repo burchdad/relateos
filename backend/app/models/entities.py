@@ -182,7 +182,23 @@ class ContentItem(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    source_type: Mapped[str] = mapped_column(Enum("youtube", "zoom", "upload", name="content_source_type"), nullable=False)
+    source_type: Mapped[str] = mapped_column(
+        Enum(
+            "youtube",
+            "zoom",
+            "skool",
+            "facebook",
+            "instagram",
+            "tiktok",
+            "linkedin",
+            "podcast",
+            "newsletter",
+            "website",
+            "upload",
+            name="content_source_type",
+        ),
+        nullable=False,
+    )
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
     thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     owner_user_id: Mapped[str | None] = mapped_column(String(100), nullable=True)

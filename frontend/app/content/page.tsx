@@ -11,11 +11,33 @@ import {
   ContentCampaignStats,
   ContentFollowUpResponse,
   ContentItem,
+  ContentSourceType,
   ContentTarget,
   FollowUpExecuteResponse,
 } from "@/components/types";
 
 type LoadingMap = Record<string, boolean>;
+
+const SOURCE_DIRECTORY: {
+  type: ContentSourceType;
+  label: string;
+  description: string;
+  status: "ready" | "sync_next" | "planned";
+  url?: string;
+}[] = [
+  {
+    type: "skool",
+    label: "Our Deal Partner Skool",
+    description: "Community posts, classroom resources, calls, and member-facing content.",
+    status: "ready",
+    url: "https://www.skool.com/ourdealpartner",
+  },
+  { type: "youtube", label: "YouTube", description: "Long-form videos, clips, webinars, and channel archives.", status: "sync_next" },
+  { type: "facebook", label: "Facebook", description: "Page posts, group posts, lives, and audience comments.", status: "sync_next" },
+  { type: "instagram", label: "Instagram", description: "Reels, carousels, stories, and DM-driving posts.", status: "sync_next" },
+  { type: "zoom", label: "Zoom / Recordings", description: "Webinars, coaching calls, replays, and transcripts.", status: "ready" },
+  { type: "podcast", label: "Podcast", description: "Episodes, guest clips, show notes, and follow-up assets.", status: "planned" },
+];
 
 export default function ContentPage() {
   const API_URL = useMemo(resolveApiUrl, []);
@@ -32,6 +54,8 @@ export default function ContentPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<ContentSourceType | "all">("all");
+  const [query, setQuery] = useState("");
 
   const loadContent = useCallback(async () => {
     setLoading(true);
@@ -64,7 +88,7 @@ export default function ContentPage() {
   const onCreateContent = async (payload: {
     title: string;
     description: string;
-    source_type: "youtube" | "zoom" | "upload";
+    source_type: ContentSourceType;
     source_url: string;
     experiment_key?: string;
     experiment_variant?: "control" | "optimized";
@@ -87,6 +111,34 @@ export default function ContentPage() {
     } finally {
       setCreating(false);
     }
+  };
+
+  const filteredItems = items.filter(item => {
+    const matchesSource = sourceFilter === "all" || item.source_type === sourceFilter;
+    const haystack = `${item.title} ${item.description} ${item.source_type} ${item.source_url}`.toLowerCase();
+    const matchesQuery = !query.trim() || haystack.includes(query.trim().toLowerCase());
+    return matchesSource && matchesQuery;
+  });
+
+  const contentStats = useMemo(() => {
+    const sourceCounts = items.reduce<Record<string, number>>((acc, item) => {
+      acc[item.source_type] = (acc[item.source_type] || 0) + 1;
+      return acc;
+    }, {});
+    const targetCount = Object.values(statsByContent).reduce((sum, row) => sum + row.sent_count + row.pending_count, 0);
+    const withInsights = items.filter(item => item.latest_insight).length;
+    return { sourceCounts, targetCount, withInsights };
+  }, [items, statsByContent]);
+
+  const addSkoolDirectorySource = async () => {
+    const skoolSource = SOURCE_DIRECTORY[0];
+    if (!skoolSource.url) return;
+    await onCreateContent({
+      title: skoolSource.label,
+      description: "Main Skool community for Our Deal Partner. Use this as the hub for community content, classroom posts, events, and member-facing delivery.",
+      source_type: "skool",
+      source_url: skoolSource.url,
+    });
   };
 
   const onViewTargets = async (contentId: string, force = false) => {
@@ -214,40 +266,113 @@ export default function ContentPage() {
   };
 
   return (
-    <main className="mx-auto min-h-screen max-w-6xl px-4 py-10 sm:px-6 lg:px-10">
-      <header className="mb-8 rounded-2xl border border-soft bg-panel/70 p-6">
-        <p className="text-xs uppercase tracking-[0.2em] text-accent">RelateOS</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Content Engine</h1>
-        <p className="mt-3 max-w-2xl text-sm text-muted">
-          Decide what content to share, who should receive it, and when to follow up.
-        </p>
-        <p className="mt-2 text-xs text-muted">Turn content into conversations.</p>
-        <div className="mt-4 flex flex-wrap gap-2">
+    <main className="p-6 space-y-6">
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.24em] text-accent">Content directory</p>
+          <h1 className="mt-1 text-2xl font-semibold text-text">Content</h1>
+          <p className="text-sm text-muted mt-1">
+            Centralize Skool, YouTube, Facebook, Instagram, Zoom, and other content so past assets can feed relationship workflows.
+          </p>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2">
           <button
             type="button"
             onClick={() => setShowAddModal(true)}
-            className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-canvas hover:brightness-110"
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-canvas hover:brightness-110"
           >
             Add Content
           </button>
-          <Link href="/relationships?intent=targets" className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft">
+          <Link href="/relationships?intent=targets" className="rounded-lg border border-soft px-4 py-2 text-sm text-text hover:bg-soft/40">
             View Targets in Relationships
           </Link>
         </div>
       </header>
 
+      <div className="grid gap-3 md:grid-cols-4">
+        {[
+          ["Library items", items.length],
+          ["Sources", Object.keys(contentStats.sourceCounts).length],
+          ["With insights", contentStats.withInsights],
+          ["Campaign targets", contentStats.targetCount],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-lg border border-soft bg-panel p-4">
+            <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
+            <p className="mt-1 text-2xl font-semibold text-text">{String(value)}</p>
+          </div>
+        ))}
+      </div>
+
+      <section className="rounded-lg border border-soft bg-panel p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-text">Source Directory</h2>
+            <p className="mt-1 text-xs text-muted">Register channels now, then connect sync jobs as credentials become available.</p>
+          </div>
+          <button
+            onClick={addSkoolDirectorySource}
+            disabled={creating || items.some(item => item.source_url === "https://www.skool.com/ourdealpartner")}
+            className="rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-xs font-medium text-accent hover:bg-accent/20 disabled:opacity-50"
+          >
+            Add Skool Hub
+          </button>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {SOURCE_DIRECTORY.map(source => (
+            <div key={source.type} className="rounded-lg border border-soft bg-base p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-text">{source.label}</p>
+                  <p className="mt-1 text-xs text-muted">{source.description}</p>
+                </div>
+                <span className="rounded-full border border-soft bg-soft/30 px-2 py-1 text-[10px] uppercase tracking-wide text-muted">
+                  {source.status.replace(/_/g, " ")}
+                </span>
+              </div>
+              <div className="mt-3 flex items-center justify-between text-xs">
+                <button onClick={() => setSourceFilter(source.type)} className="text-accent hover:underline">
+                  View {contentStats.sourceCounts[source.type] || 0} items
+                </button>
+                {source.url ? <a href={source.url} target="_blank" rel="noreferrer" className="text-muted hover:text-text">Open source</a> : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-soft bg-panel p-4">
+        <div className="grid gap-3 md:grid-cols-[1fr_220px]">
+          <input
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+            placeholder="Search title, source, URL, or description"
+            className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+          />
+          <select
+            value={sourceFilter}
+            onChange={event => setSourceFilter(event.target.value as ContentSourceType | "all")}
+            className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60"
+          >
+            <option value="all">All sources</option>
+            {SOURCE_DIRECTORY.map(source => (
+              <option key={source.type} value={source.type}>{source.label}</option>
+            ))}
+          </select>
+        </div>
+      </section>
+
       {loading ? <p className="text-muted">Loading content...</p> : null}
       {error ? <p className="text-red-300">{error}</p> : null}
 
-      {!loading && !error && items.length === 0 ? (
-        <div className="rounded-2xl border border-soft bg-panel/50 p-6 text-sm text-muted">
-          <p>Paste a YouTube or Zoom link to generate summary, target relationships, and follow-up sequence.</p>
+      {!loading && !error && filteredItems.length === 0 ? (
+        <div className="rounded-lg border border-soft bg-panel p-6 text-sm text-muted">
+          <p>No content matches this view. Add the Skool hub, connect a channel, or add a source URL manually.</p>
         </div>
       ) : null}
 
-      {!loading && !error && items.length > 0 ? (
+      {!loading && !error && filteredItems.length > 0 ? (
         <section className="grid gap-4">
-          {items.map((item, idx) => (
+          {filteredItems.map((item, idx) => (
             <div key={item.id} style={{ animationDelay: `${idx * 80}ms` }}>
               <ContentCard
                 item={item}
