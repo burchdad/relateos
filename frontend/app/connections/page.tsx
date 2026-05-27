@@ -163,6 +163,30 @@ export default function ConnectionsPage() {
             ))}
           </div>
         ) : null}
+        {syncResult && !syncResult.blockers.length ? (
+          <div className="mt-3 grid gap-2 md:grid-cols-4">
+            {[
+              ["Status", syncResult.status],
+              ["Content imported", syncResult.imported_content_count],
+              ["Meetings imported", syncResult.imported_meeting_count],
+              ["Attendees imported", syncResult.imported_attendee_count],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-md border border-soft bg-base px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted">{label}</p>
+                <p className="mt-1 text-sm font-semibold text-text">{String(value).replace(/_/g, " ")}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {syncResult?.errors.length ? (
+          <div className="mt-3 grid gap-2">
+            {syncResult.errors.slice(0, 4).map(error => (
+              <p key={error} className="rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
+                {error}
+              </p>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       {loading ? <p className="mt-6 text-sm text-muted">Loading connections...</p> : null}

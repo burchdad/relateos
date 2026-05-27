@@ -42,12 +42,16 @@ class AgentSyncRequest(BaseModel):
 
 class AgentSyncResponse(BaseModel):
     job_id: str
-    status: Literal["queued", "needs_config"]
+    status: Literal["queued", "needs_config", "completed", "partial"]
     mode: SyncMode
     message: str
     pipeline: list[str]
     blockers: list[str]
     requested_at: datetime
+    imported_content_count: int = 0
+    imported_meeting_count: int = 0
+    imported_attendee_count: int = 0
+    errors: list[str] = Field(default_factory=list)
 
 
 class ConnectionsOverview(BaseModel):

@@ -453,11 +453,15 @@ export type ConnectionsOverview = {
 
 export type AgentSyncResponse = {
   job_id: string;
-  status: "queued" | "needs_config";
+  status: "queued" | "needs_config" | "completed" | "partial";
   mode: "archive" | "live_session" | "full";
   message: string;
   pipeline: string[];
   blockers: string[];
   requested_at: string;
+  imported_content_count: number;
+  imported_meeting_count: number;
+  imported_attendee_count: number;
+  errors: string[];
 };
 

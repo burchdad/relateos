@@ -38,11 +38,19 @@ CONNECTOR_DEFINITIONS = {
             {"key": "account_id", "label": "Server-to-server account ID", "placeholder": "Zoom account ID"},
             {"key": "client_id", "label": "Client ID", "placeholder": "Zoom client ID"},
             {"key": "client_secret", "label": "Client secret", "placeholder": "Zoom client secret"},
+            {
+                "key": "recording_user_id",
+                "label": "Recording user ID or email",
+                "secret": False,
+                "required": False,
+                "placeholder": "Optional Zoom user email; defaults to me",
+            },
         ],
         "env": {
             "account_id": ["ZOOM_ACCOUNT_ID"],
             "client_id": ["ZOOM_CLIENT_ID"],
             "client_secret": ["ZOOM_CLIENT_SECRET"],
+            "recording_user_id": ["ZOOM_RECORDING_USER_ID"],
         },
     },
     "read_ai": {
@@ -161,12 +169,23 @@ class ConnectionsService:
             blockers.append("AI generation is required for summaries, action-item cleanup, and follow-up drafts.")
 
         now = datetime.now(timezone.utc).replace(microsecond=0)
+        imported = {
+            "imported_content_count": 0,
+            "imported_meeting_count": 0,
+            "imported_attendee_count": 0,
+            "errors": [],
+        }
+        if not blockers and mode in {"archive", "full"}:
+            from app.services.zoom_import_service import ZoomImportService
+
+            imported = ZoomImportService.import_recent_recordings(db)
         job = {
             "job_id": str(uuid.uuid4()),
             "mode": mode,
-            "status": "needs_config" if blockers else "queued",
+            "status": ConnectionsService._sync_status(blockers, imported["errors"]),
             "requested_at": now.isoformat(),
             "blockers": blockers,
+            "errors": imported["errors"],
         }
         jobs = get_setting(db, AGENT_SYNC_SETTING_KEY, {"jobs": []})
         jobs["jobs"] = [job, *jobs.get("jobs", [])[:24]]
@@ -175,18 +194,28 @@ class ConnectionsService:
         return {
             **job,
             "message": (
-                "Agent sync queued. RelateOS will scan Skool, ingest Zoom or Read.ai intelligence, and prepare follow-ups."
+                "Agent sync completed. RelateOS imported available Zoom recordings and meeting intelligence."
+                if not blockers and not imported["errors"]
+                else "Agent sync partially completed. Review connector scopes or missing recording access."
                 if not blockers
                 else "Agent sync is designed, but connector configuration is still missing."
             ),
             "pipeline": PIPELINE,
+            **imported,
         }
 
     @staticmethod
     def stored_connector_value(db: Session, connector_key: str, field_key: str) -> str:
         stored = get_setting(db, CONNECTORS_SETTING_KEY, {}).get(connector_key, {})
         value = stored.get(field_key)
-        return value if isinstance(value, str) else ""
+        if isinstance(value, str) and value:
+            return value
+        env_keys = CONNECTOR_DEFINITIONS.get(connector_key, {}).get("env", {}).get(field_key, [])
+        for env_key in env_keys:
+            env_value = os.getenv(env_key)
+            if env_value:
+                return env_value
+        return ""
 
     @staticmethod
     def connector_ready(db: Session, connector_key: str) -> bool:
@@ -197,3 +226,11 @@ class ConnectionsService:
         if stored.get(field_key):
             return True
         return any(os.getenv(env_key) for env_key in env_map.get(field_key, []))
+
+    @staticmethod
+    def _sync_status(blockers: list[str], errors: list[str]) -> str:
+        if blockers:
+            return "needs_config"
+        if errors:
+            return "partial"
+        return "completed"
