@@ -42,6 +42,7 @@ class RecordingIntelligenceService:
         source_notes: list[str] = []
         transcript = (meeting.transcript or "").strip()
         asset_text = ""
+        trusted_asset_text = False
         if transcript:
             if RecordingIntelligenceService._is_meaningful_meeting_text(transcript):
                 source_notes.append("Used existing transcript saved on the meeting.")
@@ -51,13 +52,13 @@ class RecordingIntelligenceService:
 
         if not transcript and meeting.meeting_url:
             try:
-                asset_text, asset_notes = RecordingIntelligenceService._fetch_replay_text_assets(meeting.meeting_url)
+                asset_text, asset_notes, trusted_asset_text = RecordingIntelligenceService._fetch_replay_text_assets(meeting.meeting_url)
                 source_notes.extend(asset_notes)
             except Exception as exc:
                 source_notes.append(f"Replay page scan failed: {exc}")
 
         text_for_ai = transcript or asset_text
-        if not RecordingIntelligenceService._is_meaningful_meeting_text(text_for_ai):
+        if not trusted_asset_text and not RecordingIntelligenceService._is_meaningful_meeting_text(text_for_ai):
             RecordingIntelligenceService._mark_analysis_attempt(meeting, source_notes)
             db.commit()
             return MeetingRecordingAnalysisResponse(
@@ -136,7 +137,7 @@ class RecordingIntelligenceService:
         )
 
     @staticmethod
-    def _fetch_replay_text_assets(url: str) -> tuple[str, list[str]]:
+    def _fetch_replay_text_assets(url: str) -> tuple[str, list[str], bool]:
         response = httpx.get(
             url,
             follow_redirects=True,
@@ -154,15 +155,15 @@ class RecordingIntelligenceService:
         captions = RecordingIntelligenceService._fetch_caption_assets(html_text, url)
         if captions:
             notes.append(f"Found and loaded {len(captions)} caption/transcript asset(s).")
-            return "\n\n".join(captions)[:30000], notes
+            return "\n\n".join(captions)[:30000], notes, True
 
         page_text = RecordingIntelligenceService._html_to_text(html_text)
         if RecordingIntelligenceService._is_meaningful_meeting_text(page_text):
             notes.append("Used meaningful visible replay page text.")
-            return page_text[:20000], notes
+            return page_text[:20000], notes, False
 
         notes.append("Replay page did not expose transcript/caption text to the backend.")
-        return "", notes
+        return "", notes, False
 
     @staticmethod
     def _fetch_caption_assets(html_text: str, referer: str) -> list[str]:
@@ -186,7 +187,7 @@ class RecordingIntelligenceService:
                 )
                 if response.status_code < 400:
                     text = RecordingIntelligenceService._caption_to_text(response.text)
-                    if RecordingIntelligenceService._is_meaningful_meeting_text(text):
+                    if len(text) >= 100 and not RecordingIntelligenceService._is_generic_zoom_text(text):
                         captions.append(text)
             except Exception:
                 continue
