@@ -128,6 +128,35 @@ export type ContentCampaignStats = {
   pending_count: number;
 };
 
+export type SkoolAgentCapability = {
+  key: string;
+  label: string;
+  status: "ready" | "needs_connector" | "planned";
+  detail: string;
+};
+
+export type SkoolAgentStatus = {
+  community_url: string;
+  classroom_url: string;
+  schedule_label: string;
+  timezone: string;
+  status: "ready" | "needs_connector" | "queued";
+  last_sync_mode: string | null;
+  last_sync_at: string | null;
+  next_session_label: string;
+  capabilities: SkoolAgentCapability[];
+  next_steps: string[];
+};
+
+export type SkoolAgentSyncResponse = SkoolAgentStatus & {
+  job_id: string;
+  requested_mode: "archive" | "live_session" | "full";
+  created_content_count: number;
+  created_meeting_count: number;
+  discovered_session_count: number;
+  message: string;
+};
+
 export type CampaignInsightMetric = {
   label: string;
   detail: string;

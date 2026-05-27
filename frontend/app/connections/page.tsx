@@ -12,6 +12,11 @@ export default function ConnectionsPage() {
       <section className="mt-4 grid gap-3 md:grid-cols-2">
         {[
           {
+            name: "Skool",
+            status: "Agent sync",
+            detail: "Scan the classroom archive, import Thursday recordings, and pair sessions with Meeting Intelligence.",
+          },
+          {
             name: "Read.ai",
             status: "Intake endpoint ready",
             detail: "Push meeting summaries, transcripts, action items, and participants into Meeting Intelligence.",

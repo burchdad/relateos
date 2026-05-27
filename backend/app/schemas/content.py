@@ -116,3 +116,41 @@ class ContentCampaignStats(BaseModel):
     responded_count: int
     ignored_count: int
     pending_count: int
+
+
+class SkoolAgentCapability(BaseModel):
+    key: str
+    label: str
+    status: Literal["ready", "needs_connector", "planned"]
+    detail: str
+
+
+class SkoolAgentStatus(BaseModel):
+    community_url: str
+    classroom_url: str
+    schedule_label: str
+    timezone: str
+    status: Literal["ready", "needs_connector", "queued"]
+    last_sync_mode: str | None = None
+    last_sync_at: datetime | None = None
+    next_session_label: str
+    capabilities: list[SkoolAgentCapability]
+    next_steps: list[str]
+
+
+class SkoolAgentSyncRequest(BaseModel):
+    community_url: str = "https://www.skool.com/ourdealpartner"
+    classroom_url: str = "https://www.skool.com/ourdealpartner/classroom"
+    mode: Literal["archive", "live_session", "full"] = "full"
+    auto_create_content: bool = True
+    auto_create_meetings: bool = True
+    auto_generate_followups: bool = True
+
+
+class SkoolAgentSyncResponse(SkoolAgentStatus):
+    job_id: str
+    requested_mode: Literal["archive", "live_session", "full"]
+    created_content_count: int = 0
+    created_meeting_count: int = 0
+    discovered_session_count: int = 0
+    message: str

@@ -15,10 +15,14 @@ from app.schemas.content import (
     FollowUpExecuteResponse,
     ContentTargetOut,
     FollowUpResponse,
+    SkoolAgentStatus,
+    SkoolAgentSyncRequest,
+    SkoolAgentSyncResponse,
 )
 from app.services.content_ai_service import ContentAIService
 from app.services.content_service import ContentService
 from app.services.followup_service import FollowUpSuggestionService
+from app.services.skool_agent_service import SkoolAgentService
 from app.services.targeting_service import TargetingService
 
 
@@ -54,6 +58,16 @@ def list_content(db: Session = Depends(get_db)):
 def active_campaigns(db: Session = Depends(get_db)):
     rows = ContentService.active_campaigns(db)
     return [ContentCampaignStats.model_validate(row) for row in rows]
+
+
+@router.get("/skool/agent", response_model=SkoolAgentStatus)
+def skool_agent_status(db: Session = Depends(get_db)):
+    return SkoolAgentStatus.model_validate(SkoolAgentService.status(db))
+
+
+@router.post("/skool/sync", response_model=SkoolAgentSyncResponse)
+def sync_skool_content(payload: SkoolAgentSyncRequest, db: Session = Depends(get_db)):
+    return SkoolAgentSyncResponse.model_validate(SkoolAgentService.request_sync(db, payload))
 
 
 @router.get("/{content_id}", response_model=ContentItemOut)
