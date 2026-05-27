@@ -372,7 +372,7 @@ export default function MeetingsPage() {
                 <div>
                   <p className="font-medium text-text text-sm">AI Recording Intelligence</p>
                   <p className="mt-1 text-xs text-muted">
-                    Scan the replay for transcript text, participant signals, action items, summaries, and follow-up context.
+                    Scan captions, transcripts, or accessible replay media for participant signals, action items, summaries, and follow-up context.
                   </p>
                 </div>
                 <button

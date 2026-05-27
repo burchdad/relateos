@@ -2,6 +2,7 @@ import json
 import re
 import uuid
 from html import unescape
+from urllib.parse import unquote
 
 import httpx
 from sqlalchemy.orm import Session
@@ -20,6 +21,15 @@ from app.services.meeting_service import MeetingService
 
 EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 TAG_PATTERN = re.compile(r"<[^>]+>")
+CAPTION_URL_PATTERN = re.compile(
+    r"https?:\\?/\\?/[^\"'\s<>]+(?:\.vtt|\.srt|\.txt|transcript|caption|cc)[^\"'\s<>]*",
+    re.IGNORECASE,
+)
+GENERIC_ZOOM_TEXT_MARKERS = [
+    "products and services offered by zoom",
+    "enhance productivity and team effectiveness",
+    "zoom video communications",
+]
 
 
 class RecordingIntelligenceService:
@@ -31,28 +41,27 @@ class RecordingIntelligenceService:
 
         source_notes: list[str] = []
         transcript = (meeting.transcript or "").strip()
-        page_text = ""
+        asset_text = ""
         if transcript:
             source_notes.append("Used existing transcript saved on the meeting.")
 
         if not transcript and meeting.meeting_url:
             try:
-                page_text = RecordingIntelligenceService._fetch_replay_page_text(meeting.meeting_url)
-                if page_text:
-                    source_notes.append("Scanned replay page text for visible transcript, speaker, and email signals.")
+                asset_text, asset_notes = RecordingIntelligenceService._fetch_replay_text_assets(meeting.meeting_url)
+                source_notes.extend(asset_notes)
             except Exception as exc:
                 source_notes.append(f"Replay page scan failed: {exc}")
 
-        text_for_ai = transcript or page_text
-        if not text_for_ai:
+        text_for_ai = transcript or asset_text
+        if not RecordingIntelligenceService._is_meaningful_meeting_text(text_for_ai):
             RecordingIntelligenceService._mark_analysis_attempt(meeting, source_notes)
             db.commit()
             return MeetingRecordingAnalysisResponse(
                 meeting_id=meeting.id,
-                status="needs_transcript",
+                status="needs_media_access",
                 message=(
-                    "The replay link was saved, but Zoom did not expose transcript/audio text to the backend. "
-                    "Connect a Zoom-owned recording transcript, Read.ai, or a downloadable audio/transcript source for full AI notes."
+                    "The backend can reach the replay page, but it cannot yet access the actual caption, transcript, or audio stream. "
+                    "Connect a Zoom-owned recording transcript, Read.ai, or a backend browser/media downloader for full AI notes."
                 ),
                 transcript_available=False,
                 source_notes=source_notes,
@@ -92,7 +101,7 @@ class RecordingIntelligenceService:
                 started_at=meeting.started_at or meeting.scheduled_at,
                 ended_at=meeting.ended_at,
                 summary=summary,
-                transcript=transcript or page_text[:12000],
+                transcript=transcript or asset_text[:12000],
                 action_items=action_items,
                 participants=participants,
                 raw_payload={
@@ -118,12 +127,12 @@ class RecordingIntelligenceService:
             attendees_added=response.attendees_added,
             contacts_created=response.contacts_created,
             relationship_edges_created=response.relationship_edges_created,
-            transcript_available=bool(transcript),
+            transcript_available=bool(transcript or asset_text),
             source_notes=source_notes,
         )
 
     @staticmethod
-    def _fetch_replay_page_text(url: str) -> str:
+    def _fetch_replay_text_assets(url: str) -> tuple[str, list[str]]:
         response = httpx.get(
             url,
             follow_redirects=True,
@@ -135,12 +144,77 @@ class RecordingIntelligenceService:
         )
         if response.status_code >= 400:
             raise RuntimeError(f"{response.status_code} while fetching replay page")
-        text = unescape(response.text)
-        text = re.sub(r"<script[\s\S]*?</script>", " ", text, flags=re.IGNORECASE)
+        html_text = unescape(unquote(response.text))
+        notes = ["Fetched replay page and inspected embedded recording assets."]
+
+        captions = RecordingIntelligenceService._fetch_caption_assets(html_text, url)
+        if captions:
+            notes.append(f"Found and loaded {len(captions)} caption/transcript asset(s).")
+            return "\n\n".join(captions)[:30000], notes
+
+        page_text = RecordingIntelligenceService._html_to_text(html_text)
+        if RecordingIntelligenceService._is_meaningful_meeting_text(page_text):
+            notes.append("Used meaningful visible replay page text.")
+            return page_text[:20000], notes
+
+        notes.append("Replay page did not expose transcript/caption text to the backend.")
+        return "", notes
+
+    @staticmethod
+    def _fetch_caption_assets(html_text: str, referer: str) -> list[str]:
+        urls = []
+        for raw_url in CAPTION_URL_PATTERN.findall(html_text):
+            url = raw_url.replace("\\/", "/").replace("\\u0026", "&")
+            if url not in urls:
+                urls.append(url)
+
+        captions = []
+        for url in urls[:5]:
+            try:
+                response = httpx.get(
+                    url,
+                    headers={
+                        "User-Agent": "RelateOS recording intelligence/1.0",
+                        "Referer": referer,
+                    },
+                    follow_redirects=True,
+                    timeout=30,
+                )
+                if response.status_code < 400:
+                    text = RecordingIntelligenceService._caption_to_text(response.text)
+                    if RecordingIntelligenceService._is_meaningful_meeting_text(text):
+                        captions.append(text)
+            except Exception:
+                continue
+        return captions
+
+    @staticmethod
+    def _caption_to_text(value: str) -> str:
+        lines = []
+        for line in value.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.upper() == "WEBVTT" or "-->" in stripped or stripped.isdigit():
+                continue
+            lines.append(stripped)
+        return re.sub(r"\s+", " ", " ".join(lines)).strip()
+
+    @staticmethod
+    def _html_to_text(value: str) -> str:
+        text = re.sub(r"<script[\s\S]*?</script>", " ", value, flags=re.IGNORECASE)
         text = re.sub(r"<style[\s\S]*?</style>", " ", text, flags=re.IGNORECASE)
         text = TAG_PATTERN.sub(" ", text)
-        text = re.sub(r"\s+", " ", text).strip()
-        return text[:20000]
+        return re.sub(r"\s+", " ", text).strip()
+
+    @staticmethod
+    def _is_meaningful_meeting_text(value: str | None) -> bool:
+        text = (value or "").strip()
+        if len(text) < 400:
+            return False
+        lowered = text.lower()
+        if any(marker in lowered for marker in GENERIC_ZOOM_TEXT_MARKERS):
+            return False
+        meeting_terms = ["deal", "buyer", "seller", "property", "question", "follow up", "action", "attendee", "thanks"]
+        return EMAIL_PATTERN.search(text) is not None or sum(term in lowered for term in meeting_terms) >= 2
 
     @staticmethod
     def _ai_extract(db: Session, meeting: Meeting, text: str) -> dict:
@@ -179,7 +253,7 @@ class RecordingIntelligenceService:
     def _mark_analysis_attempt(meeting: Meeting, source_notes: list[str]) -> None:
         raw_report = meeting.raw_report or {}
         raw_report["recording_ai"] = {
-            "status": "needs_transcript",
+            "status": "needs_media_access",
             "source_notes": source_notes,
         }
         meeting.raw_report = raw_report
