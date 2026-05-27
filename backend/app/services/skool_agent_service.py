@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models import ContentItem
 from app.schemas.content import ContentCreate, SkoolAgentSyncRequest
+from app.services.connections_service import ConnectionsService
 from app.services.content_service import ContentService
 from app.services.system_settings_service import get_setting, upsert_setting
 
@@ -22,7 +23,7 @@ class SkoolAgentService:
         community_url = setting.get("community_url") or DEFAULT_COMMUNITY_URL
         classroom_url = setting.get("classroom_url") or DEFAULT_CLASSROOM_URL
         last_sync = setting.get("last_sync") or {}
-        capabilities = SkoolAgentService._capabilities()
+        capabilities = SkoolAgentService._capabilities(db)
         ready = all(item["status"] == "ready" for item in capabilities[:3])
 
         return {
@@ -106,11 +107,11 @@ class SkoolAgentService:
         return 1
 
     @staticmethod
-    def _capabilities() -> list[dict]:
-        skool_auth_ready = bool(os.getenv("SKOOL_SESSION_COOKIE") or os.getenv("SKOOL_API_KEY"))
-        zoom_ready = bool(os.getenv("ZOOM_ACCOUNT_ID") and os.getenv("ZOOM_CLIENT_ID") and os.getenv("ZOOM_CLIENT_SECRET"))
-        read_ai_ready = bool(os.getenv("READ_AI_API_KEY") or os.getenv("READAI_API_KEY"))
-        openai_ready = bool(os.getenv("OPENAI_API_KEY"))
+    def _capabilities(db: Session) -> list[dict]:
+        skool_auth_ready = ConnectionsService.connector_ready(db, "skool") or bool(os.getenv("SKOOL_SESSION_COOKIE") or os.getenv("SKOOL_API_KEY"))
+        zoom_ready = ConnectionsService.connector_ready(db, "zoom") or bool(os.getenv("ZOOM_ACCOUNT_ID") and os.getenv("ZOOM_CLIENT_ID") and os.getenv("ZOOM_CLIENT_SECRET"))
+        read_ai_ready = ConnectionsService.connector_ready(db, "read_ai") or bool(os.getenv("READ_AI_API_KEY") or os.getenv("READAI_API_KEY"))
+        openai_ready = ConnectionsService.connector_ready(db, "openai") or bool(os.getenv("OPENAI_API_KEY"))
 
         return [
             {

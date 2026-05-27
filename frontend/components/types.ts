@@ -426,3 +426,38 @@ export type NaturalLanguageDealResult = {
   raw_input: string;
 };
 
+export type ConnectorField = {
+  key: string;
+  label: string;
+  secret: boolean;
+  required: boolean;
+  placeholder: string;
+};
+
+export type ConnectorStatus = {
+  key: "skool" | "zoom" | "read_ai" | "openai";
+  name: string;
+  status: "ready" | "needs_config" | "partial";
+  purpose: string;
+  fields: ConnectorField[];
+  configured_fields: string[];
+  missing_fields: string[];
+  last_updated_at: string | null;
+};
+
+export type ConnectionsOverview = {
+  connectors: ConnectorStatus[];
+  pipeline: string[];
+  recommended_next_step: string;
+};
+
+export type AgentSyncResponse = {
+  job_id: string;
+  status: "queued" | "needs_config";
+  mode: "archive" | "live_session" | "full";
+  message: string;
+  pipeline: string[];
+  blockers: string[];
+  requested_at: string;
+};
+

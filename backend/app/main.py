@@ -16,6 +16,7 @@ from app.core.config import settings
 from app.core.database import Base, engine
 from app.routes.ai import router as ai_router
 from app.routes.contacts import router as contacts_router
+from app.routes.connections import router as connections_router
 from app.routes.content import router as content_router
 from app.routes.content_assets import router as content_assets_router
 from app.routes.dashboard import router as dashboard_router
@@ -186,6 +187,7 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
 app.include_router(relationships_router, prefix=settings.api_v1_prefix)
 app.include_router(interactions_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_router, prefix=settings.api_v1_prefix)
+app.include_router(connections_router, prefix=settings.api_v1_prefix)
 app.include_router(content_router, prefix=settings.api_v1_prefix)
 app.include_router(dashboard_router, prefix=settings.api_v1_prefix)
 app.include_router(events_router, prefix=settings.api_v1_prefix)
