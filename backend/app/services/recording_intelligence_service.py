@@ -8,7 +8,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.entities import Meeting
+from app.models.entities import Meeting, MeetingAttendee
 from app.schemas.meeting import (
     MeetingActionItemIn,
     MeetingIntelligenceReportRequest,
@@ -29,6 +29,10 @@ GENERIC_ZOOM_TEXT_MARKERS = [
     "products and services offered by zoom",
     "enhance productivity and team effectiveness",
     "zoom video communications",
+    "john doe",
+    "jane smith",
+    "emily johnson",
+    "skool's progress and future plans",
 ]
 
 
@@ -73,6 +77,22 @@ class RecordingIntelligenceService:
             )
 
         ai_payload = RecordingIntelligenceService._ai_extract(db, meeting, text_for_ai)
+        confidence = RecordingIntelligenceService._content_confidence(text_for_ai, ai_payload)
+        if confidence["level"] == "low":
+            source_notes.append(confidence["reason"])
+            RecordingIntelligenceService._remove_low_confidence_attendees(db, meeting)
+            RecordingIntelligenceService._mark_analysis_attempt(meeting, source_notes)
+            db.commit()
+            return MeetingRecordingAnalysisResponse(
+                meeting_id=meeting.id,
+                status="needs_better_media",
+                message=(
+                    "A caption/transcript asset was reachable, but it looks generic or too weak to trust for attendee/action-item creation. "
+                    "Use Zoom-owned transcripts, Read.ai, or backend media download/transcription for reliable meeting intelligence."
+                ),
+                transcript_available=True,
+                source_notes=source_notes,
+            )
         participants = [
             MeetingReportParticipant(
                 name=item.get("name"),
@@ -222,6 +242,39 @@ class RecordingIntelligenceService:
         return EMAIL_PATTERN.search(text) is not None or sum(term in lowered for term in meeting_terms) >= 2
 
     @staticmethod
+    def _content_confidence(text: str, ai_payload: dict) -> dict[str, str]:
+        lowered = text.lower()
+        if RecordingIntelligenceService._is_generic_zoom_text(text):
+            return {"level": "low", "reason": "Rejected generic/sample transcript markers in caption text."}
+
+        domain_terms = [
+            "deal",
+            "buyer",
+            "seller",
+            "property",
+            "capital",
+            "investor",
+            "apartment",
+            "unit",
+            "underwriting",
+            "offer",
+            "closing",
+            "seller finance",
+            "cre",
+            "sfh",
+        ]
+        domain_hits = sum(term in lowered for term in domain_terms)
+        emails = len(set(EMAIL_PATTERN.findall(text)))
+        participants = ai_payload.get("participants") or []
+        action_items = ai_payload.get("action_items") or []
+
+        if emails or domain_hits >= 2:
+            return {"level": "high", "reason": "Transcript contains contact or real-estate domain signals."}
+        if len(text) >= 2000 and (participants or action_items) and domain_hits >= 1:
+            return {"level": "medium", "reason": "Transcript has enough length and at least one domain signal."}
+        return {"level": "low", "reason": "Caption text lacks contact/domain signals needed for trustworthy extraction."}
+
+    @staticmethod
     def _is_generic_zoom_text(value: str | None) -> bool:
         lowered = (value or "").lower()
         return any(marker in lowered for marker in GENERIC_ZOOM_TEXT_MARKERS)
@@ -271,3 +324,13 @@ class RecordingIntelligenceService:
             meeting.summary = "Replay saved. Full AI notes require accessible captions, transcript, or audio."
         if RecordingIntelligenceService._is_generic_zoom_text(meeting.transcript):
             meeting.transcript = None
+
+    @staticmethod
+    def _remove_low_confidence_attendees(db: Session, meeting: Meeting) -> None:
+        placeholder_names = {"john doe", "jane smith", "emily johnson"}
+        attendees = db.query(MeetingAttendee).filter(MeetingAttendee.meeting_id == meeting.id).all()
+        for attendee in attendees:
+            name = (attendee.name or "").strip().lower()
+            email = (attendee.email or "").strip()
+            if name in placeholder_names and not email:
+                db.delete(attendee)
