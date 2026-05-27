@@ -42,6 +42,14 @@ def ingest_meeting_intelligence_report(payload: MeetingIntelligenceReportRequest
     return MeetingService.ingest_intelligence_report(db, payload)
 
 
+@router.post("/analyze-recording/{meeting_id}", response_model=MeetingRecordingAnalysisResponse)
+def analyze_recording_static(meeting_id: uuid.UUID, db: Session = Depends(get_db)):
+    try:
+        return RecordingIntelligenceService.analyze(db, meeting_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.get("/{meeting_id}", response_model=MeetingOut)
 def get_meeting(meeting_id: uuid.UUID, db: Session = Depends(get_db)):
     meeting = MeetingService.get_by_id(db, meeting_id)

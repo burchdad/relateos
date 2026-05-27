@@ -105,7 +105,7 @@ export default function MeetingsPage() {
     setAnalyzingRecording(true);
     setRecordingAnalysis(null);
     try {
-      const res = await fetch(`${API_URL}/meetings/${selected.id}/analyze-recording`, { method: "POST" });
+      const res = await fetch(`${API_URL}/meetings/analyze-recording/${selected.id}`, { method: "POST" });
       const body = await res.json();
       if (res.ok) {
         setRecordingAnalysis(body);
