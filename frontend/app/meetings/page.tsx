@@ -236,6 +236,7 @@ export default function MeetingsPage() {
               className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60"
             >
               <option value="read_ai">Read.ai</option>
+              <option value="skool">Skool</option>
               <option value="zoom_ai">Zoom AI</option>
               <option value="manual">Manual notes</option>
               <option value="other">Other</option>

@@ -18,6 +18,8 @@ import {
 
 type LoadingMap = Record<string, boolean>;
 
+const SKOOL_COMMUNITY_URL = "https://www.skool.com/ourdealpartner";
+
 const SOURCE_DIRECTORY: {
   type: ContentSourceType;
   label: string;
@@ -30,7 +32,7 @@ const SOURCE_DIRECTORY: {
     label: "Our Deal Partner Skool",
     description: "Community posts, classroom resources, calls, and member-facing content.",
     status: "ready",
-    url: "https://www.skool.com/ourdealpartner",
+    url: SKOOL_COMMUNITY_URL,
   },
   { type: "youtube", label: "YouTube", description: "Long-form videos, clips, webinars, and channel archives.", status: "sync_next" },
   { type: "facebook", label: "Facebook", description: "Page posts, group posts, lives, and audience comments.", status: "sync_next" },
@@ -56,6 +58,20 @@ export default function ContentPage() {
   const [createError, setCreateError] = useState("");
   const [sourceFilter, setSourceFilter] = useState<ContentSourceType | "all">("all");
   const [query, setQuery] = useState("");
+  const [skoolSession, setSkoolSession] = useState({
+    title: "Thursday Community Recording",
+    session_date: "",
+    classroom_url: "",
+    recording_url: "",
+    summary: "",
+    transcript: "",
+    attendees: "",
+    action_items: "",
+  });
+  const [capturingSkool, setCapturingSkool] = useState(false);
+  const [skoolStatus, setSkoolStatus] = useState("");
+  const [skoolBackfillText, setSkoolBackfillText] = useState("");
+  const [backfillingSkool, setBackfillingSkool] = useState(false);
 
   const loadContent = useCallback(async () => {
     setLoading(true);
@@ -139,6 +155,223 @@ export default function ContentPage() {
       source_type: "skool",
       source_url: skoolSource.url,
     });
+  };
+
+  const parsePeopleLines = (value: string) => value
+    .split("\n")
+    .map(line => {
+      const [name = "", email = "", role = ""] = line.split(",").map(part => part.trim());
+      return { name, email, role };
+    })
+    .filter(person => person.name || person.email);
+
+  const parseActionLines = (value: string) => value
+    .split("\n")
+    .map(text => text.trim())
+    .filter(Boolean)
+    .map(text => ({ text }));
+
+  const parseSkoolBackfillRows = (value: string) => {
+    const rows: {
+      title: string;
+      sessionDate: string;
+      classroomUrl: string;
+      recordingUrl: string;
+    }[] = [];
+    let current: { title: string; sessionDate: string; classroomUrl: string; recordingUrl: string } | null = null;
+
+    const flush = () => {
+      if (current && (current.sessionDate || current.recordingUrl || current.classroomUrl)) {
+        rows.push(current);
+      }
+      current = null;
+    };
+
+    for (const rawLine of value.split("\n")) {
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      const parts = line.split(/[,\t|]+/).map(part => part.trim()).filter(Boolean);
+      const dateCandidate = parts.find(part => /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|January|February|March|April|June|July|August|September|October|November|December)\b/i.test(part));
+      const zoomCandidate = parts.find(part => /zoom\.us/i.test(part));
+      const skoolCandidate = parts.find(part => /skool\.com/i.test(part));
+
+      if (parts.length >= 2 && dateCandidate && (zoomCandidate || skoolCandidate)) {
+        flush();
+        const parsedDate = new Date(dateCandidate.replace(/^Thursday\s+/i, ""));
+        rows.push({
+          title: parts[0].toLowerCase().includes("thursday") ? "Thursday Community Recording" : parts[0],
+          sessionDate: Number.isNaN(parsedDate.getTime()) ? "" : parsedDate.toISOString().slice(0, 10),
+          classroomUrl: skoolCandidate || "",
+          recordingUrl: zoomCandidate || "",
+        });
+        continue;
+      }
+
+      if (/zoom\.us/i.test(line)) {
+        if (!current) {
+          current = { title: "Thursday Community Recording", sessionDate: "", classroomUrl: "", recordingUrl: "" };
+        }
+        current.recordingUrl = line;
+        continue;
+      }
+
+      if (/skool\.com/i.test(line)) {
+        if (!current) {
+          current = { title: "Thursday Community Recording", sessionDate: "", classroomUrl: "", recordingUrl: "" };
+        }
+        current.classroomUrl = line;
+        continue;
+      }
+
+      const parsedDate = new Date(line.replace(/^Thursday\s+/i, ""));
+      if (!Number.isNaN(parsedDate.getTime())) {
+        flush();
+        current = {
+          title: "Thursday Community Recording",
+          sessionDate: parsedDate.toISOString().slice(0, 10),
+          classroomUrl: "",
+          recordingUrl: "",
+        };
+      }
+    }
+
+    flush();
+    return rows;
+  };
+
+  const createSkoolSessionRecords = async (session: {
+    title: string;
+    sessionDate: string;
+    classroomUrl: string;
+    recordingUrl: string;
+    summary?: string;
+    transcript?: string;
+    attendees?: { name: string; email: string; role: string }[];
+    actionItems?: { text: string }[];
+  }) => {
+    const dateLabel = session.sessionDate
+      ? new Date(`${session.sessionDate}T12:00:00`).toLocaleDateString()
+      : "";
+    const title = dateLabel ? `${session.title.trim()} - ${dateLabel}` : session.title.trim();
+    const classroomUrl = session.classroomUrl.trim() || SKOOL_COMMUNITY_URL;
+    const recordingUrl = session.recordingUrl.trim();
+    const sourceUrl = recordingUrl || classroomUrl;
+
+    const contentRes = await fetch(`${API_URL}/content`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        description: [
+          session.summary?.trim() || "Skool Thursday community session recording.",
+          `Skool classroom: ${classroomUrl}`,
+          recordingUrl ? `Zoom recording: ${recordingUrl}` : "",
+        ].filter(Boolean).join("\n\n"),
+        source_type: "skool",
+        source_url: sourceUrl,
+      }),
+    });
+    if (!contentRes.ok) throw new Error(`Could not create content item for ${title}.`);
+
+    const participants = session.attendees || [];
+    const action_items = session.actionItems || [];
+    if (participants.length || action_items.length || session.summary?.trim() || session.transcript?.trim()) {
+      const meetingRes = await fetch(`${API_URL}/meetings/intelligence-report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "skool",
+          external_meeting_id: classroomUrl,
+          title,
+          platform: "zoom",
+          meeting_url: recordingUrl || classroomUrl,
+          started_at: session.sessionDate ? `${session.sessionDate}T18:00:00.000Z` : null,
+          summary: session.summary?.trim() || null,
+          transcript: session.transcript?.trim() || null,
+          participants,
+          action_items,
+          raw_payload: {
+            skool_community_url: SKOOL_COMMUNITY_URL,
+            skool_classroom_url: classroomUrl,
+            zoom_recording_url: recordingUrl || null,
+          },
+          auto_create_contacts: true,
+        }),
+      });
+      if (!meetingRes.ok) throw new Error(`Content saved, but Meeting Intelligence failed for ${title}.`);
+    }
+  };
+
+  const handleBackfillSkoolSessions = async () => {
+    const sessions = parseSkoolBackfillRows(skoolBackfillText);
+    if (!sessions.length) {
+      setSkoolStatus("Paste Skool session dates and Zoom recording links before importing.");
+      return;
+    }
+
+    setBackfillingSkool(true);
+    setSkoolStatus("");
+    let created = 0;
+    try {
+      for (const session of sessions) {
+        await createSkoolSessionRecords(session);
+        created += 1;
+      }
+      setSkoolStatus(`Imported ${created} Skool session${created === 1 ? "" : "s"} into the content library.`);
+      setSkoolBackfillText("");
+      setSourceFilter("skool");
+      await loadContent();
+    } catch (error) {
+      setSkoolStatus(error instanceof Error ? `${error.message} Imported ${created} before stopping.` : "Could not import Skool sessions.");
+    } finally {
+      setBackfillingSkool(false);
+    }
+  };
+
+  const handleCaptureSkoolSession = async () => {
+    if (!skoolSession.title.trim()) {
+      setSkoolStatus("Add a session title before capturing.");
+      return;
+    }
+    if (!skoolSession.classroom_url.trim() && !skoolSession.recording_url.trim()) {
+      setSkoolStatus("Add the Skool classroom link or Zoom recording link.");
+      return;
+    }
+
+    setCapturingSkool(true);
+    setSkoolStatus("");
+
+    try {
+      await createSkoolSessionRecords({
+        title: skoolSession.title,
+        sessionDate: skoolSession.session_date,
+        classroomUrl: skoolSession.classroom_url,
+        recordingUrl: skoolSession.recording_url,
+        summary: skoolSession.summary,
+        transcript: skoolSession.transcript,
+        attendees: parsePeopleLines(skoolSession.attendees),
+        actionItems: parseActionLines(skoolSession.action_items),
+      });
+
+      setSkoolStatus("Skool session captured for content sharing and meeting follow-up.");
+      setSkoolSession({
+        title: "Thursday Community Recording",
+        session_date: "",
+        classroom_url: "",
+        recording_url: "",
+        summary: "",
+        transcript: "",
+        attendees: "",
+        action_items: "",
+      });
+      setSourceFilter("skool");
+      await loadContent();
+    } catch (error) {
+      setSkoolStatus(error instanceof Error ? error.message : "Could not capture Skool session.");
+    } finally {
+      setCapturingSkool(false);
+    }
   };
 
   const onViewTargets = async (contentId: string, force = false) => {
@@ -337,6 +570,108 @@ export default function ContentPage() {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-accent/30 bg-panel p-5 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-text">Skool Thursday Session</h2>
+            <p className="mt-1 text-xs text-muted">Capture the class recording, notes, attendees, action items, and follow-up context.</p>
+          </div>
+          <a href={SKOOL_COMMUNITY_URL} target="_blank" rel="noreferrer" className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">
+            Open Skool
+          </a>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <input
+            value={skoolSession.title}
+            onChange={event => setSkoolSession(prev => ({ ...prev, title: event.target.value }))}
+            placeholder="Session title"
+            className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+          />
+          <input
+            type="date"
+            value={skoolSession.session_date}
+            onChange={event => setSkoolSession(prev => ({ ...prev, session_date: event.target.value }))}
+            className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60"
+          />
+          <input
+            value={skoolSession.classroom_url}
+            onChange={event => setSkoolSession(prev => ({ ...prev, classroom_url: event.target.value }))}
+            placeholder="Skool classroom lesson URL"
+            className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+          />
+          <input
+            value={skoolSession.recording_url}
+            onChange={event => setSkoolSession(prev => ({ ...prev, recording_url: event.target.value }))}
+            placeholder="Zoom recording share URL"
+            className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+          />
+          <textarea
+            value={skoolSession.summary}
+            onChange={event => setSkoolSession(prev => ({ ...prev, summary: event.target.value }))}
+            placeholder="Session summary"
+            className="h-24 resize-none rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+          />
+          <textarea
+            value={skoolSession.attendees}
+            onChange={event => setSkoolSession(prev => ({ ...prev, attendees: event.target.value }))}
+            placeholder={"Attendees: one per line\nName, email, role"}
+            className="h-24 resize-none rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+          />
+          <textarea
+            value={skoolSession.action_items}
+            onChange={event => setSkoolSession(prev => ({ ...prev, action_items: event.target.value }))}
+            placeholder={"Action items: one per line\nSend replay\nFollow up with buyer lead"}
+            className="h-24 resize-none rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+          />
+          <textarea
+            value={skoolSession.transcript}
+            onChange={event => setSkoolSession(prev => ({ ...prev, transcript: event.target.value }))}
+            placeholder="Transcript, chat notes, or engagement notes"
+            className="h-24 resize-none rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleCaptureSkoolSession}
+            disabled={capturingSkool}
+            className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-canvas hover:brightness-110 disabled:opacity-50"
+          >
+            {capturingSkool ? "Capturing..." : "Capture Session"}
+          </button>
+          <Link href="/meetings" className="rounded-md border border-soft px-4 py-2 text-sm text-text hover:bg-soft/40">
+            Meeting Follow-Ups
+          </Link>
+          {skoolStatus ? <p className="text-xs text-muted">{skoolStatus}</p> : null}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-soft bg-panel p-5 space-y-4">
+        <div>
+          <h2 className="text-base font-semibold text-text">Backfill Past Skool Sessions</h2>
+          <p className="mt-1 text-xs text-muted">
+            Paste copied classroom rows or lines with dates and Zoom links. Each session becomes a Skool content item.
+          </p>
+        </div>
+        <textarea
+          value={skoolBackfillText}
+          onChange={event => setSkoolBackfillText(event.target.value)}
+          placeholder={"Thursday May 21, 2026\nhttps://us02web.zoom.us/rec/share/...\nThursday May 14, 2026\nhttps://us02web.zoom.us/rec/share/..."}
+          className="h-40 w-full resize-none rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+        />
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleBackfillSkoolSessions}
+            disabled={backfillingSkool || !skoolBackfillText.trim()}
+            className="rounded-md bg-accent/20 border border-accent/40 px-4 py-2 text-sm font-semibold text-accent hover:bg-accent/30 disabled:opacity-50"
+          >
+            {backfillingSkool ? "Importing..." : "Import Past Sessions"}
+          </button>
+          <p className="text-xs text-muted">
+            Accepted formats: date line followed by Zoom URL, or one row with title/date/Skool URL/Zoom URL.
+          </p>
         </div>
       </section>
 
