@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { resolveApiUrl } from "@/components/api";
-import type { Meeting } from "@/components/types";
+import type { Meeting, MeetingRecordingAnalysis } from "@/components/types";
 
 export default function MeetingsPage() {
   const API_URL = useMemo(resolveApiUrl, []);
@@ -16,6 +16,8 @@ export default function MeetingsPage() {
   const [importing, setImporting] = useState(false);
   const [followups, setFollowups] = useState<Record<string, unknown> | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [analyzingRecording, setAnalyzingRecording] = useState(false);
+  const [recordingAnalysis, setRecordingAnalysis] = useState<MeetingRecordingAnalysis | null>(null);
   const [reportForm, setReportForm] = useState({
     title: "",
     provider: "read_ai",
@@ -95,6 +97,38 @@ export default function MeetingsPage() {
       if (res.ok) setFollowups(await res.json());
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleAnalyzeRecording = async () => {
+    if (!selected) return;
+    setAnalyzingRecording(true);
+    setRecordingAnalysis(null);
+    try {
+      const res = await fetch(`${API_URL}/meetings/${selected.id}/analyze-recording`, { method: "POST" });
+      const body = await res.json();
+      if (res.ok) {
+        setRecordingAnalysis(body);
+        const updated = await fetch(`${API_URL}/meetings/${selected.id}`, { cache: "no-store" });
+        if (updated.ok) setSelected(await updated.json());
+        await fetchMeetings();
+      } else {
+        setRecordingAnalysis({
+          meeting_id: selected.id,
+          status: "error",
+          message: String(body?.detail || "Could not analyze recording."),
+          summary: null,
+          action_items: [],
+          participants: [],
+          attendees_added: 0,
+          contacts_created: 0,
+          relationship_edges_created: 0,
+          transcript_available: false,
+          source_notes: [],
+        });
+      }
+    } finally {
+      setAnalyzingRecording(false);
     }
   };
 
@@ -315,7 +349,7 @@ export default function MeetingsPage() {
           {loading && <p className="text-muted text-sm">Loading…</p>}
           {!loading && meetings.length === 0 && <p className="text-muted text-sm">No meetings yet.</p>}
           {meetings.map(m => (
-            <div key={m.id} onClick={() => { setSelected(m); setFollowups(null); }}
+            <div key={m.id} onClick={() => { setSelected(m); setFollowups(null); setRecordingAnalysis(null); }}
               className={`rounded-xl border p-4 cursor-pointer transition hover:border-accent/40 ${selected?.id === m.id ? "border-accent/60 bg-panel" : "border-soft bg-panel/50"}`}>
               <p className="font-medium text-text text-sm">{m.title}</p>
               <p className="text-xs text-muted mt-1">{m.platform || "Meeting"} · {m.attendees.length} attendees</p>
@@ -333,9 +367,65 @@ export default function MeetingsPage() {
               {selected.summary && <p className="text-sm text-muted mt-3">{selected.summary}</p>}
             </div>
 
+            <div className="rounded-xl border border-accent/30 bg-panel p-5 space-y-3">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="font-medium text-text text-sm">AI Recording Intelligence</p>
+                  <p className="mt-1 text-xs text-muted">
+                    Scan the replay for transcript text, participant signals, action items, summaries, and follow-up context.
+                  </p>
+                </div>
+                <button
+                  onClick={handleAnalyzeRecording}
+                  disabled={analyzingRecording || !selected.meeting_url}
+                  className="rounded-lg bg-accent/20 border border-accent/40 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition disabled:opacity-50"
+                >
+                  {analyzingRecording ? "Analyzing..." : "Analyze Replay"}
+                </button>
+              </div>
+              {recordingAnalysis ? (
+                <div className="grid gap-3">
+                  <div className="rounded-lg border border-soft bg-base p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted">{recordingAnalysis.status.replace(/_/g, " ")}</p>
+                    <p className="mt-1 text-sm text-text">{recordingAnalysis.message}</p>
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-3">
+                    {[
+                      ["Attendees added", recordingAnalysis.attendees_added],
+                      ["Contacts created", recordingAnalysis.contacts_created],
+                      ["Graph edges", recordingAnalysis.relationship_edges_created],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-lg border border-soft bg-base p-3">
+                        <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
+                        <p className="mt-1 text-lg font-semibold text-text">{String(value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {recordingAnalysis.summary ? <p className="text-sm text-muted">{recordingAnalysis.summary}</p> : null}
+                  {recordingAnalysis.action_items.length ? (
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-muted">Action items</p>
+                      <div className="mt-2 grid gap-2">
+                        {recordingAnalysis.action_items.map(item => (
+                          <p key={item} className="rounded-md border border-soft bg-base px-3 py-2 text-xs text-muted">{item}</p>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {recordingAnalysis.source_notes.length ? (
+                    <div className="grid gap-2">
+                      {recordingAnalysis.source_notes.map(note => (
+                        <p key={note} className="rounded-md border border-soft bg-base px-3 py-2 text-xs text-muted">{note}</p>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+
             {/* Import attendees */}
             <div className="rounded-xl border border-soft bg-panel p-5 space-y-3">
-              <p className="font-medium text-text text-sm">Import Attendees</p>
+              <p className="font-medium text-text text-sm">Manual Attendee Fallback</p>
               <p className="text-xs text-muted">Paste rows as: Name, Email (one per line)</p>
               <textarea value={importText} onChange={e => setImportText(e.target.value)}
                 placeholder={"John Smith, john@email.com\nJane Doe, jane@email.com"}

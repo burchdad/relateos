@@ -13,9 +13,11 @@ from app.schemas.meeting import (
     MeetingIntelligenceReportRequest,
     MeetingIntelligenceReportResponse,
     MeetingOut,
+    MeetingRecordingAnalysisResponse,
     MeetingUpdate,
 )
 from app.services.meeting_service import MeetingService
+from app.services.recording_intelligence_service import RecordingIntelligenceService
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
@@ -65,5 +67,13 @@ def import_attendees(meeting_id: uuid.UUID, payload: AttendeeImportRequest, db: 
 def generate_followups(meeting_id: uuid.UUID, db: Session = Depends(get_db)):
     try:
         return MeetingService.generate_followups(db, meeting_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{meeting_id}/analyze-recording", response_model=MeetingRecordingAnalysisResponse)
+def analyze_recording(meeting_id: uuid.UUID, db: Session = Depends(get_db)):
+    try:
+        return RecordingIntelligenceService.analyze(db, meeting_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

@@ -391,6 +391,20 @@ export type Meeting = {
   updated_at: string;
 };
 
+export type MeetingRecordingAnalysis = {
+  meeting_id: string;
+  status: string;
+  message: string;
+  summary: string | null;
+  action_items: string[];
+  participants: Record<string, unknown>[];
+  attendees_added: number;
+  contacts_created: number;
+  relationship_edges_created: number;
+  transcript_available: boolean;
+  source_notes: string[];
+};
+
 export type ContentAsset = {
   id: string;
   title: string;

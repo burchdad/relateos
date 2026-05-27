@@ -163,3 +163,17 @@ class MeetingIntelligenceReportResponse(BaseModel):
     contacts_created: int
     action_items_created: int
     relationship_edges_created: int
+
+
+class MeetingRecordingAnalysisResponse(BaseModel):
+    meeting_id: UUID
+    status: str
+    message: str
+    summary: str | None = None
+    action_items: list[str] = Field(default_factory=list)
+    participants: list[dict] = Field(default_factory=list)
+    attendees_added: int = 0
+    contacts_created: int = 0
+    relationship_edges_created: int = 0
+    transcript_available: bool = False
+    source_notes: list[str] = Field(default_factory=list)
