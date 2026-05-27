@@ -176,9 +176,17 @@ class ConnectionsService:
             "errors": [],
         }
         if not blockers and mode in {"archive", "full"}:
+            from app.services.skool_import_service import SkoolImportService
             from app.services.zoom_import_service import ZoomImportService
 
-            imported = ZoomImportService.import_recent_recordings(db)
+            skool_import = SkoolImportService.import_classroom_archive(db)
+            zoom_import = ZoomImportService.import_recent_recordings(db)
+            imported = {
+                "imported_content_count": skool_import["imported_content_count"] + zoom_import["imported_content_count"],
+                "imported_meeting_count": skool_import["imported_meeting_count"] + zoom_import["imported_meeting_count"],
+                "imported_attendee_count": skool_import["imported_attendee_count"] + zoom_import["imported_attendee_count"],
+                "errors": [*skool_import["errors"], *zoom_import["errors"]],
+            }
         job = {
             "job_id": str(uuid.uuid4()),
             "mode": mode,
