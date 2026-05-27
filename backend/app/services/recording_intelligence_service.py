@@ -43,7 +43,11 @@ class RecordingIntelligenceService:
         transcript = (meeting.transcript or "").strip()
         asset_text = ""
         if transcript:
-            source_notes.append("Used existing transcript saved on the meeting.")
+            if RecordingIntelligenceService._is_meaningful_meeting_text(transcript):
+                source_notes.append("Used existing transcript saved on the meeting.")
+            else:
+                source_notes.append("Ignored existing transcript because it appears to be generic replay-page text, not meeting content.")
+                transcript = ""
 
         if not transcript and meeting.meeting_url:
             try:
@@ -217,6 +221,11 @@ class RecordingIntelligenceService:
         return EMAIL_PATTERN.search(text) is not None or sum(term in lowered for term in meeting_terms) >= 2
 
     @staticmethod
+    def _is_generic_zoom_text(value: str | None) -> bool:
+        lowered = (value or "").lower()
+        return any(marker in lowered for marker in GENERIC_ZOOM_TEXT_MARKERS)
+
+    @staticmethod
     def _ai_extract(db: Session, meeting: Meeting, text: str) -> dict:
         api_key = settings.openai_api_key or ConnectionsService.stored_connector_value(db, "openai", "api_key")
         if not api_key:
@@ -257,3 +266,7 @@ class RecordingIntelligenceService:
             "source_notes": source_notes,
         }
         meeting.raw_report = raw_report
+        if RecordingIntelligenceService._is_generic_zoom_text(meeting.summary):
+            meeting.summary = "Replay saved. Full AI notes require accessible captions, transcript, or audio."
+        if RecordingIntelligenceService._is_generic_zoom_text(meeting.transcript):
+            meeting.transcript = None
