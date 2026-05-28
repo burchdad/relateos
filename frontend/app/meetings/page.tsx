@@ -18,6 +18,8 @@ export default function MeetingsPage() {
   const [generating, setGenerating] = useState(false);
   const [analyzingRecording, setAnalyzingRecording] = useState(false);
   const [recordingAnalysis, setRecordingAnalysis] = useState<MeetingRecordingAnalysis | null>(null);
+  const [recordingAccessUrl, setRecordingAccessUrl] = useState("");
+  const [savingAccessUrl, setSavingAccessUrl] = useState(false);
   const [reportForm, setReportForm] = useState({
     title: "",
     provider: "read_ai",
@@ -110,7 +112,11 @@ export default function MeetingsPage() {
       if (res.ok) {
         setRecordingAnalysis(body);
         const updated = await fetch(`${API_URL}/meetings/${selected.id}`, { cache: "no-store" });
-        if (updated.ok) setSelected(await updated.json());
+        if (updated.ok) {
+          const updatedMeeting = await updated.json();
+          setSelected(updatedMeeting);
+          setRecordingAccessUrl(updatedMeeting.meeting_url || "");
+        }
         await fetchMeetings();
       } else {
         setRecordingAnalysis({
@@ -129,6 +135,26 @@ export default function MeetingsPage() {
       }
     } finally {
       setAnalyzingRecording(false);
+    }
+  };
+
+  const handleSaveRecordingAccessUrl = async () => {
+    if (!selected || !recordingAccessUrl.trim()) return;
+    setSavingAccessUrl(true);
+    try {
+      const res = await fetch(`${API_URL}/meetings/${selected.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ meeting_url: recordingAccessUrl.trim() }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setSelected(updated);
+        setRecordingAccessUrl(updated.meeting_url || "");
+        await fetchMeetings();
+      }
+    } finally {
+      setSavingAccessUrl(false);
     }
   };
 
@@ -349,7 +375,7 @@ export default function MeetingsPage() {
           {loading && <p className="text-muted text-sm">Loading…</p>}
           {!loading && meetings.length === 0 && <p className="text-muted text-sm">No meetings yet.</p>}
           {meetings.map(m => (
-            <div key={m.id} onClick={() => { setSelected(m); setFollowups(null); setRecordingAnalysis(null); }}
+            <div key={m.id} onClick={() => { setSelected(m); setRecordingAccessUrl(m.meeting_url || ""); setFollowups(null); setRecordingAnalysis(null); }}
               className={`rounded-xl border p-4 cursor-pointer transition hover:border-accent/40 ${selected?.id === m.id ? "border-accent/60 bg-panel" : "border-soft bg-panel/50"}`}>
               <p className="font-medium text-text text-sm">{m.title}</p>
               <p className="text-xs text-muted mt-1">{m.platform || "Meeting"} · {m.attendees.length} attendees</p>
@@ -381,6 +407,27 @@ export default function MeetingsPage() {
                   className="rounded-lg bg-accent/20 border border-accent/40 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition disabled:opacity-50"
                 >
                   {analyzingRecording ? "Analyzing..." : "Analyze Replay"}
+                </button>
+              </div>
+              <div className="grid gap-2 rounded-lg border border-soft bg-base/60 p-3 md:grid-cols-[1fr_auto]">
+                <div>
+                  <label className="text-xs uppercase tracking-wide text-muted">Recording access URL</label>
+                  <input
+                    value={recordingAccessUrl}
+                    onChange={e => setRecordingAccessUrl(e.target.value)}
+                    placeholder="Paste the Zoom rec/play URL after registration"
+                    className="mt-2 w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+                  />
+                  <p className="mt-2 text-xs text-muted">
+                    Use the authorized Zoom play page when a Skool link opens a registration screen; RelateOS inspects that page for chat, captions, and download assets.
+                  </p>
+                </div>
+                <button
+                  onClick={handleSaveRecordingAccessUrl}
+                  disabled={savingAccessUrl || !recordingAccessUrl.trim() || recordingAccessUrl.trim() === (selected.meeting_url || "")}
+                  className="self-end rounded-lg border border-accent/40 bg-accent/20 px-4 py-2 text-sm font-medium text-accent transition hover:bg-accent/30 disabled:opacity-50"
+                >
+                  {savingAccessUrl ? "Saving..." : "Save URL"}
                 </button>
               </div>
               {recordingAnalysis ? (

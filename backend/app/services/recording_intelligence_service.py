@@ -25,6 +25,10 @@ CAPTION_URL_PATTERN = re.compile(
     r"https?:\\?/\\?/[^\"'\s<>]+(?:\.vtt|\.srt|\.txt|transcript|caption|cc)[^\"'\s<>]*",
     re.IGNORECASE,
 )
+MEDIA_URL_PATTERN = re.compile(
+    r"https?:\\?/\\?/[^\"'\s<>]+(?:\.mp4|\.m4a|\.mp3|download|rec/download|rec/play)[^\"'\s<>]*",
+    re.IGNORECASE,
+)
 GENERIC_ZOOM_TEXT_MARKERS = [
     "products and services offered by zoom",
     "enhance productivity and team effectiveness",
@@ -51,6 +55,7 @@ class RecordingIntelligenceService:
         transcript = (meeting.transcript or "").strip()
         asset_text = ""
         trusted_asset_text = False
+        media_urls: list[str] = []
         if transcript:
             if RecordingIntelligenceService._is_meaningful_meeting_text(transcript):
                 source_notes.append("Used existing transcript saved on the meeting.")
@@ -60,7 +65,9 @@ class RecordingIntelligenceService:
 
         if not transcript and meeting.meeting_url:
             try:
-                asset_text, asset_notes, trusted_asset_text = RecordingIntelligenceService._fetch_replay_text_assets(meeting.meeting_url)
+                asset_text, asset_notes, trusted_asset_text, media_urls = RecordingIntelligenceService._fetch_replay_text_assets(
+                    meeting.meeting_url
+                )
                 source_notes.extend(asset_notes)
             except Exception as exc:
                 source_notes.append(f"Replay page scan failed: {exc}")
@@ -138,6 +145,7 @@ class RecordingIntelligenceService:
                     "recording_ai": {
                         "status": "analyzed",
                         "source_notes": source_notes,
+                        "media_urls": media_urls,
                         "followup_context": ai_payload.get("followup_context", []),
                         "deal_signals": ai_payload.get("deal_signals", []),
                     },
@@ -161,7 +169,7 @@ class RecordingIntelligenceService:
         )
 
     @staticmethod
-    def _fetch_replay_text_assets(url: str) -> tuple[str, list[str], bool]:
+    def _fetch_replay_text_assets(url: str) -> tuple[str, list[str], bool, list[str]]:
         response = httpx.get(
             url,
             follow_redirects=True,
@@ -175,25 +183,74 @@ class RecordingIntelligenceService:
             raise RuntimeError(f"{response.status_code} while fetching replay page")
         html_text = unescape(unquote(response.text))
         notes = ["Fetched replay page and inspected embedded recording assets."]
+        media_urls = RecordingIntelligenceService._extract_media_urls(html_text)
+        if media_urls:
+            notes.append(f"Found {len(media_urls)} replay media/download URL candidate(s).")
 
+        text_parts = []
+        chat_text = RecordingIntelligenceService._extract_chat_text(html_text)
+        if chat_text:
+            notes.append("Extracted visible Zoom chat text from the replay page.")
+            text_parts.append(f"Zoom chat messages:\n{chat_text}")
         captions = RecordingIntelligenceService._fetch_caption_assets(html_text, url)
         if captions:
             notes.append(f"Found and loaded {len(captions)} caption/transcript asset(s).")
-            return "\n\n".join(captions)[:30000], notes, True
+            text_parts.extend(captions)
+        if text_parts:
+            return "\n\n".join(text_parts)[:30000], notes, True, media_urls
 
         page_text = RecordingIntelligenceService._html_to_text(html_text)
         if RecordingIntelligenceService._is_meaningful_meeting_text(page_text):
             notes.append("Used meaningful visible replay page text.")
-            return page_text[:20000], notes, False
+            return page_text[:20000], notes, False, media_urls
 
         notes.append("Replay page did not expose transcript/caption text to the backend.")
-        return "", notes, False
+        return "", notes, False, media_urls
+
+    @staticmethod
+    def _extract_media_urls(html_text: str) -> list[str]:
+        urls = []
+        for raw_url in MEDIA_URL_PATTERN.findall(html_text):
+            url = RecordingIntelligenceService._normalize_asset_url(raw_url)
+            if url not in urls:
+                urls.append(url)
+        return urls[:20]
+
+    @staticmethod
+    def _normalize_asset_url(raw_url: str) -> str:
+        return unescape(unquote(raw_url)).replace("\\/", "/").replace("\\u0026", "&")
+
+    @staticmethod
+    def _extract_chat_text(html_text: str) -> str:
+        text = RecordingIntelligenceService._html_to_text(html_text)
+        marker = "Chat Messages"
+        if marker in text:
+            text = text.split(marker, 1)[1]
+        for stop in ["Download", "Speed", "Speaker view", "Gallery view"]:
+            if stop in text:
+                text = text.split(stop, 1)[0]
+        chat_terms = [
+            "deal",
+            "fund",
+            "units",
+            "class a",
+            "class b",
+            "real estate",
+            "good seeing",
+            "projects",
+            "houston",
+            "tulsa",
+            "las vegas",
+        ]
+        if sum(term in text.lower() for term in chat_terms) < 2:
+            return ""
+        return text[:6000].strip()
 
     @staticmethod
     def _fetch_caption_assets(html_text: str, referer: str) -> list[str]:
         urls = []
         for raw_url in CAPTION_URL_PATTERN.findall(html_text):
-            url = raw_url.replace("\\/", "/").replace("\\u0026", "&")
+            url = RecordingIntelligenceService._normalize_asset_url(raw_url)
             if url not in urls:
                 urls.append(url)
 
@@ -330,6 +387,8 @@ class RecordingIntelligenceService:
         client = OpenAI(api_key=api_key)
         prompt = (
             "Analyze this meeting recording text for RelateOS. Extract only facts supported by the text. "
+            "Treat Zoom chat messages as high-signal participant, deal, and follow-up context. "
+            "Do not invent attendee names, emails, phone numbers, or action items. "
             "If participant emails are not visible, leave email blank. Return JSON with keys: "
             "summary string, action_items array of strings, participants array of objects with name/email/role, "
             "followup_context array of strings, deal_signals array of strings.\n\n"
