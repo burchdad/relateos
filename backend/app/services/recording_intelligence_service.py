@@ -39,6 +39,9 @@ GENERIC_ZOOM_TEXT_MARKERS = [
     "skool's progress and future plans",
     "skool's operations and future plans",
     "updates and discussions regarding skool",
+    "progress and updates related to skool",
+    "challenges faced and future plans",
+    "various aspects of the project",
     "implementation of new features discussed",
     "review progress on action items",
 ]
@@ -74,7 +77,7 @@ class RecordingIntelligenceService:
 
         text_for_ai = transcript or asset_text
         if not trusted_asset_text and not RecordingIntelligenceService._is_meaningful_meeting_text(text_for_ai):
-            RecordingIntelligenceService._mark_analysis_attempt(meeting, source_notes)
+            RecordingIntelligenceService._mark_analysis_attempt(meeting, source_notes, media_urls)
             db.commit()
             return MeetingRecordingAnalysisResponse(
                 meeting_id=meeting.id,
@@ -92,7 +95,7 @@ class RecordingIntelligenceService:
         if confidence["level"] == "low":
             source_notes.append(confidence["reason"])
             RecordingIntelligenceService._remove_low_confidence_attendees(db, meeting)
-            RecordingIntelligenceService._mark_analysis_attempt(meeting, source_notes)
+            RecordingIntelligenceService._mark_analysis_attempt(meeting, source_notes, media_urls)
             db.commit()
             return MeetingRecordingAnalysisResponse(
                 meeting_id=meeting.id,
@@ -196,6 +199,10 @@ class RecordingIntelligenceService:
         if captions:
             notes.append(f"Found and loaded {len(captions)} caption/transcript asset(s).")
             text_parts.extend(captions)
+        download_texts = RecordingIntelligenceService._fetch_text_download_assets(media_urls, url)
+        if download_texts:
+            notes.append(f"Found and loaded {len(download_texts)} text download asset(s).")
+            text_parts.extend(download_texts)
         if text_parts:
             return "\n\n".join(text_parts)[:30000], notes, True, media_urls
 
@@ -273,6 +280,48 @@ class RecordingIntelligenceService:
             except Exception:
                 continue
         return captions
+
+    @staticmethod
+    def _fetch_text_download_assets(urls: list[str], referer: str) -> list[str]:
+        texts = []
+        for url in urls[:10]:
+            lowered_url = url.lower()
+            if any(ext in lowered_url for ext in [".mp4", ".m4a", ".mp3"]):
+                continue
+            try:
+                response = httpx.get(
+                    url,
+                    headers={
+                        "User-Agent": "RelateOS recording intelligence/1.0",
+                        "Referer": referer,
+                        "Accept": "text/plain,text/vtt,text/html,*/*;q=0.2",
+                    },
+                    follow_redirects=True,
+                    timeout=30,
+                )
+                if response.status_code >= 400:
+                    continue
+                content_type = response.headers.get("content-type", "").lower()
+                body = response.text
+                if not RecordingIntelligenceService._looks_like_text_asset(url, content_type, body):
+                    continue
+                text = RecordingIntelligenceService._caption_to_text(body)
+                if len(text) >= 80 and not RecordingIntelligenceService._is_generic_zoom_text(text):
+                    label = "Zoom chat/download text" if "chat" in lowered_url else "Zoom caption/download text"
+                    texts.append(f"{label}:\n{text}")
+            except Exception:
+                continue
+        return texts
+
+    @staticmethod
+    def _looks_like_text_asset(url: str, content_type: str, body: str) -> bool:
+        lowered_url = url.lower()
+        lowered_body = body[:500].lower()
+        if any(token in lowered_url for token in [".txt", ".vtt", ".srt", "chat", "caption", "transcript", "cc"]):
+            return True
+        if any(token in content_type for token in ["text/", "json", "vtt", "caption"]):
+            return True
+        return "webvtt" in lowered_body or "chat messages" in lowered_body
 
     @staticmethod
     def _caption_to_text(value: str) -> str:
@@ -408,11 +457,12 @@ class RecordingIntelligenceService:
             return {"summary": raw[:1000], "action_items": [], "participants": []}
 
     @staticmethod
-    def _mark_analysis_attempt(meeting: Meeting, source_notes: list[str]) -> None:
+    def _mark_analysis_attempt(meeting: Meeting, source_notes: list[str], media_urls: list[str] | None = None) -> None:
         raw_report = meeting.raw_report or {}
         raw_report["recording_ai"] = {
             "status": "needs_media_access",
             "source_notes": source_notes,
+            "media_urls": media_urls or [],
         }
         meeting.raw_report = raw_report
         if RecordingIntelligenceService._is_generic_zoom_text(meeting.summary):
