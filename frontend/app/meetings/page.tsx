@@ -1,8 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { upload } from "@vercel/blob/client";
 import { resolveApiUrl } from "@/components/api";
 import type { Meeting, MeetingRecordingAnalysis, RecordingArtifact, RecordingArtifactSummary } from "@/components/types";
+
+const MEDIA_EXTENSIONS = [".mp4", ".m4a", ".mp3", ".wav", ".mov", ".webm"];
+
+const isMediaFile = (file: File) => {
+  const name = file.name.toLowerCase();
+  return file.type.startsWith("video/") || file.type.startsWith("audio/") || MEDIA_EXTENSIONS.some(ext => name.endsWith(ext));
+};
+
+const mediaArtifactType = (file: File) => {
+  if (file.type.startsWith("video/") || file.name.toLowerCase().match(/\.(mp4|mov|webm)$/)) return "video";
+  if (file.type.startsWith("audio/") || file.name.toLowerCase().match(/\.(m4a|mp3|wav)$/)) return "audio";
+  return "media";
+};
 
 export default function MeetingsPage() {
   const API_URL = useMemo(resolveApiUrl, []);
@@ -184,13 +198,36 @@ export default function MeetingsPage() {
     if (!selected || !event.target.files?.length) return;
     setUploadingArtifacts(true);
     try {
+      const files = Array.from(event.target.files);
+      const mediaFiles = files.filter(isMediaFile);
+      const textFiles = files.filter(file => !isMediaFile(file));
+
+      for (const file of mediaFiles) {
+        await upload(`recordings/${selected.id}/${file.name}`, file, {
+          access: "public",
+          handleUploadUrl: "/api/blob-upload",
+          clientPayload: JSON.stringify({
+            meetingId: selected.id,
+            apiUrl: API_URL,
+            fileName: file.name,
+            contentType: file.type || null,
+            artifactType: mediaArtifactType(file),
+            fileSizeBytes: file.size,
+          }),
+        });
+      }
+
+      if (textFiles.length) {
       const formData = new FormData();
-      Array.from(event.target.files).forEach(file => formData.append("files", file));
+        textFiles.forEach(file => formData.append("files", file));
       const res = await fetch(`${API_URL}/meetings/${selected.id}/recording-artifacts/upload`, {
         method: "POST",
         body: formData,
       });
-      if (res.ok) await fetchRecordingArtifacts(selected.id);
+        if (!res.ok) return;
+      }
+
+      await fetchRecordingArtifacts(selected.id);
     } finally {
       setUploadingArtifacts(false);
       event.target.value = "";

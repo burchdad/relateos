@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.recording_artifact import RecordingArtifactOut, RecordingArtifactSummary
+from app.schemas.recording_artifact import RecordingArtifactCreate, RecordingArtifactOut, RecordingArtifactSummary
 from app.services.recording_artifact_service import RecordingArtifactService
 
 router = APIRouter(prefix="/meetings/{meeting_id}/recording-artifacts", tags=["recording-artifacts"])
@@ -18,6 +18,18 @@ def list_recording_artifacts(meeting_id: uuid.UUID, db: Session = Depends(get_db
 @router.get("/summary", response_model=RecordingArtifactSummary)
 def recording_artifact_summary(meeting_id: uuid.UUID, db: Session = Depends(get_db)):
     return RecordingArtifactService.summary(db, meeting_id)
+
+
+@router.post("", response_model=RecordingArtifactOut, status_code=201)
+def create_recording_artifact(
+    meeting_id: uuid.UUID,
+    payload: RecordingArtifactCreate,
+    db: Session = Depends(get_db),
+):
+    try:
+        return RecordingArtifactService.create(db, meeting_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/upload", response_model=list[RecordingArtifactOut], status_code=201)
@@ -52,4 +64,3 @@ async def upload_recording_artifacts(
     if not artifacts:
         raise HTTPException(status_code=400, detail="Uploaded files were empty")
     return artifacts
-
