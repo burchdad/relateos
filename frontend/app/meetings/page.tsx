@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { resolveApiUrl } from "@/components/api";
-import type { Meeting, MeetingRecordingAnalysis } from "@/components/types";
+import type { Meeting, MeetingRecordingAnalysis, RecordingArtifact, RecordingArtifactSummary } from "@/components/types";
 
 export default function MeetingsPage() {
   const API_URL = useMemo(resolveApiUrl, []);
@@ -20,6 +20,9 @@ export default function MeetingsPage() {
   const [recordingAnalysis, setRecordingAnalysis] = useState<MeetingRecordingAnalysis | null>(null);
   const [recordingAccessUrl, setRecordingAccessUrl] = useState("");
   const [savingAccessUrl, setSavingAccessUrl] = useState(false);
+  const [recordingArtifacts, setRecordingArtifacts] = useState<RecordingArtifact[]>([]);
+  const [artifactSummary, setArtifactSummary] = useState<RecordingArtifactSummary | null>(null);
+  const [uploadingArtifacts, setUploadingArtifacts] = useState(false);
   const [reportForm, setReportForm] = useState({
     title: "",
     provider: "read_ai",
@@ -46,6 +49,25 @@ export default function MeetingsPage() {
   };
 
   useEffect(() => { fetchMeetings(); }, []);
+
+  const fetchRecordingArtifacts = async (meetingId: string) => {
+    const [artifactsRes, summaryRes] = await Promise.all([
+      fetch(`${API_URL}/meetings/${meetingId}/recording-artifacts`, { cache: "no-store" }),
+      fetch(`${API_URL}/meetings/${meetingId}/recording-artifacts/summary`, { cache: "no-store" }),
+    ]);
+    if (artifactsRes.ok) setRecordingArtifacts(await artifactsRes.json());
+    if (summaryRes.ok) setArtifactSummary(await summaryRes.json());
+  };
+
+  const selectMeeting = async (meeting: Meeting) => {
+    setSelected(meeting);
+    setRecordingAccessUrl(meeting.meeting_url || "");
+    setFollowups(null);
+    setRecordingAnalysis(null);
+    setRecordingArtifacts([]);
+    setArtifactSummary(null);
+    await fetchRecordingArtifacts(meeting.id);
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,6 +177,23 @@ export default function MeetingsPage() {
       }
     } finally {
       setSavingAccessUrl(false);
+    }
+  };
+
+  const handleArtifactUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selected || !event.target.files?.length) return;
+    setUploadingArtifacts(true);
+    try {
+      const formData = new FormData();
+      Array.from(event.target.files).forEach(file => formData.append("files", file));
+      const res = await fetch(`${API_URL}/meetings/${selected.id}/recording-artifacts/upload`, {
+        method: "POST",
+        body: formData,
+      });
+      if (res.ok) await fetchRecordingArtifacts(selected.id);
+    } finally {
+      setUploadingArtifacts(false);
+      event.target.value = "";
     }
   };
 
@@ -375,7 +414,7 @@ export default function MeetingsPage() {
           {loading && <p className="text-muted text-sm">Loading…</p>}
           {!loading && meetings.length === 0 && <p className="text-muted text-sm">No meetings yet.</p>}
           {meetings.map(m => (
-            <div key={m.id} onClick={() => { setSelected(m); setRecordingAccessUrl(m.meeting_url || ""); setFollowups(null); setRecordingAnalysis(null); }}
+            <div key={m.id} onClick={() => { void selectMeeting(m); }}
               className={`rounded-xl border p-4 cursor-pointer transition hover:border-accent/40 ${selected?.id === m.id ? "border-accent/60 bg-panel" : "border-soft bg-panel/50"}`}>
               <p className="font-medium text-text text-sm">{m.title}</p>
               <p className="text-xs text-muted mt-1">{m.platform || "Meeting"} · {m.attendees.length} attendees</p>
@@ -468,6 +507,63 @@ export default function MeetingsPage() {
                   ) : null}
                 </div>
               ) : null}
+            </div>
+
+            <div className="rounded-xl border border-soft bg-panel p-5 space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="font-medium text-text text-sm">Recording Artifacts</p>
+                  <p className="mt-1 text-xs text-muted">
+                    Upload Zoom chat, captions, transcripts, audio, or video files from the recording download menu.
+                  </p>
+                </div>
+                <label className="cursor-pointer rounded-lg border border-accent/40 bg-accent/20 px-4 py-2 text-sm font-medium text-accent transition hover:bg-accent/30">
+                  {uploadingArtifacts ? "Uploading..." : "Upload Files"}
+                  <input
+                    type="file"
+                    multiple
+                    accept=".txt,.vtt,.srt,.csv,.json,.mp4,.m4a,.mp3,.wav,.mov,.webm,text/*,audio/*,video/*"
+                    onChange={handleArtifactUpload}
+                    disabled={uploadingArtifacts}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+              {artifactSummary ? (
+                <div className="grid gap-2 md:grid-cols-4">
+                  {[
+                    ["Artifacts", artifactSummary.total],
+                    ["Ready text", artifactSummary.ready_text],
+                    ["Media pending", artifactSummary.pending_transcription],
+                    ["Text chars", artifactSummary.text_characters],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-lg border border-soft bg-base p-3">
+                      <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
+                      <p className="mt-1 text-lg font-semibold text-text">{String(value)}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {recordingArtifacts.length ? (
+                <div className="grid gap-2">
+                  {recordingArtifacts.map(artifact => (
+                    <div key={artifact.id} className="rounded-lg border border-soft bg-base px-3 py-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium text-text">{artifact.file_name || artifact.artifact_type}</p>
+                        <span className="text-xs uppercase tracking-wide text-muted">{artifact.status.replace(/_/g, " ")}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted">
+                        {artifact.artifact_type} · {Math.round(artifact.file_size_bytes / 1024)} KB
+                      </p>
+                      {artifact.extraction_notes.slice(0, 2).map(note => (
+                        <p key={note} className="mt-1 text-xs text-muted">{note}</p>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted">No files uploaded yet.</p>
+              )}
             </div>
 
             {/* Import attendees */}

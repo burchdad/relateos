@@ -439,6 +439,9 @@ class Meeting(Base):
     )
 
     attendees: Mapped[list["MeetingAttendee"]] = relationship("MeetingAttendee", back_populates="meeting", cascade="all, delete-orphan")
+    recording_artifacts: Mapped[list["RecordingArtifact"]] = relationship(
+        "RecordingArtifact", back_populates="meeting", cascade="all, delete-orphan"
+    )
 
 
 class MeetingAttendee(Base):
@@ -461,3 +464,25 @@ class MeetingAttendee(Base):
 
     meeting: Mapped["Meeting"] = relationship("Meeting", back_populates="attendees")
     contact: Mapped["Person | None"] = relationship("Person", foreign_keys=[contact_id])
+
+
+class RecordingArtifact(Base):
+    __tablename__ = "recording_artifacts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    meeting_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("meetings.id"), nullable=False)
+    artifact_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    file_size_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default="0")
+    status: Mapped[str] = mapped_column(String(50), default="ready", nullable=False)
+    extraction_notes: Mapped[list] = mapped_column(JSONB, default=list)
+    raw_metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    meeting: Mapped["Meeting"] = relationship("Meeting", back_populates="recording_artifacts")

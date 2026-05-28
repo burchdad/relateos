@@ -405,6 +405,30 @@ export type MeetingRecordingAnalysis = {
   source_notes: string[];
 };
 
+export type RecordingArtifact = {
+  id: string;
+  meeting_id: string;
+  artifact_type: string;
+  file_name: string | null;
+  content_type: string | null;
+  source_url: string | null;
+  text_content: string | null;
+  file_size_bytes: number;
+  status: string;
+  extraction_notes: string[];
+  raw_metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RecordingArtifactSummary = {
+  total: number;
+  ready_text: number;
+  pending_transcription: number;
+  media: number;
+  text_characters: number;
+};
+
 export type ContentAsset = {
   id: string;
   title: string;

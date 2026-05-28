@@ -17,6 +17,7 @@ from app.schemas.meeting import (
 )
 from app.services.connections_service import ConnectionsService
 from app.services.meeting_service import MeetingService
+from app.services.recording_artifact_service import RecordingArtifactService
 
 
 EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
@@ -66,7 +67,14 @@ class RecordingIntelligenceService:
                 source_notes.append("Ignored existing transcript because it appears to be generic replay-page text, not meeting content.")
                 transcript = ""
 
-        if not transcript and meeting.meeting_url:
+        if not transcript:
+            artifact_text, artifact_notes = RecordingArtifactService.combined_ready_text(db, meeting.id)
+            if artifact_text:
+                asset_text = artifact_text
+                trusted_asset_text = True
+                source_notes.extend(artifact_notes)
+
+        if not transcript and not asset_text and meeting.meeting_url:
             try:
                 asset_text, asset_notes, trusted_asset_text, media_urls = RecordingIntelligenceService._fetch_replay_text_assets(
                     meeting.meeting_url

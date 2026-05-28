@@ -27,6 +27,7 @@ from app.routes.interactions import router as interactions_router
 from app.routes.meetings import router as meetings_router
 from app.routes.network import router as network_router
 from app.routes.organizations import router as organizations_router
+from app.routes.recording_artifacts import router as recording_artifacts_router
 from app.routes.relateos import router as relateos_router
 from app.routes.relationships import router as relationships_router
 from app.routes.style_profiles import router as style_profiles_router
@@ -200,6 +201,7 @@ app.include_router(deals_router, prefix=settings.api_v1_prefix)
 app.include_router(network_router, prefix=settings.api_v1_prefix)
 app.include_router(engagement_router, prefix=settings.api_v1_prefix)
 app.include_router(meetings_router, prefix=settings.api_v1_prefix)
+app.include_router(recording_artifacts_router, prefix=settings.api_v1_prefix)
 app.include_router(content_assets_router, prefix=settings.api_v1_prefix)
 
 
