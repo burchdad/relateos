@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { upload } from "@vercel/blob/client";
 import { resolveApiUrl } from "@/components/api";
-import type { Meeting, MeetingRecordingAnalysis, RecordingArtifact, RecordingArtifactSummary } from "@/components/types";
+import type {
+  Meeting,
+  MeetingRecordingAnalysis,
+  RecordingArtifact,
+  RecordingArtifactSummary,
+  RecordingTranscriptionResponse,
+} from "@/components/types";
 
 const MEDIA_EXTENSIONS = [".mp4", ".m4a", ".mp3", ".wav", ".mov", ".webm"];
 
@@ -37,6 +43,8 @@ export default function MeetingsPage() {
   const [recordingArtifacts, setRecordingArtifacts] = useState<RecordingArtifact[]>([]);
   const [artifactSummary, setArtifactSummary] = useState<RecordingArtifactSummary | null>(null);
   const [uploadingArtifacts, setUploadingArtifacts] = useState(false);
+  const [transcribingArtifacts, setTranscribingArtifacts] = useState(false);
+  const [transcriptionResult, setTranscriptionResult] = useState<RecordingTranscriptionResponse | null>(null);
   const [reportForm, setReportForm] = useState({
     title: "",
     provider: "read_ai",
@@ -80,6 +88,7 @@ export default function MeetingsPage() {
     setRecordingAnalysis(null);
     setRecordingArtifacts([]);
     setArtifactSummary(null);
+    setTranscriptionResult(null);
     await fetchRecordingArtifacts(meeting.id);
   };
 
@@ -231,6 +240,33 @@ export default function MeetingsPage() {
     } finally {
       setUploadingArtifacts(false);
       event.target.value = "";
+    }
+  };
+
+  const handleTranscribePending = async () => {
+    if (!selected) return;
+    setTranscribingArtifacts(true);
+    setTranscriptionResult(null);
+    try {
+      const res = await fetch(`${API_URL}/meetings/${selected.id}/recording-artifacts/transcribe-pending`, {
+        method: "POST",
+      });
+      const body = await res.json();
+      if (res.ok) {
+        setTranscriptionResult(body);
+        await fetchRecordingArtifacts(selected.id);
+      } else {
+        setTranscriptionResult({
+          meeting_id: selected.id,
+          processed: 0,
+          transcripts_created: 0,
+          skipped: 0,
+          errors: [String(body?.detail || "Could not transcribe media.")],
+          artifacts: [],
+        });
+      }
+    } finally {
+      setTranscribingArtifacts(false);
     }
   };
 
@@ -554,18 +590,38 @@ export default function MeetingsPage() {
                     Upload Zoom chat, captions, transcripts, audio, or video files from the recording download menu.
                   </p>
                 </div>
-                <label className="cursor-pointer rounded-lg border border-accent/40 bg-accent/20 px-4 py-2 text-sm font-medium text-accent transition hover:bg-accent/30">
-                  {uploadingArtifacts ? "Uploading..." : "Upload Files"}
-                  <input
-                    type="file"
-                    multiple
-                    accept=".txt,.vtt,.srt,.csv,.json,.mp4,.m4a,.mp3,.wav,.mov,.webm,text/*,audio/*,video/*"
-                    onChange={handleArtifactUpload}
-                    disabled={uploadingArtifacts}
-                    className="hidden"
-                  />
-                </label>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={handleTranscribePending}
+                    disabled={transcribingArtifacts || !artifactSummary?.pending_transcription}
+                    className="rounded-lg border border-soft bg-base px-4 py-2 text-sm font-medium text-muted transition hover:text-text disabled:opacity-50"
+                  >
+                    {transcribingArtifacts ? "Transcribing..." : "Transcribe Media"}
+                  </button>
+                  <label className="cursor-pointer rounded-lg border border-accent/40 bg-accent/20 px-4 py-2 text-sm font-medium text-accent transition hover:bg-accent/30">
+                    {uploadingArtifacts ? "Uploading..." : "Upload Files"}
+                    <input
+                      type="file"
+                      multiple
+                      accept=".txt,.vtt,.srt,.csv,.json,.mp4,.m4a,.mp3,.wav,.mov,.webm,text/*,audio/*,video/*"
+                      onChange={handleArtifactUpload}
+                      disabled={uploadingArtifacts}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
               </div>
+              {transcriptionResult ? (
+                <div className="rounded-lg border border-soft bg-base p-3">
+                  <p className="text-xs uppercase tracking-wide text-muted">Transcription</p>
+                  <p className="mt-1 text-sm text-text">
+                    Processed {transcriptionResult.processed}; created {transcriptionResult.transcripts_created} transcript artifact(s).
+                  </p>
+                  {transcriptionResult.errors.map(error => (
+                    <p key={error} className="mt-1 text-xs text-muted">{error}</p>
+                  ))}
+                </div>
+              ) : null}
               {artifactSummary ? (
                 <div className="grid gap-2 md:grid-cols-4">
                   {[

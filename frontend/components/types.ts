@@ -429,6 +429,15 @@ export type RecordingArtifactSummary = {
   text_characters: number;
 };
 
+export type RecordingTranscriptionResponse = {
+  meeting_id: string;
+  processed: number;
+  transcripts_created: number;
+  skipped: number;
+  errors: string[];
+  artifacts: RecordingArtifact[];
+};
+
 export type ContentAsset = {
   id: string;
   title: string;

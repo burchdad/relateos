@@ -1,10 +1,14 @@
 import re
 import uuid
+from io import BytesIO
 
+import httpx
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.entities import Meeting, RecordingArtifact
-from app.schemas.recording_artifact import RecordingArtifactCreate, RecordingArtifactSummary
+from app.schemas.recording_artifact import RecordingArtifactCreate, RecordingArtifactSummary, RecordingTranscriptionResponse
+from app.services.connections_service import ConnectionsService
 
 
 TEXT_EXTENSIONS = (".txt", ".vtt", ".srt", ".csv", ".json", ".md")
@@ -117,6 +121,139 @@ class RecordingArtifactService:
         )
 
     @staticmethod
+    def transcribe_pending(db: Session, meeting_id: uuid.UUID, limit: int = 3) -> RecordingTranscriptionResponse:
+        meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+        if not meeting:
+            raise ValueError("Meeting not found")
+
+        pending = (
+            db.query(RecordingArtifact)
+            .filter(
+                RecordingArtifact.meeting_id == meeting_id,
+                RecordingArtifact.status == "pending_transcription",
+                RecordingArtifact.artifact_type.in_(["audio", "video", "media"]),
+            )
+            .order_by(RecordingArtifact.created_at.asc())
+            .limit(limit)
+            .all()
+        )
+
+        processed = 0
+        skipped = 0
+        errors: list[str] = []
+        transcripts: list[RecordingArtifact] = []
+
+        for artifact in pending:
+            try:
+                transcript = RecordingArtifactService.transcribe_artifact(db, artifact)
+                transcripts.append(transcript)
+                processed += 1
+            except ValueError as exc:
+                skipped += 1
+                errors.append(f"{artifact.file_name or artifact.id}: {exc}")
+            except Exception as exc:
+                errors.append(f"{artifact.file_name or artifact.id}: {exc}")
+
+        return RecordingTranscriptionResponse(
+            meeting_id=meeting_id,
+            processed=processed,
+            transcripts_created=len(transcripts),
+            skipped=skipped,
+            errors=errors,
+            artifacts=transcripts,
+        )
+
+    @staticmethod
+    def transcribe_artifact(db: Session, artifact: RecordingArtifact) -> RecordingArtifact:
+        if not artifact.source_url:
+            artifact.status = "needs_review"
+            artifact.extraction_notes = [*artifact.extraction_notes, "Cannot transcribe media without a source URL."]
+            db.commit()
+            raise ValueError("Missing media source URL")
+
+        if artifact.file_size_bytes and artifact.file_size_bytes > settings.recording_transcription_max_bytes:
+            artifact.status = "needs_chunking"
+            artifact.extraction_notes = [
+                *artifact.extraction_notes,
+                (
+                    "Media is larger than the configured transcription limit. "
+                    "Add chunking/audio extraction worker before processing this file."
+                ),
+            ]
+            db.commit()
+            raise ValueError("Media exceeds transcription size limit")
+
+        api_key = settings.openai_api_key or ConnectionsService.stored_connector_value(db, "openai", "api_key")
+        if not api_key:
+            raise ValueError("OpenAI API key is not configured")
+
+        media_bytes = RecordingArtifactService._download_media(artifact.source_url)
+        if len(media_bytes) > settings.recording_transcription_max_bytes:
+            artifact.status = "needs_chunking"
+            artifact.file_size_bytes = artifact.file_size_bytes or len(media_bytes)
+            artifact.extraction_notes = [
+                *artifact.extraction_notes,
+                (
+                    "Downloaded media is larger than the configured transcription limit. "
+                    "Add chunking/audio extraction worker before processing this file."
+                ),
+            ]
+            db.commit()
+            raise ValueError("Downloaded media exceeds transcription size limit")
+
+        from openai import OpenAI
+
+        client = OpenAI(api_key=api_key)
+        file_name = artifact.file_name or f"recording-{artifact.id}.m4a"
+        file_obj = BytesIO(media_bytes)
+        file_obj.name = file_name
+        transcription = client.audio.transcriptions.create(
+            model=settings.openai_transcription_model,
+            file=file_obj,
+            response_format="text",
+        )
+        transcript_text = str(transcription).strip()
+        if not transcript_text:
+            artifact.status = "needs_review"
+            artifact.extraction_notes = [*artifact.extraction_notes, "Transcription returned empty text."]
+            db.commit()
+            raise ValueError("Transcription returned empty text")
+
+        transcript_artifact = RecordingArtifact(
+            id=uuid.uuid4(),
+            meeting_id=artifact.meeting_id,
+            artifact_type="transcript",
+            file_name=f"{file_name}.transcript.txt",
+            content_type="text/plain",
+            source_url=artifact.source_url,
+            text_content=RecordingArtifactService._clean_text_artifact(transcript_text),
+            file_size_bytes=len(transcript_text.encode("utf-8")),
+            status="ready",
+            extraction_notes=[
+                f"Transcribed from media artifact {artifact.id}.",
+                f"Model: {settings.openai_transcription_model}.",
+            ],
+            raw_metadata={
+                "source": "openai_transcription",
+                "source_artifact_id": str(artifact.id),
+                "source_file_name": artifact.file_name,
+            },
+        )
+        artifact.status = "transcribed"
+        artifact.extraction_notes = [*artifact.extraction_notes, f"Created transcript artifact {transcript_artifact.id}."]
+        db.add(transcript_artifact)
+        db.commit()
+        db.refresh(transcript_artifact)
+        return transcript_artifact
+
+    @staticmethod
+    def _download_media(url: str) -> bytes:
+        response = httpx.get(url, follow_redirects=True, timeout=120)
+        if response.status_code >= 400:
+            raise ValueError(f"Could not download media: {response.status_code}")
+        return response.content
+
+    @staticmethod
     def _classify_file(file_name: str, content_type: str | None) -> str:
         lowered = file_name.lower()
         content = (content_type or "").lower()
@@ -154,4 +291,3 @@ class RecordingArtifactService:
                 continue
             lines.append(stripped)
         return re.sub(r"\s+", " ", "\n".join(lines)).strip()
-

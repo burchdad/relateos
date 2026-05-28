@@ -41,3 +41,11 @@ class RecordingArtifactSummary(BaseModel):
     media: int
     text_characters: int
 
+
+class RecordingTranscriptionResponse(BaseModel):
+    meeting_id: UUID
+    processed: int
+    transcripts_created: int
+    skipped: int
+    errors: list[str] = Field(default_factory=list)
+    artifacts: list[RecordingArtifactOut] = Field(default_factory=list)
