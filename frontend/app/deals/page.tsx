@@ -146,7 +146,7 @@ export default function DealsPage() {
             className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
           />
           <button onClick={handleNlParse} disabled={nlParsing || !nlInput.trim()}
-            className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-canvas hover:brightness-110 transition disabled:opacity-50">
+            className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110 transition disabled:opacity-50">
             {nlParsing ? "Parsing..." : "Parse Deal"}
           </button>
         </div>

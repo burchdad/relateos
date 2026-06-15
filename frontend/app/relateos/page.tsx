@@ -236,7 +236,7 @@ export default function RelateOSPage() {
 
             <button
               onClick={saveStyle}
-              className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-canvas hover:brightness-110"
+              className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-text hover:brightness-110"
             >
               Save Style Profile
             </button>
@@ -283,7 +283,7 @@ export default function RelateOSPage() {
         <button
           onClick={recalculateScoresNow}
           disabled={recalculating}
-          className="mt-3 rounded-md bg-accent px-3 py-2 text-sm font-medium text-canvas hover:brightness-110 disabled:opacity-60"
+          className="mt-3 rounded-md bg-accent px-3 py-2 text-sm font-medium text-text hover:brightness-110 disabled:opacity-60"
         >
           {recalculating ? "Recalculating..." : "Recalculate all scores now"}
         </button>
@@ -355,7 +355,7 @@ export default function RelateOSPage() {
             <button
               onClick={applySuggestedAdjustments}
               disabled={applyingInsights}
-              className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-canvas hover:brightness-110 disabled:opacity-60"
+              className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-text hover:brightness-110 disabled:opacity-60"
             >
               {applyingInsights ? "Applying..." : "Apply Suggested Adjustments"}
             </button>

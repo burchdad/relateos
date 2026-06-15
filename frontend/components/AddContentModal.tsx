@@ -133,7 +133,7 @@ export default function AddContentModal({ open, creating, error, onClose, onSubm
             <button
               type="submit"
               disabled={creating}
-              className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-canvas hover:brightness-110 disabled:opacity-60"
+              className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-text hover:brightness-110 disabled:opacity-60"
             >
               {creating ? "Saving..." : "Save Content"}
             </button>

@@ -128,7 +128,7 @@ export default function ConnectionsPage() {
             <button
               onClick={() => runSync("archive")}
               disabled={Boolean(syncing)}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-canvas hover:brightness-110 disabled:opacity-50"
+              className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110 disabled:opacity-50"
             >
               {syncing === "archive" ? "Starting..." : "Sync Archive"}
             </button>

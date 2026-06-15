@@ -170,7 +170,7 @@ export default function RelationshipCard({
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button
           onClick={() => setShowComposer((v) => !v)}
-          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-canvas hover:brightness-110"
+          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-text hover:brightness-110"
         >
           Send
         </button>

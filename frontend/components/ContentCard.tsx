@@ -158,7 +158,7 @@ export default function ContentCard({
               await onViewTargets(item.id);
             }
           }}
-          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-canvas hover:brightness-110"
+          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-text hover:brightness-110"
         >
           {showTargets ? "Hide Targets" : "View Targets"}
         </button>

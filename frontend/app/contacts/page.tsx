@@ -7,6 +7,18 @@ import { ROLE_OPTIONS, formatRole } from "@/components/roleTaxonomy";
 import type { Contact } from "@/components/types";
 
 const STAGES = ["new", "aware", "engaged", "active", "partner", "dormant", "high_value"];
+const TAG_OPTIONS = [
+  { value: "investor", label: "Investor" },
+  { value: "buyer", label: "Buyer" },
+  { value: "seller", label: "Seller" },
+  { value: "broker", label: "Broker" },
+  { value: "agent", label: "Agent" },
+  { value: "lender", label: "Lender" },
+  { value: "vendor", label: "Vendor" },
+  { value: "partner", label: "Partner" },
+  { value: "event_invite", label: "Event Invite" },
+  { value: "high_touch", label: "High Touch" },
+];
 
 const emptyForm = {
   first_name: "",
@@ -17,7 +29,18 @@ const emptyForm = {
   source: "",
   relationship_stage: "",
   notes_summary: "",
+  tag_keys: [] as string[],
 };
+
+type ContactForm = typeof emptyForm;
+type ContactTextField = keyof Pick<ContactForm, "first_name" | "last_name" | "email" | "phone">;
+
+const CONTACT_TEXT_FIELDS: Array<[ContactTextField, string, boolean]> = [
+  ["first_name", "First name", true],
+  ["last_name", "Last name", true],
+  ["email", "Email", false],
+  ["phone", "Phone", false],
+];
 
 const compactName = (contact: Contact) => {
   const name = `${contact.first_name || ""} ${contact.last_name || ""}`.trim();
@@ -25,6 +48,17 @@ const compactName = (contact: Contact) => {
 };
 
 const initialsFor = (contact: Contact) => compactName(contact).split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase();
+
+const tagKeysFor = (tags: Record<string, unknown> | null | undefined) => {
+  if (!tags) return [];
+  const labels = Array.isArray(tags.labels) ? tags.labels.map(String) : [];
+  const keyedTags = Object.entries(tags)
+    .filter(([key, value]) => key !== "labels" && Boolean(value))
+    .map(([key]) => key);
+  return Array.from(new Set([...labels, ...keyedTags]));
+};
+
+const tagLabelFor = (tag: string) => TAG_OPTIONS.find(option => option.value === tag)?.label || tag.replace(/_/g, " ");
 
 export default function ContactsPage() {
   const API_URL = useMemo(resolveApiUrl, []);
@@ -86,7 +120,11 @@ export default function ContactsPage() {
       const res = await fetch(`${API_URL}/contacts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          tags: Object.fromEntries(form.tag_keys.map(tag => [tag, true])),
+          tag_keys: undefined,
+        }),
       });
       if (res.ok) {
         setShowForm(false);
@@ -122,6 +160,15 @@ export default function ContactsPage() {
     });
   };
 
+  const toggleFormTag = (tag: string) => {
+    setForm(prev => ({
+      ...prev,
+      tag_keys: prev.tag_keys.includes(tag)
+        ? prev.tag_keys.filter(current => current !== tag)
+        : [...prev.tag_keys, tag],
+    }));
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -131,7 +178,7 @@ export default function ContactsPage() {
           <p className="text-sm text-muted mt-1">Clean, segment, prioritize, and work the people in the network.</p>
           {intent ? <p className="mt-2 text-xs text-accent">Context: {intent === "invite" ? "Invite flow" : "Target review flow"}</p> : null}
         </div>
-        <button onClick={() => setShowForm(true)} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-canvas hover:brightness-110 transition">
+        <button onClick={() => setShowForm(true)} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110 transition">
           Add Contact
         </button>
       </div>
@@ -172,7 +219,7 @@ export default function ContactsPage() {
           </select>
           <Link href={selectedRelationshipCount > 0 ? `/content?relationship_ids=${selectedParam}` : "/content"} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Send Content</Link>
           <Link href={selectedRelationshipCount > 0 ? `/events?relationship_ids=${selectedParam}` : "/events"} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Invite</Link>
-          <Link href={selectedRelationshipCount > 0 ? `/content?relationship_ids=${selectedParam}&intent=campaign` : "/content?intent=campaign"} className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-canvas">Campaign</Link>
+          <Link href={selectedRelationshipCount > 0 ? `/content?relationship_ids=${selectedParam}&intent=campaign` : "/content?intent=campaign"} className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-text">Campaign</Link>
         </div>
         <p className="mt-3 text-xs text-muted">Selected relationship contacts: {selectedRelationshipCount}</p>
       </div>
@@ -181,15 +228,10 @@ export default function ContactsPage() {
         <div className="rounded-lg border border-accent/30 bg-panel p-5">
           <h3 className="font-semibold text-text mb-4">New Contact</h3>
           <form onSubmit={handleCreate} className="grid gap-3 md:grid-cols-2">
-            {[
-              ["first_name", "First name", true],
-              ["last_name", "Last name", true],
-              ["email", "Email", false],
-              ["phone", "Phone", false],
-            ].map(([field, label, required]) => (
-              <input key={field as string} required={!!required} placeholder={label as string}
-                value={(form as Record<string, string>)[field as string]}
-                onChange={e => setForm(prev => ({ ...prev, [field as string]: e.target.value }))}
+            {CONTACT_TEXT_FIELDS.map(([field, label, required]) => (
+              <input key={field} required={required} placeholder={label}
+                value={form[field]}
+                onChange={e => setForm(prev => ({ ...prev, [field]: e.target.value }))}
                 className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
               />
             ))}
@@ -207,9 +249,29 @@ export default function ContactsPage() {
               onChange={e => setForm(p => ({ ...p, notes_summary: e.target.value }))}
               className="md:col-span-2 h-24 resize-none rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
             />
+            <div className="md:col-span-2 rounded-lg border border-soft bg-base p-3">
+              <p className="mb-2 text-xs uppercase tracking-wide text-muted">Tags</p>
+              <div className="flex flex-wrap gap-2">
+                {TAG_OPTIONS.map(tag => {
+                  const selected = form.tag_keys.includes(tag.value);
+                  return (
+                    <button
+                      key={tag.value}
+                      type="button"
+                      onClick={() => toggleFormTag(tag.value)}
+                      className={`rounded-full border px-3 py-1.5 text-xs capitalize transition ${
+                        selected ? "border-accent/60 bg-accent/15 text-text" : "border-soft text-muted hover:bg-soft/40 hover:text-text"
+                      }`}
+                    >
+                      {tag.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <div className="md:col-span-2 flex justify-end gap-3">
               <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-muted hover:text-text transition">Cancel</button>
-              <button type="submit" disabled={saving} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-canvas disabled:opacity-50">
+              <button type="submit" disabled={saving} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-text disabled:opacity-50">
                 {saving ? "Saving..." : "Save Contact"}
               </button>
             </div>
@@ -265,6 +327,15 @@ export default function ContactsPage() {
                 <h3 className="mt-1 text-xl font-semibold text-text">{compactName(selectedContact)}</h3>
                 <p className="mt-1 text-sm text-muted">{formatRole(selectedContact.primary_role)}</p>
               </div>
+              {tagKeysFor(selectedContact.tags).length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {tagKeysFor(selectedContact.tags).map(tag => (
+                    <span key={tag} className="rounded-full border border-soft bg-base px-2 py-1 text-xs capitalize text-muted">
+                      {tagLabelFor(tag)}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg border border-soft bg-base p-3">
                   <p className="text-xs text-muted">Strength</p>

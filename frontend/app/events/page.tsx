@@ -1,10 +1,9 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 
 import { resolveApiUrl } from "@/components/api";
-import { EventItem } from "@/components/types";
+import { Contact, EventItem } from "@/components/types";
 
 type EventForm = {
   title: string;
@@ -36,11 +35,29 @@ const typeClass = (type: string) => {
   return map[type] || "border-soft bg-soft/30 text-muted";
 };
 
+const compactName = (contact: Contact) => {
+  const name = `${contact.first_name || ""} ${contact.last_name || ""}`.trim();
+  return name || contact.email || "Unknown contact";
+};
+
+const tagKeysFor = (tags: Record<string, unknown> | null | undefined) => {
+  if (!tags) return [];
+  const labels = Array.isArray(tags.labels) ? tags.labels.map(String) : [];
+  const keyedTags = Object.entries(tags)
+    .filter(([key, value]) => key !== "labels" && Boolean(value))
+    .map(([key]) => key);
+  return Array.from(new Set([...labels, ...keyedTags]));
+};
+
+const tagLabelFor = (tag: string) => tag.replace(/_/g, " ");
+
 export default function EventsPage() {
   const API_URL = useMemo(resolveApiUrl, []);
 
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [contactsLoading, setContactsLoading] = useState(true);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
@@ -48,7 +65,13 @@ export default function EventsPage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [form, setForm] = useState<EventForm>(emptyForm);
+  const [inviteSearch, setInviteSearch] = useState("");
+  const [selectedInviteTags, setSelectedInviteTags] = useState<Set<string>>(new Set());
+  const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
+  const [preselectedRelationshipIds, setPreselectedRelationshipIds] = useState<Set<string>>(new Set());
+  const [queryEventId, setQueryEventId] = useState("");
 
   const loadEvents = useCallback(async () => {
     setLoading(true);
@@ -70,6 +93,57 @@ export default function EventsPage() {
     loadEvents();
   }, [loadEvents]);
 
+  const loadContacts = useCallback(async () => {
+    setContactsLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/contacts?limit=500`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed to load contacts");
+      setContacts((await res.json()) as Contact[]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load contacts");
+    } finally {
+      setContactsLoading(false);
+    }
+  }, [API_URL]);
+
+  useEffect(() => {
+    loadContacts();
+  }, [loadContacts]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const relationshipIds = url.searchParams.get("relationship_ids");
+    const eventId = url.searchParams.get("event_id");
+    if (relationshipIds) {
+      setPreselectedRelationshipIds(new Set(relationshipIds.split(",").map(id => id.trim()).filter(Boolean)));
+      setShowInvitePanel(true);
+    }
+    if (eventId) {
+      setQueryEventId(eventId);
+      setShowInvitePanel(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!queryEventId || events.length === 0) return;
+    const event = events.find(item => item.id === queryEventId);
+    if (event) setSelectedEvent(event);
+  }, [events, queryEventId]);
+
+  useEffect(() => {
+    if (preselectedRelationshipIds.size === 0 || contacts.length === 0) return;
+    setSelectedContactIds(prev => {
+      const next = new Set(prev);
+      contacts.forEach(contact => {
+        if (contact.relationship_id && preselectedRelationshipIds.has(contact.relationship_id)) {
+          next.add(contact.id);
+        }
+      });
+      return next;
+    });
+  }, [contacts, preselectedRelationshipIds]);
+
   const filteredEvents = events.filter(event => {
     const haystack = `${event.title} ${event.description} ${event.event_type} ${event.time_of_day}`.toLowerCase();
     const matchesQuery = !query.trim() || haystack.includes(query.trim().toLowerCase());
@@ -84,6 +158,49 @@ export default function EventsPage() {
     const withOwner = events.filter(event => event.owner_user_id).length;
     return { total: events.length, weekly, monthly, oneTime, withOwner };
   }, [events]);
+
+  const availableInviteTags = useMemo(() => {
+    const tags = new Set<string>();
+    contacts.forEach(contact => tagKeysFor(contact.tags).forEach(tag => tags.add(tag)));
+    return Array.from(tags).sort();
+  }, [contacts]);
+
+  const inviteCandidates = useMemo(() => {
+    const selectedTags = Array.from(selectedInviteTags);
+    return contacts.filter(contact => {
+      const haystack = `${compactName(contact)} ${contact.email || ""} ${contact.phone || ""}`.toLowerCase();
+      const matchesSearch = !inviteSearch.trim() || haystack.includes(inviteSearch.trim().toLowerCase());
+      const contactTags = tagKeysFor(contact.tags);
+      const matchesTags = selectedTags.length === 0 || selectedTags.every(tag => contactTags.includes(tag));
+      return matchesSearch && matchesTags;
+    });
+  }, [contacts, inviteSearch, selectedInviteTags]);
+
+  const selectedInviteContacts = useMemo(
+    () => contacts.filter(contact => selectedContactIds.has(contact.id)),
+    [contacts, selectedContactIds]
+  );
+  const visibleSelectedCount = useMemo(
+    () => inviteCandidates.filter(contact => selectedContactIds.has(contact.id)).length,
+    [inviteCandidates, selectedContactIds]
+  );
+
+  const inviteMailto = useMemo(() => {
+    if (!selectedEvent || selectedInviteContacts.length === 0) return "";
+    const emails = selectedInviteContacts.map(contact => contact.email).filter(Boolean).join(",");
+    if (!emails) return "";
+    const subject = `Invite: ${selectedEvent.title}`;
+    const schedule = `${selectedEvent.day_of_week === null ? "One-time" : dayLabels[selectedEvent.day_of_week]} at ${selectedEvent.time_of_day}`;
+    const body = [
+      `You're invited to ${selectedEvent.title}.`,
+      "",
+      selectedEvent.description,
+      "",
+      `When: ${schedule}`,
+      `Link: ${selectedEvent.event_url}`,
+    ].join("\n");
+    return `mailto:?bcc=${encodeURIComponent(emails)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }, [selectedEvent, selectedInviteContacts]);
 
   const onCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -123,6 +240,46 @@ export default function EventsPage() {
     }
   };
 
+  const toggleInviteTag = (tag: string) => {
+    setSelectedInviteTags(prev => {
+      const next = new Set(prev);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
+  };
+
+  const toggleContact = (contactId: string) => {
+    setSelectedContactIds(prev => {
+      const next = new Set(prev);
+      if (next.has(contactId)) next.delete(contactId);
+      else next.add(contactId);
+      return next;
+    });
+  };
+
+  const selectVisibleContacts = () => {
+    setSelectedContactIds(prev => {
+      const next = new Set(prev);
+      inviteCandidates.forEach(contact => next.add(contact.id));
+      return next;
+    });
+  };
+
+  const removeVisibleContacts = () => {
+    setSelectedContactIds(prev => {
+      const next = new Set(prev);
+      inviteCandidates.forEach(contact => next.delete(contact.id));
+      return next;
+    });
+  };
+
+  const restartInviteSelection = () => {
+    setSelectedContactIds(new Set());
+    setSelectedInviteTags(new Set());
+    setInviteSearch("");
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -132,10 +289,10 @@ export default function EventsPage() {
           <p className="text-sm text-muted mt-1">Manage recurring webinars, investor calls, coaching sessions, and follow-up events.</p>
         </div>
         <div className="flex gap-2">
-          <Link href="/contacts?intent=invite" className="rounded-lg border border-soft px-4 py-2 text-sm text-text hover:bg-soft/40">
-            Invite People
-          </Link>
-          <button onClick={() => setShowForm(v => !v)} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-canvas hover:brightness-110">
+          <button onClick={() => setShowInvitePanel(v => !v)} className="rounded-lg border border-soft px-4 py-2 text-sm text-text hover:bg-soft/40">
+            Invite Contacts
+          </button>
+          <button onClick={() => setShowForm(v => !v)} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110">
             Create Event
           </button>
         </div>
@@ -214,7 +371,7 @@ export default function EventsPage() {
             {createError ? <p className="text-sm text-red-300 md:col-span-2">{createError}</p> : null}
             <div className="md:col-span-2 flex justify-end gap-3">
               <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-muted hover:text-text">Cancel</button>
-              <button type="submit" disabled={creating} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-canvas disabled:opacity-60">
+              <button type="submit" disabled={creating} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-text disabled:opacity-60">
                 {creating ? "Creating..." : "Save Event"}
               </button>
             </div>
@@ -241,7 +398,7 @@ export default function EventsPage() {
       </section>
 
       {error ? <p className="text-sm text-red-300">{error}</p> : null}
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
         <section className="rounded-lg border border-soft bg-panel overflow-hidden">
           <div className="grid grid-cols-[minmax(220px,1.4fr)_150px_170px_1fr] border-b border-soft bg-base/60 px-4 py-3 text-xs uppercase tracking-wide text-muted">
             <span>Event</span>
@@ -289,9 +446,89 @@ export default function EventsPage() {
                 <p className="mt-2 rounded-lg border border-soft bg-base p-3 text-sm text-muted">{selectedEvent.description}</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <a href={selectedEvent.event_url} target="_blank" rel="noreferrer" className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-canvas">Open Link</a>
-                <Link href={`/contacts?intent=invite&event_id=${selectedEvent.id}`} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Invite People</Link>
+                <a href={selectedEvent.event_url} target="_blank" rel="noreferrer" className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-text">Open Link</a>
+                <button onClick={() => setShowInvitePanel(v => !v)} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Invite Contacts</button>
               </div>
+              {showInvitePanel ? (
+                <section className="space-y-3 rounded-lg border border-soft bg-base p-3">
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-muted">Invite contacts</p>
+                      <p className="mt-1 text-xs text-muted">
+                        Selected: {selectedInviteContacts.length} / Visible selected: {visibleSelectedCount}
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button onClick={selectVisibleContacts} className="rounded-md border border-soft px-2 py-1.5 text-xs text-text hover:bg-soft/40">
+                        Select visible
+                      </button>
+                      <button onClick={removeVisibleContacts} className="rounded-md border border-soft px-2 py-1.5 text-xs text-text hover:bg-soft/40">
+                        Remove visible
+                      </button>
+                      <button onClick={restartInviteSelection} className="rounded-md border border-soft px-2 py-1.5 text-xs text-muted hover:bg-soft/40 hover:text-text">
+                        Restart
+                      </button>
+                    </div>
+                  </div>
+                  <input
+                    value={inviteSearch}
+                    onChange={e => setInviteSearch(e.target.value)}
+                    placeholder="Search invitees"
+                    className="w-full rounded-md border border-soft bg-panel px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+                  />
+                  {availableInviteTags.length > 0 ? (
+                    <div className="flex max-h-24 flex-wrap gap-2 overflow-auto">
+                      {availableInviteTags.map(tag => {
+                        const selected = selectedInviteTags.has(tag);
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => toggleInviteTag(tag)}
+                            className={`rounded-full border px-2 py-1 text-xs capitalize transition ${
+                              selected ? "border-accent/60 bg-accent/15 text-text" : "border-soft text-muted hover:bg-soft/40 hover:text-text"
+                            }`}
+                          >
+                            {tagLabelFor(tag)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  <div className="max-h-72 overflow-auto rounded-md border border-soft">
+                    {contactsLoading ? (
+                      <p className="p-3 text-sm text-muted">Loading contacts...</p>
+                    ) : inviteCandidates.length === 0 ? (
+                      <p className="p-3 text-sm text-muted">No contacts match this invite filter.</p>
+                    ) : inviteCandidates.map(contact => {
+                      const selected = selectedContactIds.has(contact.id);
+                      return (
+                        <button
+                          key={contact.id}
+                          type="button"
+                          onClick={() => toggleContact(contact.id)}
+                          className={`flex w-full items-center justify-between gap-3 border-b border-soft px-3 py-2 text-left last:border-b-0 hover:bg-soft/20 ${selected ? "bg-accent/10" : ""}`}
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-medium text-text">{compactName(contact)}</span>
+                            <span className="block truncate text-xs text-muted">{contact.email || "No email"}</span>
+                          </span>
+                          <span className={`h-4 w-4 shrink-0 rounded border ${selected ? "border-accent bg-accent" : "border-soft bg-panel"}`} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <a
+                    href={inviteMailto || undefined}
+                    aria-disabled={!inviteMailto}
+                    className={`block rounded-md px-3 py-2 text-center text-sm font-semibold ${
+                      inviteMailto ? "bg-accent text-text hover:brightness-110" : "pointer-events-none border border-soft text-muted"
+                    }`}
+                  >
+                    Email Invites
+                  </a>
+                </section>
+              ) : null}
             </div>
           ) : (
             <p className="text-sm text-muted">Select an event to review details.</p>

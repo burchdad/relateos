@@ -3,7 +3,7 @@ import SidebarNav from "@/components/SidebarNav";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "RelateOS",
+  title: "Teifke / Relationships",
   description: "AI-native relationship intelligence command center"
 };
 
