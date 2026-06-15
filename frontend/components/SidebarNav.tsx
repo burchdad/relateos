@@ -13,13 +13,13 @@ type NavItem = {
 const coreNav: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: "DB" },
   { href: "/contacts", label: "Contacts", icon: "CO" },
-  { href: "/deals", label: "Deals", icon: "DL" },
-  { href: "/organizations", label: "Partners", icon: "PT" },
+  { href: "/content", label: "Content", icon: "CT" },
   { href: "/events", label: "Events", icon: "EV" },
 ];
 
 const intelligenceNav: NavItem[] = [
-  { href: "/content", label: "Content", icon: "CT" },
+  { href: "/deals", label: "Deals", icon: "DL" },
+  { href: "/organizations", label: "Partners", icon: "PT" },
   { href: "/network/graph", label: "Network Graph", icon: "NG" },
   { href: "/scoreboard", label: "Scoreboard", icon: "SB" },
   { href: "/meetings", label: "Meetings", icon: "MT" },
@@ -70,8 +70,8 @@ export default function SidebarNav() {
   return (
     <aside className="sticky top-0 z-30 border-b border-soft bg-panel/95 px-3 py-3 backdrop-blur md:static md:min-h-screen md:border-b-0 md:border-r md:bg-panel/85 md:px-4 md:py-6">
       <div className="mb-5 px-2">
-        <p className="text-[11px] uppercase tracking-[0.2em] text-accent">TR3 / RelateOS</p>
-        <h1 className="mt-1 text-lg font-semibold tracking-tight text-text">Network Intelligence</h1>
+        <p className="text-[11px] uppercase tracking-[0.2em] text-accent">Teifke / Relationships</p>
+        <h1 className="mt-1 text-lg font-semibold tracking-tight text-text">Relationship Intelligence</h1>
       </div>
 
       <nav className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden" aria-label="Primary navigation">
