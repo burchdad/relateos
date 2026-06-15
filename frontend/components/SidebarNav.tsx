@@ -12,15 +12,14 @@ type NavItem = {
 
 const coreNav: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: "DB" },
-  { href: "/relationships", label: "Relationships", icon: "RL" },
   { href: "/contacts", label: "Contacts", icon: "CO" },
   { href: "/deals", label: "Deals", icon: "DL" },
   { href: "/organizations", label: "Partners", icon: "PT" },
-  { href: "/content", label: "Content", icon: "CT" },
   { href: "/events", label: "Events", icon: "EV" },
 ];
 
 const intelligenceNav: NavItem[] = [
+  { href: "/content", label: "Content", icon: "CT" },
   { href: "/network/graph", label: "Network Graph", icon: "NG" },
   { href: "/scoreboard", label: "Scoreboard", icon: "SB" },
   { href: "/meetings", label: "Meetings", icon: "MT" },

@@ -18,112 +18,105 @@ const STEPS: DemoStep[] = [
       "Think of this like your mission board in a game. It tells you who needs attention now and what task to do next.",
   },
   {
-    title: "Step 2: Relationships",
-    script: "This page is your people tracker.",
-    location: "/relationships",
+    title: "Step 2: Contacts",
+    script: "This page is your people and relationship tracker.",
+    location: "/contacts",
     talkTrack:
       "Each person has a story card: where you are with them, what happened before, and what you should do next.",
   },
   {
-    title: "Step 3: Contacts",
-    script: "This is your address book with smart memory.",
-    location: "/contacts",
-    talkTrack:
-      "It keeps names, emails, and details in one place so you can find the right person fast.",
-  },
-  {
-    title: "Step 4: Deals",
+    title: "Step 3: Deals",
     script: "This page tracks money opportunities.",
     location: "/deals",
     talkTrack:
       "If a deal is open, won, or stuck, you can see it here like a score tracker.",
   },
   {
-    title: "Step 5: Partners",
+    title: "Step 4: Partners",
     script: "This page shows companies and groups you work with.",
     location: "/organizations",
     talkTrack:
       "People belong to companies, so this page helps you see the team around each relationship.",
   },
   {
-    title: "Step 6: Content",
+    title: "Step 5: Content",
     script: "This page is your content command center.",
     location: "/content",
     talkTrack:
       "You can create or reuse content, send it to the right people, and track who responded.",
   },
   {
-    title: "Step 7: Events",
+    title: "Step 6: Events",
     script: "This page manages live events like webinars.",
     location: "/events",
     talkTrack:
       "You can schedule events and keep them connected to your relationships and campaigns.",
   },
   {
-    title: "Step 8: Network Graph",
+    title: "Step 7: Network Graph",
     script: "This page draws the connection map.",
     location: "/network/graph",
     talkTrack:
       "It is like a spider web of people and companies so you can spot who connects to who.",
   },
   {
-    title: "Step 9: Scoreboard",
+    title: "Step 8: Scoreboard",
     script: "This page is your points table.",
     location: "/scoreboard",
     talkTrack:
       "It ranks what is going well and what needs help, so decisions are easier.",
   },
   {
-    title: "Step 10: Meetings",
+    title: "Step 9: Meetings",
     script: "This page stores meeting memory.",
     location: "/meetings",
     talkTrack:
       "Meeting invites can be captured by the agent mailbox, then RelateOS saves attendees, notes, and follow-ups.",
   },
   {
-    title: "Step 11: Imports",
+    title: "Step 10: Imports",
     script: "This is the new all-in-one data import wizard.",
     location: "/imports",
     talkTrack:
       "Pick where data comes from, analyze it first, fix mappings, then import safely in one flow.",
   },
   {
-    title: "Step 12: Content Funnels",
+    title: "Step 11: Content Funnels",
     script: "This page shows your content pipeline path.",
     location: "/funnels",
     talkTrack:
       "It helps you move people from first touch to stronger engagement step by step.",
   },
   {
-    title: "Step 13: RelateOS AI",
+    title: "Step 12: RelateOS AI",
     script: "This is your AI helper page.",
     location: "/relateos",
     talkTrack:
       "Use AI to get suggestions, summaries, and smart next actions faster.",
   },
   {
-    title: "Step 14: Signals",
+    title: "Step 13: Signals",
     script: "This page watches activity signals.",
     location: "/signals",
     talkTrack:
       "When people interact, events are auto-captured and AI adds meaning like intent and urgency.",
   },
   {
-    title: "Step 15: Connections",
+    title: "Step 14: Connections",
     script: "This page is for connecting outside tools.",
     location: "/connections",
     talkTrack:
       "Think of this as plugging in extra power-ups like email or calendar services.",
   },
   {
-    title: "Step 16: Settings",
+    title: "Step 15: Settings",
     script: "This page controls how your workspace behaves.",
     location: "/settings",
     talkTrack:
       "You can change defaults and preferences so the app fits your team.",
   },
   {
-    title: "Step 17: Full Loop Recap",
+    title: "Step 16: Full Loop Recap",
     script: "Go back to Dashboard and show the full story.",
     location: "/dashboard",
     talkTrack:

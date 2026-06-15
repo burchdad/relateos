@@ -175,10 +175,10 @@ export default function ContentCard({
           {showFollowups ? "Hide Follow-Ups" : "View Follow-Ups"}
         </button>
         <Link
-          href={`/relationships?intent=targets&content_id=${item.id}`}
+          href={`/contacts?intent=targets&content_id=${item.id}`}
           className="rounded-md border border-soft px-3 py-1.5 text-sm text-text hover:bg-soft"
         >
-          View Targets in Relationships
+          View Targets in Contacts
         </Link>
       </div>
 

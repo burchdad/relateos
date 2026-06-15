@@ -17,6 +17,40 @@ def _taxonomy_for_role(primary_role: str | None) -> tuple[str | None, str | None
 
 class ContactService:
     @staticmethod
+    def _attach_relationship_context(people: list[Person]) -> list[Person]:
+        for person in people:
+            relationships = sorted(
+                person.relationships or [],
+                key=lambda rel: (rel.priority_score or 0.0, rel.updated_at or rel.created_at),
+                reverse=True,
+            )
+            relationship = relationships[0] if relationships else None
+            if not relationship:
+                continue
+
+            person.relationship_id = relationship.id
+            person.relationship_type = relationship.type
+            person.relationship_lifecycle_stage = relationship.lifecycle_stage
+            person.relationship_strength = relationship.relationship_strength
+            person.priority_score = relationship.priority_score
+            person.last_contacted_at = relationship.last_contacted_at
+            person.next_suggested_action_at = relationship.next_suggested_action_at
+            person.relationship_interests = (person.metadata_json or {}).get("interests") or person.notes_summary
+
+            if not person.primary_role:
+                person.primary_role = relationship.type
+            if not person.relationship_stage:
+                person.relationship_stage = relationship.lifecycle_stage
+            if not person.relationship_strength_score:
+                person.relationship_strength_score = relationship.relationship_strength
+            if not person.last_engaged_at:
+                person.last_engaged_at = relationship.last_contacted_at
+            if not person.notes_summary:
+                person.notes_summary = person.relationship_interests
+
+        return people
+
+    @staticmethod
     def create(db: Session, payload: ContactCreate) -> Person:
         primary_role, role_family, market_segment = _taxonomy_for_role(payload.primary_role)
         person = Person(
@@ -32,17 +66,21 @@ class ContactService:
             organization_id=payload.organization_id,
             source=payload.source,
             relationship_stage=payload.relationship_stage,
+            relationship_strength_score=payload.relationship_strength_score or 0.0,
             notes_summary=payload.notes_summary,
             tags=payload.tags,
         )
         db.add(person)
         db.commit()
         db.refresh(person)
-        return person
+        return ContactService._attach_relationship_context([person])[0]
 
     @staticmethod
     def get_by_id(db: Session, contact_id: uuid.UUID) -> Person | None:
-        return db.query(Person).filter(Person.id == contact_id).first()
+        person = db.query(Person).filter(Person.id == contact_id).first()
+        if not person:
+            return None
+        return ContactService._attach_relationship_context([person])[0]
 
     @staticmethod
     def list_all(
@@ -80,7 +118,8 @@ class ContactService:
             q = q.filter(Person.lifetime_value > 0).order_by(Person.lifetime_value.desc())
         if dormant_only:
             q = q.filter(Person.relationship_stage == "dormant")
-        return q.order_by(Person.created_at.desc()).offset(offset).limit(limit).all()
+        people = q.order_by(Person.created_at.desc()).offset(offset).limit(limit).all()
+        return ContactService._attach_relationship_context(people)
 
     @staticmethod
     def update(db: Session, contact_id: uuid.UUID, payload: ContactUpdate) -> Person | None:
