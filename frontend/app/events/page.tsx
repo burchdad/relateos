@@ -292,7 +292,7 @@ export default function EventsPage() {
           <button onClick={() => setShowInvitePanel(v => !v)} className="rounded-lg border border-soft px-4 py-2 text-sm text-text hover:bg-soft/40">
             Invite Contacts
           </button>
-          <button onClick={() => setShowForm(v => !v)} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-canvas hover:brightness-110">
+          <button onClick={() => setShowForm(v => !v)} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110">
             Create Event
           </button>
         </div>
@@ -371,7 +371,7 @@ export default function EventsPage() {
             {createError ? <p className="text-sm text-red-300 md:col-span-2">{createError}</p> : null}
             <div className="md:col-span-2 flex justify-end gap-3">
               <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-muted hover:text-text">Cancel</button>
-              <button type="submit" disabled={creating} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-canvas disabled:opacity-60">
+              <button type="submit" disabled={creating} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-text disabled:opacity-60">
                 {creating ? "Creating..." : "Save Event"}
               </button>
             </div>
@@ -446,7 +446,7 @@ export default function EventsPage() {
                 <p className="mt-2 rounded-lg border border-soft bg-base p-3 text-sm text-muted">{selectedEvent.description}</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <a href={selectedEvent.event_url} target="_blank" rel="noreferrer" className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-canvas">Open Link</a>
+                <a href={selectedEvent.event_url} target="_blank" rel="noreferrer" className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-text">Open Link</a>
                 <button onClick={() => setShowInvitePanel(v => !v)} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Invite Contacts</button>
               </div>
               {showInvitePanel ? (
@@ -522,7 +522,7 @@ export default function EventsPage() {
                     href={inviteMailto || undefined}
                     aria-disabled={!inviteMailto}
                     className={`block rounded-md px-3 py-2 text-center text-sm font-semibold ${
-                      inviteMailto ? "bg-accent text-canvas hover:brightness-110" : "pointer-events-none border border-soft text-muted"
+                      inviteMailto ? "bg-accent text-text hover:brightness-110" : "pointer-events-none border border-soft text-muted"
                     }`}
                   >
                     Email Invites

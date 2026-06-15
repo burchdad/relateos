@@ -178,7 +178,7 @@ export default function ContactsPage() {
           <p className="text-sm text-muted mt-1">Clean, segment, prioritize, and work the people in the network.</p>
           {intent ? <p className="mt-2 text-xs text-accent">Context: {intent === "invite" ? "Invite flow" : "Target review flow"}</p> : null}
         </div>
-        <button onClick={() => setShowForm(true)} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-canvas hover:brightness-110 transition">
+        <button onClick={() => setShowForm(true)} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110 transition">
           Add Contact
         </button>
       </div>
@@ -219,7 +219,7 @@ export default function ContactsPage() {
           </select>
           <Link href={selectedRelationshipCount > 0 ? `/content?relationship_ids=${selectedParam}` : "/content"} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Send Content</Link>
           <Link href={selectedRelationshipCount > 0 ? `/events?relationship_ids=${selectedParam}` : "/events"} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Invite</Link>
-          <Link href={selectedRelationshipCount > 0 ? `/content?relationship_ids=${selectedParam}&intent=campaign` : "/content?intent=campaign"} className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-canvas">Campaign</Link>
+          <Link href={selectedRelationshipCount > 0 ? `/content?relationship_ids=${selectedParam}&intent=campaign` : "/content?intent=campaign"} className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-text">Campaign</Link>
         </div>
         <p className="mt-3 text-xs text-muted">Selected relationship contacts: {selectedRelationshipCount}</p>
       </div>
@@ -271,7 +271,7 @@ export default function ContactsPage() {
             </div>
             <div className="md:col-span-2 flex justify-end gap-3">
               <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-muted hover:text-text transition">Cancel</button>
-              <button type="submit" disabled={saving} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-canvas disabled:opacity-50">
+              <button type="submit" disabled={saving} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-text disabled:opacity-50">
                 {saving ? "Saving..." : "Save Contact"}
               </button>
             </div>

@@ -165,7 +165,7 @@ export default function FollowUpPanel({ loading, steps, contentId, onSend, onBul
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 onClick={() => setActiveStep((value) => (value === step.day_offset ? null : step.day_offset))}
-                className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-canvas hover:brightness-110"
+                className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-text hover:brightness-110"
               >
                 Send
               </button>

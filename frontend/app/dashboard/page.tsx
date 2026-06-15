@@ -361,7 +361,7 @@ export default function DashboardPage() {
               setShowCreateForm((prev) => !prev);
               setCreateError("");
             }}
-            className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-canvas hover:brightness-110"
+            className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-text hover:brightness-110"
           >
             Add Relationship + Context
           </button>
@@ -467,7 +467,7 @@ export default function DashboardPage() {
               <button
                 type="submit"
                 disabled={creating}
-                className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-canvas hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-text hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {creating ? "Creating..." : "Create"}
               </button>

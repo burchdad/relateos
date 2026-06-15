@@ -200,14 +200,14 @@ export default function DemoGuide() {
           {!isLast ? (
             <button
               onClick={() => setStepIndex((current) => Math.min(STEPS.length - 1, current + 1))}
-              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-canvas hover:brightness-110"
+              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-text hover:brightness-110"
             >
               Next
             </button>
           ) : (
             <button
               onClick={close}
-              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-canvas hover:brightness-110"
+              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-text hover:brightness-110"
             >
               Finish
             </button>

@@ -107,7 +107,7 @@ export default function OrganizationsPage() {
           <h2 className="mt-1 text-2xl font-semibold text-text">Partners</h2>
           <p className="text-sm text-muted mt-1">Manage companies, investor groups, brokerages, vendors, and community nodes.</p>
         </div>
-        <button onClick={() => setShowForm(true)} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-canvas hover:brightness-110 transition">
+        <button onClick={() => setShowForm(true)} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110 transition">
           Add Partner
         </button>
       </div>
@@ -169,7 +169,7 @@ export default function OrganizationsPage() {
             />
             <div className="md:col-span-2 flex justify-end gap-3">
               <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-muted hover:text-text transition">Cancel</button>
-              <button type="submit" disabled={saving} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-canvas disabled:opacity-50">
+              <button type="submit" disabled={saving} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-text disabled:opacity-50">
                 {saving ? "Saving..." : "Save Partner"}
               </button>
             </div>
