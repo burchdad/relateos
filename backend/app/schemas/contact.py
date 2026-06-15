@@ -16,6 +16,7 @@ class ContactCreate(BaseModel):
     organization_id: UUID | None = None
     source: str | None = None
     relationship_stage: str | None = None
+    relationship_strength_score: float | None = None
     tags: dict = Field(default_factory=dict)
     notes_summary: str | None = None
 
@@ -65,5 +66,13 @@ class ContactOut(BaseModel):
     tags: dict
     created_at: datetime
     updated_at: datetime
+    relationship_id: UUID | None = None
+    relationship_type: str | None = None
+    relationship_lifecycle_stage: str | None = None
+    relationship_strength: float | None = None
+    priority_score: float | None = None
+    last_contacted_at: datetime | None = None
+    next_suggested_action_at: datetime | None = None
+    relationship_interests: str | None = None
 
     model_config = {"from_attributes": True}

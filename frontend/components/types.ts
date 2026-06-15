@@ -251,6 +251,14 @@ export type Contact = {
   tags: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  relationship_id: string | null;
+  relationship_type: string | null;
+  relationship_lifecycle_stage: string | null;
+  relationship_strength: number | null;
+  priority_score: number | null;
+  last_contacted_at: string | null;
+  next_suggested_action_at: string | null;
+  relationship_interests: string | null;
 };
 
 export type Organization = {

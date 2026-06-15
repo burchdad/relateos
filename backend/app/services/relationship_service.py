@@ -63,6 +63,13 @@ class RelationshipService:
             primary_role=normalized_type,
             role_family=taxonomy.get("role_family"),
             market_segment=taxonomy.get("market_segment"),
+            source="relationship",
+            relationship_stage=payload.lifecycle_stage or payload.current_status,
+            relationship_strength_score=payload.relationship_strength
+            if payload.relationship_strength is not None
+            else STATUS_TO_STRENGTH[payload.current_status],
+            last_engaged_at=_last_contacted_at_from_timing(payload.last_interaction_timing),
+            notes_summary=payload.interests,
             tags=person_tags,
             metadata_json=person_metadata,
         )

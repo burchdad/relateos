@@ -325,8 +325,8 @@ export default function ContentPage() {
           >
             Add Content
           </button>
-          <Link href="/relationships?intent=targets" className="rounded-lg border border-soft px-4 py-2 text-sm text-text hover:bg-soft/40">
-            View Targets in Relationships
+          <Link href="/contacts?intent=targets" className="rounded-lg border border-soft px-4 py-2 text-sm text-text hover:bg-soft/40">
+            View Targets in Contacts
           </Link>
         </div>
       </header>

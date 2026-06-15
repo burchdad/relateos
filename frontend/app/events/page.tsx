@@ -132,7 +132,7 @@ export default function EventsPage() {
           <p className="text-sm text-muted mt-1">Manage recurring webinars, investor calls, coaching sessions, and follow-up events.</p>
         </div>
         <div className="flex gap-2">
-          <Link href="/relationships?intent=invite" className="rounded-lg border border-soft px-4 py-2 text-sm text-text hover:bg-soft/40">
+          <Link href="/contacts?intent=invite" className="rounded-lg border border-soft px-4 py-2 text-sm text-text hover:bg-soft/40">
             Invite People
           </Link>
           <button onClick={() => setShowForm(v => !v)} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-canvas hover:brightness-110">
@@ -290,7 +290,7 @@ export default function EventsPage() {
               </div>
               <div className="flex flex-wrap gap-2">
                 <a href={selectedEvent.event_url} target="_blank" rel="noreferrer" className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-canvas">Open Link</a>
-                <Link href={`/relationships?intent=invite&event_id=${selectedEvent.id}`} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Invite People</Link>
+                <Link href={`/contacts?intent=invite&event_id=${selectedEvent.id}`} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Invite People</Link>
               </div>
             </div>
           ) : (
