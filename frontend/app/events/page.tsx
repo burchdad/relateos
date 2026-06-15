@@ -180,6 +180,10 @@ export default function EventsPage() {
     () => contacts.filter(contact => selectedContactIds.has(contact.id)),
     [contacts, selectedContactIds]
   );
+  const visibleSelectedCount = useMemo(
+    () => inviteCandidates.filter(contact => selectedContactIds.has(contact.id)).length,
+    [inviteCandidates, selectedContactIds]
+  );
 
   const inviteMailto = useMemo(() => {
     if (!selectedEvent || selectedInviteContacts.length === 0) return "";
@@ -260,6 +264,20 @@ export default function EventsPage() {
       inviteCandidates.forEach(contact => next.add(contact.id));
       return next;
     });
+  };
+
+  const removeVisibleContacts = () => {
+    setSelectedContactIds(prev => {
+      const next = new Set(prev);
+      inviteCandidates.forEach(contact => next.delete(contact.id));
+      return next;
+    });
+  };
+
+  const restartInviteSelection = () => {
+    setSelectedContactIds(new Set());
+    setSelectedInviteTags(new Set());
+    setInviteSearch("");
   };
 
   return (
@@ -433,14 +451,24 @@ export default function EventsPage() {
               </div>
               {showInvitePanel ? (
                 <section className="space-y-3 rounded-lg border border-soft bg-base p-3">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="space-y-3">
                     <div>
                       <p className="text-xs uppercase tracking-wide text-muted">Invite contacts</p>
-                      <p className="mt-1 text-xs text-muted">Selected: {selectedInviteContacts.length}</p>
+                      <p className="mt-1 text-xs text-muted">
+                        Selected: {selectedInviteContacts.length} / Visible selected: {visibleSelectedCount}
+                      </p>
                     </div>
-                    <button onClick={selectVisibleContacts} className="rounded-md border border-soft px-2 py-1.5 text-xs text-text hover:bg-soft/40">
-                      Select visible
-                    </button>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button onClick={selectVisibleContacts} className="rounded-md border border-soft px-2 py-1.5 text-xs text-text hover:bg-soft/40">
+                        Select visible
+                      </button>
+                      <button onClick={removeVisibleContacts} className="rounded-md border border-soft px-2 py-1.5 text-xs text-text hover:bg-soft/40">
+                        Remove visible
+                      </button>
+                      <button onClick={restartInviteSelection} className="rounded-md border border-soft px-2 py-1.5 text-xs text-muted hover:bg-soft/40 hover:text-text">
+                        Restart
+                      </button>
+                    </div>
                   </div>
                   <input
                     value={inviteSearch}
