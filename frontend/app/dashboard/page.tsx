@@ -346,22 +346,22 @@ export default function DashboardPage() {
 
   return (
     <>
-      <section className="mx-auto min-h-screen max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
-        <header className="mb-6 rounded-xl border border-soft bg-panel/70 p-5 sm:p-6">
-        <p className="text-xs uppercase tracking-[0.2em] text-accent">RelateOS</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Today&apos;s Focus</h1>
-        <p className="mt-3 max-w-2xl text-sm text-muted">
+      <section className="mx-auto min-h-screen max-w-[1380px] px-4 py-5 sm:px-6 lg:px-8 lg:py-8 xl:px-10">
+        <header className="mb-5 rounded-lg border border-soft/70 bg-panel/55 p-4 sm:p-5">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-accent">RelateOS</p>
+        <h1 className="mt-1.5 text-2xl font-semibold tracking-tight sm:text-3xl">Today&apos;s Focus</h1>
+        <p className="mt-2 max-w-2xl text-sm text-muted">
           Who should you talk to today, and what should you say? Priorities are scored by relationship momentum, risk, value, and recency.
         </p>
-        <p className="mt-2 text-xs text-muted">Your daily execution engine.</p>
-        <div className="mt-4">
+        <p className="mt-1.5 text-xs text-muted">Your daily execution engine.</p>
+        <div className="mt-3">
           <button
             type="button"
             onClick={() => {
               setShowCreateForm((prev) => !prev);
               setCreateError("");
             }}
-            className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-text hover:brightness-110"
+            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-text hover:brightness-110"
           >
             Add Relationship + Context
           </button>
@@ -488,14 +488,14 @@ export default function DashboardPage() {
         {deleteError ? <p className="mt-2 text-red-300">{deleteError}</p> : null}
 
         {!loading && campaigns.length > 0 ? (
-          <section className="mb-5 rounded-2xl border border-soft bg-panel/50 p-4">
+          <section className="mb-4 rounded-lg border border-soft/70 bg-panel/45 p-4">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-base font-semibold text-text">Active Campaigns</h2>
               <Link href="/content" className="text-xs text-accent hover:underline">Open Content Engine</Link>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {campaigns.map((campaign) => (
-                <article key={campaign.content_id} className="rounded-md border border-soft bg-canvas/60 p-3 text-xs text-muted">
+                <article key={campaign.content_id} className="rounded-md border border-soft/60 bg-cream-light/55 p-3 text-xs text-muted">
                   <p className="text-sm font-semibold text-text">{campaign.title}</p>
                   {campaign.experiment_key ? (
                     <p className="mt-1 text-xs text-muted">
@@ -510,7 +510,7 @@ export default function DashboardPage() {
           </section>
         ) : null}
         {!loading && campaignInsights ? (
-          <section className="mb-5 rounded-xl border border-soft bg-panel/50 p-4">
+          <section className="mb-4 rounded-lg border border-soft/70 bg-panel/45 p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-text">Proof View</h2>
@@ -522,7 +522,7 @@ export default function DashboardPage() {
           </section>
         ) : null}
         {!loading && !error && items.length === 0 ? (
-          <div className="rounded-2xl border border-soft bg-panel/50 p-6 text-sm text-muted">
+          <div className="rounded-lg border border-soft/70 bg-panel/45 p-5 text-sm text-muted">
             <p>Your dashboard gets smart after one contact with context. Add one now, or load sample relationships.</p>
             <div className="mt-4">
               <button
@@ -540,7 +540,7 @@ export default function DashboardPage() {
         {!loading && !error && items.length > 0 ? (
           <>
             {selectedIds.size > 0 ? (
-              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-soft bg-panel/50 p-3 text-sm">
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-soft/70 bg-panel/45 p-3 text-sm">
                 <label className="flex items-center gap-2 text-text">
                   <input
                     type="checkbox"

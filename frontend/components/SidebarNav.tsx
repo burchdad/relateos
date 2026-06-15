@@ -47,12 +47,12 @@ function NavSection({ title, items, pathname }: { title: string; items: NavItem[
               href={item.href}
               className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-sm transition ${
                 active
-                  ? "border-accent/80 bg-accent text-text shadow-card"
+                  ? "border-accent/70 bg-accent/90 text-text shadow-[0_6px_16px_rgba(227,184,100,0.18)]"
                   : "border-transparent text-sage-pale/85 hover:border-sage-pale/35 hover:bg-sage/20 hover:text-cream-light"
               }`}
             >
               <span className={`inline-flex h-6 w-6 items-center justify-center rounded-md border text-[10px] font-semibold ${
-                active ? "border-text/20 bg-honey-pale/70 text-text" : "border-sage-pale/25 bg-sage/15 text-sage-pale"
+                active ? "border-text/20 bg-honey-pale/65 text-text" : "border-sage-pale/25 bg-sage/15 text-sage-pale"
               }`}>
                 {item.icon}
               </span>
@@ -85,7 +85,7 @@ export default function SidebarNav() {
               href={item.href}
               className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
                 active
-                  ? "border-accent/80 bg-accent text-text"
+                  ? "border-accent/70 bg-accent/90 text-text"
                   : "border-sage-pale/25 text-sage-pale hover:bg-sage/20 hover:text-cream-light"
               }`}
             >

@@ -27,7 +27,7 @@ export default function DashboardList({
   deleteDisabled,
 }: Props) {
   return (
-    <section className="grid gap-4">
+    <section className="grid gap-3">
       {items.map((item, idx) => (
         <div key={item.relationship_id} style={{ animationDelay: `${idx * 80}ms` }}>
           <RelationshipCard
