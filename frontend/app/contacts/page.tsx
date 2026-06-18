@@ -32,6 +32,15 @@ const emptyForm = {
   tag_keys: [] as string[],
 };
 
+const emptyContentEmailForm = {
+  subject: "",
+  message: "",
+  photoUrls: "",
+  videoUrls: "",
+  contentUrls: "",
+  recordingLinks: "",
+};
+
 type ContactForm = typeof emptyForm;
 type ContactTextField = keyof Pick<ContactForm, "first_name" | "last_name" | "email" | "phone">;
 
@@ -71,7 +80,12 @@ export default function ContactsPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [editingContact, setEditingContact] = useState(false);
+  const [editForm, setEditForm] = useState(emptyForm);
+  const [editError, setEditError] = useState("");
   const [selectedRelationshipIds, setSelectedRelationshipIds] = useState<Set<string>>(new Set());
+  const [showContentModal, setShowContentModal] = useState(false);
+  const [contentEmailForm, setContentEmailForm] = useState(emptyContentEmailForm);
   const [intent, setIntent] = useState("");
 
   const fetchContacts = useCallback(async () => {
@@ -93,6 +107,21 @@ export default function ContactsPage() {
   }, [API_URL, roleFilter, search, stageFilter]);
 
   useEffect(() => { fetchContacts(); }, [fetchContacts]);
+
+  useEffect(() => {
+    if (!selectedContact || editingContact) return;
+    setEditForm({
+      first_name: selectedContact.first_name || "",
+      last_name: selectedContact.last_name || "",
+      email: selectedContact.email || "",
+      phone: selectedContact.phone || "",
+      primary_role: selectedContact.primary_role || "",
+      source: selectedContact.source || "",
+      relationship_stage: selectedContact.relationship_stage || "",
+      notes_summary: selectedContact.notes_summary || selectedContact.relationship_interests || "",
+      tag_keys: tagKeysFor(selectedContact.tags),
+    });
+  }, [editingContact, selectedContact]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -136,6 +165,56 @@ export default function ContactsPage() {
     }
   };
 
+  const startEditingContact = () => {
+    if (!selectedContact) return;
+    setEditError("");
+    setEditForm({
+      first_name: selectedContact.first_name || "",
+      last_name: selectedContact.last_name || "",
+      email: selectedContact.email || "",
+      phone: selectedContact.phone || "",
+      primary_role: selectedContact.primary_role || "",
+      source: selectedContact.source || "",
+      relationship_stage: selectedContact.relationship_stage || "",
+      notes_summary: selectedContact.notes_summary || selectedContact.relationship_interests || "",
+      tag_keys: tagKeysFor(selectedContact.tags),
+    });
+    setEditingContact(true);
+  };
+
+  const handleUpdateContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedContact) return;
+    setSaving(true);
+    setEditError("");
+    try {
+      const res = await fetch(`${API_URL}/contacts/${selectedContact.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...editForm,
+          email: editForm.email.trim() || null,
+          phone: editForm.phone.trim() || null,
+          primary_role: editForm.primary_role || null,
+          source: editForm.source.trim() || null,
+          relationship_stage: editForm.relationship_stage || null,
+          notes_summary: editForm.notes_summary.trim() || null,
+          tags: Object.fromEntries(editForm.tag_keys.map(tag => [tag, true])),
+          tag_keys: undefined,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to update contact");
+      const updated = (await res.json()) as Contact;
+      setSelectedContact(updated);
+      setEditingContact(false);
+      await fetchContacts();
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : "Failed to update contact");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const stageClass = (stage: string | null) => {
     const map: Record<string, string> = {
       partner: "border-green-500/30 bg-green-500/10 text-green-300",
@@ -149,6 +228,18 @@ export default function ContactsPage() {
 
   const selectedParam = encodeURIComponent(Array.from(selectedRelationshipIds).join(","));
   const selectedRelationshipCount = selectedRelationshipIds.size;
+  const selectedEmailContacts = useMemo(
+    () => contacts.filter(contact => contact.relationship_id && selectedRelationshipIds.has(contact.relationship_id) && contact.email),
+    [contacts, selectedRelationshipIds]
+  );
+  const visibleRelationshipContacts = useMemo(
+    () => contacts.filter(contact => contact.relationship_id),
+    [contacts]
+  );
+  const visibleSelectedRelationshipCount = useMemo(
+    () => visibleRelationshipContacts.filter(contact => selectedRelationshipIds.has(contact.relationship_id!)).length,
+    [selectedRelationshipIds, visibleRelationshipContacts]
+  );
 
   const toggleRelationshipSelected = (contact: Contact) => {
     if (!contact.relationship_id) return;
@@ -156,6 +247,22 @@ export default function ContactsPage() {
       const next = new Set(prev);
       if (next.has(contact.relationship_id!)) next.delete(contact.relationship_id!);
       else next.add(contact.relationship_id!);
+      return next;
+    });
+  };
+
+  const toggleVisibleRelationshipContacts = () => {
+    setSelectedRelationshipIds(prev => {
+      const next = new Set(prev);
+      const allVisibleSelected =
+        visibleRelationshipContacts.length > 0 &&
+        visibleRelationshipContacts.every(contact => contact.relationship_id && next.has(contact.relationship_id));
+
+      visibleRelationshipContacts.forEach(contact => {
+        if (!contact.relationship_id) return;
+        if (allVisibleSelected) next.delete(contact.relationship_id);
+        else next.add(contact.relationship_id);
+      });
       return next;
     });
   };
@@ -168,6 +275,33 @@ export default function ContactsPage() {
         : [...prev.tag_keys, tag],
     }));
   };
+
+  const toggleEditTag = (tag: string) => {
+    setEditForm(prev => ({
+      ...prev,
+      tag_keys: prev.tag_keys.includes(tag)
+        ? prev.tag_keys.filter(current => current !== tag)
+        : [...prev.tag_keys, tag],
+    }));
+  };
+
+  const contentEmailMailto = useMemo(() => {
+    const emails = selectedEmailContacts.map(contact => contact.email).filter(Boolean).join(",");
+    if (!emails) return "";
+
+    const attachments = [
+      ["Photos", contentEmailForm.photoUrls],
+      ["Videos", contentEmailForm.videoUrls],
+      ["URLs", contentEmailForm.contentUrls],
+      ["Past recording links", contentEmailForm.recordingLinks],
+    ]
+      .filter(([, value]) => value.trim())
+      .map(([label, value]) => `${label}:\n${value.trim()}`)
+      .join("\n\n");
+
+    const body = [contentEmailForm.message.trim(), attachments].filter(Boolean).join("\n\n");
+    return `mailto:?bcc=${encodeURIComponent(emails)}&subject=${encodeURIComponent(contentEmailForm.subject.trim())}&body=${encodeURIComponent(body)}`;
+  }, [contentEmailForm, selectedEmailContacts]);
 
   return (
     <div className="p-6 space-y-6">
@@ -199,7 +333,7 @@ export default function ContactsPage() {
       </div>
 
       <div className="rounded-lg border border-soft bg-panel p-4">
-        <div className="grid gap-3 lg:grid-cols-[1fr_220px_180px_auto_auto_auto]">
+        <div className="grid gap-3 lg:grid-cols-[1fr_220px_180px_auto_auto]">
           <input
             type="text"
             placeholder="Search name, email, phone, or role"
@@ -217,11 +351,28 @@ export default function ContactsPage() {
             <option value="">All Stages</option>
             {STAGES.map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
           </select>
-          <Link href={selectedRelationshipCount > 0 ? `/content?relationship_ids=${selectedParam}` : "/content"} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Send Content</Link>
+          <button
+            type="button"
+            onClick={() => setShowContentModal(true)}
+            disabled={selectedRelationshipCount === 0}
+            className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Send Content
+          </button>
           <Link href={selectedRelationshipCount > 0 ? `/events?relationship_ids=${selectedParam}` : "/events"} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Invite</Link>
-          <Link href={selectedRelationshipCount > 0 ? `/content?relationship_ids=${selectedParam}&intent=campaign` : "/content?intent=campaign"} className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-text">Campaign</Link>
         </div>
-        <p className="mt-3 text-xs text-muted">Selected relationship contacts: {selectedRelationshipCount}</p>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">
+          <label className="inline-flex items-center gap-2 rounded-md border border-soft px-2.5 py-1.5">
+            <input
+              type="checkbox"
+              checked={visibleRelationshipContacts.length > 0 && visibleSelectedRelationshipCount === visibleRelationshipContacts.length}
+              onChange={toggleVisibleRelationshipContacts}
+              className="h-3.5 w-3.5 rounded border-soft bg-base text-accent"
+            />
+            Select visible
+          </label>
+          <span>Selected relationship contacts: {selectedRelationshipCount}</span>
+        </div>
       </div>
 
       {showForm && (
@@ -279,9 +430,103 @@ export default function ContactsPage() {
         </div>
       )}
 
+      {showContentModal ? (
+        <div className="fixed inset-0 z-50 bg-canvas/70 p-4 backdrop-blur-sm" role="presentation">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="send-content-title"
+            className="mx-auto flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-y-auto rounded-lg border border-soft bg-panel p-5 shadow-card"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted">Selected contacts</p>
+                <h3 id="send-content-title" className="mt-1 text-lg font-semibold text-text">Send Content Email</h3>
+                <p className="mt-1 text-sm text-muted">
+                  {selectedEmailContacts.length} with email / {selectedRelationshipCount} selected
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowContentModal(false)}
+                className="rounded-md border border-soft px-3 py-1.5 text-sm text-text hover:bg-soft/40"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <input
+                value={contentEmailForm.subject}
+                onChange={event => setContentEmailForm(prev => ({ ...prev, subject: event.target.value }))}
+                placeholder="Email subject"
+                className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+              />
+              <textarea
+                value={contentEmailForm.message}
+                onChange={event => setContentEmailForm(prev => ({ ...prev, message: event.target.value }))}
+                placeholder="Message"
+                className="h-28 resize-none rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+              />
+              <textarea
+                value={contentEmailForm.photoUrls}
+                onChange={event => setContentEmailForm(prev => ({ ...prev, photoUrls: event.target.value }))}
+                placeholder="Photo links, one per line"
+                className="h-20 resize-none rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+              />
+              <textarea
+                value={contentEmailForm.videoUrls}
+                onChange={event => setContentEmailForm(prev => ({ ...prev, videoUrls: event.target.value }))}
+                placeholder="Video links, one per line"
+                className="h-20 resize-none rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+              />
+              <textarea
+                value={contentEmailForm.contentUrls}
+                onChange={event => setContentEmailForm(prev => ({ ...prev, contentUrls: event.target.value }))}
+                placeholder="URLs to include, one per line"
+                className="h-20 resize-none rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+              />
+              <textarea
+                value={contentEmailForm.recordingLinks}
+                onChange={event => setContentEmailForm(prev => ({ ...prev, recordingLinks: event.target.value }))}
+                placeholder="Past recording links, one per line"
+                className="h-20 resize-none rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+              />
+            </div>
+
+            <div className="mt-4 rounded-md border border-soft bg-base p-3 text-xs text-muted">
+              Email will open in your mail app with selected contacts in BCC. Files should be shared as links so photos, videos, and recordings stay accessible.
+            </div>
+
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setContentEmailForm(emptyContentEmailForm)}
+                className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40"
+              >
+                Reset
+              </button>
+              <a
+                href={contentEmailMailto || undefined}
+                aria-disabled={!contentEmailMailto}
+                onClick={() => {
+                  if (contentEmailMailto) setShowContentModal(false);
+                }}
+                className={`rounded-md px-3 py-2 text-sm font-semibold ${
+                  contentEmailMailto ? "bg-accent text-text hover:brightness-110" : "pointer-events-none border border-soft text-muted"
+                }`}
+              >
+                Send Email
+              </a>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="rounded-lg border border-soft bg-panel overflow-hidden">
-          <div className="grid grid-cols-[minmax(220px,1.4fr)_170px_130px_120px_minmax(220px,1fr)_120px] border-b border-soft bg-base/60 px-4 py-3 text-xs uppercase tracking-wide text-muted">
+          <div className="grid grid-cols-[36px_minmax(220px,1.4fr)_170px_130px_120px_minmax(220px,1fr)_120px] border-b border-soft bg-base/60 px-4 py-3 text-xs uppercase tracking-wide text-muted">
+            <span>Select</span>
             <span>Name</span>
             <span>Role</span>
             <span>Stage</span>
@@ -298,9 +543,24 @@ export default function ContactsPage() {
               {contacts.map(contact => (
                 <button
                   key={contact.id}
-                  onClick={() => setSelectedContact(contact)}
-                  className={`grid w-full grid-cols-[minmax(220px,1.4fr)_170px_130px_120px_minmax(220px,1fr)_120px] items-center gap-3 px-4 py-3 text-left text-sm hover:bg-soft/20 ${selectedContact?.id === contact.id ? "bg-accent/10" : ""}`}
+                  onClick={() => {
+                    setSelectedContact(contact);
+                    setEditingContact(false);
+                    setEditError("");
+                  }}
+                  className={`grid w-full grid-cols-[36px_minmax(220px,1.4fr)_170px_130px_120px_minmax(220px,1fr)_120px] items-center gap-3 px-4 py-3 text-left text-sm hover:bg-soft/20 ${selectedContact?.id === contact.id ? "bg-accent/10" : ""}`}
                 >
+                  <span>
+                    <input
+                      type="checkbox"
+                      disabled={!contact.relationship_id}
+                      checked={Boolean(contact.relationship_id && selectedRelationshipIds.has(contact.relationship_id))}
+                      onClick={event => event.stopPropagation()}
+                      onChange={() => toggleRelationshipSelected(contact)}
+                      className="h-3.5 w-3.5 rounded border-soft bg-base text-accent disabled:opacity-30"
+                      aria-label={`Select ${compactName(contact)} for content`}
+                    />
+                  </span>
                   <span className="flex min-w-0 items-center gap-3">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-soft bg-base text-xs font-semibold text-accent">{initialsFor(contact)}</span>
                     <span className="min-w-0">
@@ -323,10 +583,108 @@ export default function ContactsPage() {
           {selectedContact ? (
             <div className="space-y-5">
               <div>
-                <p className="text-xs uppercase tracking-wide text-muted">Selected contact</p>
-                <h3 className="mt-1 text-xl font-semibold text-text">{compactName(selectedContact)}</h3>
-                <p className="mt-1 text-sm text-muted">{formatRole(selectedContact.primary_role)}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted">Selected contact</p>
+                    <h3 className="mt-1 text-xl font-semibold text-text">{compactName(selectedContact)}</h3>
+                    <p className="mt-1 text-sm text-muted">{formatRole(selectedContact.primary_role)}</p>
+                  </div>
+                  {!editingContact ? (
+                    <button
+                      type="button"
+                      onClick={startEditingContact}
+                      className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-text hover:brightness-110"
+                    >
+                      Edit
+                    </button>
+                  ) : null}
+                </div>
               </div>
+              {editingContact ? (
+                <form onSubmit={handleUpdateContact} className="grid gap-3">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {CONTACT_TEXT_FIELDS.map(([field, label, required]) => (
+                      <input
+                        key={field}
+                        required={required}
+                        placeholder={label}
+                        value={editForm[field]}
+                        onChange={e => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                        className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+                      />
+                    ))}
+                  </div>
+                  <select
+                    value={editForm.primary_role}
+                    onChange={e => setEditForm(prev => ({ ...prev, primary_role: e.target.value }))}
+                    className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60"
+                  >
+                    <option value="">Select role</option>
+                    {ROLE_OPTIONS.map(role => <option key={role.value} value={role.value}>{role.label}</option>)}
+                  </select>
+                  <select
+                    value={editForm.relationship_stage}
+                    onChange={e => setEditForm(prev => ({ ...prev, relationship_stage: e.target.value }))}
+                    className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60"
+                  >
+                    <option value="">Select stage</option>
+                    {STAGES.map(stage => <option key={stage} value={stage}>{stage.replace(/_/g, " ")}</option>)}
+                  </select>
+                  <input
+                    value={editForm.source}
+                    onChange={e => setEditForm(prev => ({ ...prev, source: e.target.value }))}
+                    placeholder="Source"
+                    className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+                  />
+                  <textarea
+                    value={editForm.notes_summary}
+                    onChange={e => setEditForm(prev => ({ ...prev, notes_summary: e.target.value }))}
+                    placeholder="Notes"
+                    className="h-28 resize-none rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+                  />
+                  <div className="rounded-lg border border-soft bg-base p-3">
+                    <p className="mb-2 text-xs uppercase tracking-wide text-muted">Tags</p>
+                    <div className="flex flex-wrap gap-2">
+                      {TAG_OPTIONS.map(tag => {
+                        const selected = editForm.tag_keys.includes(tag.value);
+                        return (
+                          <button
+                            key={tag.value}
+                            type="button"
+                            onClick={() => toggleEditTag(tag.value)}
+                            className={`rounded-full border px-3 py-1.5 text-xs capitalize transition ${
+                              selected ? "border-accent/60 bg-accent/15 text-text" : "border-soft text-muted hover:bg-soft/40 hover:text-text"
+                            }`}
+                          >
+                            {tag.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {editError ? <p className="text-sm text-red-300">{editError}</p> : null}
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingContact(false);
+                        setEditError("");
+                      }}
+                      className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={saving}
+                      className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-text disabled:opacity-50"
+                    >
+                      {saving ? "Saving..." : "Save Changes"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <>
               {tagKeysFor(selectedContact.tags).length > 0 ? (
                 <div className="flex flex-wrap gap-2">
                   {tagKeysFor(selectedContact.tags).map(tag => (
@@ -357,7 +715,7 @@ export default function ContactsPage() {
                 <div className="flex flex-wrap gap-2">
                   <label className="inline-flex items-center gap-2 rounded-md border border-soft px-3 py-2 text-xs text-muted">
                     <input type="checkbox" checked={selectedRelationshipIds.has(selectedContact.relationship_id)} onChange={() => toggleRelationshipSelected(selectedContact)} className="h-3.5 w-3.5 rounded border-soft bg-base text-accent" />
-                    Select
+                    Select for content
                   </label>
                   <Link href={`/content?relationship_ids=${encodeURIComponent(selectedContact.relationship_id)}`} className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">Send Content</Link>
                   <Link href={`/events?relationship_ids=${encodeURIComponent(selectedContact.relationship_id)}`} className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">Invite</Link>
@@ -367,6 +725,8 @@ export default function ContactsPage() {
                 <p className="text-xs uppercase tracking-wide text-muted">Notes</p>
                 <p className="mt-2 rounded-lg border border-soft bg-base p-3 text-sm text-muted">{selectedContact.relationship_interests || selectedContact.notes_summary || "No notes captured yet."}</p>
               </div>
+                </>
+              )}
             </div>
           ) : (
             <p className="text-sm text-muted">Select a contact to review details.</p>

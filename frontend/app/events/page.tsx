@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { resolveApiUrl } from "@/components/api";
+import { ROLE_OPTIONS, normalizeRoleKey } from "@/components/roleTaxonomy";
 import { Contact, EventItem } from "@/components/types";
 
 type EventForm = {
@@ -12,10 +13,13 @@ type EventForm = {
   eventUrl: string;
   dayOfWeek: string;
   timeOfDay: string;
+  calendarStartDate: string;
+  addToCalendar: boolean;
   ownerUserId: string;
 };
 
 const dayLabels = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const todayInputValue = () => new Date().toISOString().slice(0, 10);
 const emptyForm: EventForm = {
   title: "",
   description: "",
@@ -23,7 +27,82 @@ const emptyForm: EventForm = {
   eventUrl: "",
   dayOfWeek: "1",
   timeOfDay: "12:00 PM",
+  calendarStartDate: todayInputValue(),
+  addToCalendar: true,
   ownerUserId: "",
+};
+
+const pad = (value: number) => String(value).padStart(2, "0");
+
+const parseTime = (value: string) => {
+  const match = value.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+  if (!match) return { hours: 12, minutes: 0 };
+
+  let hours = Number(match[1]);
+  const minutes = Number(match[2] || "0");
+  const meridiem = match[3]?.toUpperCase();
+  if (meridiem === "PM" && hours < 12) hours += 12;
+  if (meridiem === "AM" && hours === 12) hours = 0;
+  return { hours: Math.min(23, Math.max(0, hours)), minutes: Math.min(59, Math.max(0, minutes)) };
+};
+
+const dateFromInput = (value: string) => {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return new Date();
+  return new Date(year, month - 1, day);
+};
+
+const nextDateForDay = (startDate: string, dayOfWeek: number) => {
+  const date = dateFromInput(startDate);
+  const offset = (dayOfWeek - date.getDay() + 7) % 7;
+  date.setDate(date.getDate() + offset);
+  return date;
+};
+
+const googleDate = (date: Date) => {
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T${pad(date.getHours())}${pad(date.getMinutes())}00`;
+};
+
+const openCalendarEvent = (event: EventForm) => {
+  const startDate =
+    event.eventType === "one-time"
+      ? dateFromInput(event.calendarStartDate)
+      : nextDateForDay(event.calendarStartDate, Number(event.dayOfWeek));
+  const { hours, minutes } = parseTime(event.timeOfDay);
+  startDate.setHours(hours, minutes, 0, 0);
+  const endDate = new Date(startDate);
+  endDate.setHours(endDate.getHours() + 1);
+
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: event.title.trim(),
+    dates: `${googleDate(startDate)}/${googleDate(endDate)}`,
+    details: [event.description.trim(), "", `Link: ${event.eventUrl.trim()}`].join("\n"),
+    location: event.eventUrl.trim(),
+  });
+
+  if (event.eventType === "weekly") {
+    params.set("recur", "RRULE:FREQ=WEEKLY");
+  }
+  if (event.eventType === "monthly") {
+    params.set("recur", "RRULE:FREQ=MONTHLY");
+  }
+
+  window.open(`https://calendar.google.com/calendar/render?${params.toString()}`, "_blank", "noopener,noreferrer");
+};
+
+const openExistingCalendarEvent = (event: EventItem) => {
+  openCalendarEvent({
+    title: event.title,
+    description: event.description,
+    eventType: event.event_type,
+    eventUrl: event.event_url,
+    dayOfWeek: String(event.day_of_week ?? new Date().getDay()),
+    timeOfDay: event.time_of_day,
+    calendarStartDate: todayInputValue(),
+    addToCalendar: true,
+    ownerUserId: event.owner_user_id || "",
+  });
 };
 
 const typeClass = (type: string) => {
@@ -50,6 +129,10 @@ const tagKeysFor = (tags: Record<string, unknown> | null | undefined) => {
 };
 
 const tagLabelFor = (tag: string) => tag.replace(/_/g, " ");
+const roleGroupFor = (contact: Contact) => {
+  const role = normalizeRoleKey(contact.primary_role || contact.relationship_type);
+  return ROLE_OPTIONS.find(option => option.value === role)?.group || "Other";
+};
 
 export default function EventsPage() {
   const API_URL = useMemo(resolveApiUrl, []);
@@ -69,6 +152,7 @@ export default function EventsPage() {
   const [form, setForm] = useState<EventForm>(emptyForm);
   const [inviteSearch, setInviteSearch] = useState("");
   const [selectedInviteTags, setSelectedInviteTags] = useState<Set<string>>(new Set());
+  const [selectedInviteRoleGroups, setSelectedInviteRoleGroups] = useState<Set<string>>(new Set());
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
   const [preselectedRelationshipIds, setPreselectedRelationshipIds] = useState<Set<string>>(new Set());
   const [queryEventId, setQueryEventId] = useState("");
@@ -165,16 +249,24 @@ export default function EventsPage() {
     return Array.from(tags).sort();
   }, [contacts]);
 
+  const availableInviteRoleGroups = useMemo(() => {
+    const groups = new Set<string>();
+    contacts.forEach(contact => groups.add(roleGroupFor(contact)));
+    return Array.from(groups).sort();
+  }, [contacts]);
+
   const inviteCandidates = useMemo(() => {
     const selectedTags = Array.from(selectedInviteTags);
+    const selectedRoleGroups = Array.from(selectedInviteRoleGroups);
     return contacts.filter(contact => {
       const haystack = `${compactName(contact)} ${contact.email || ""} ${contact.phone || ""}`.toLowerCase();
       const matchesSearch = !inviteSearch.trim() || haystack.includes(inviteSearch.trim().toLowerCase());
       const contactTags = tagKeysFor(contact.tags);
       const matchesTags = selectedTags.length === 0 || selectedTags.every(tag => contactTags.includes(tag));
-      return matchesSearch && matchesTags;
+      const matchesRoleGroups = selectedRoleGroups.length === 0 || selectedRoleGroups.includes(roleGroupFor(contact));
+      return matchesSearch && matchesTags && matchesRoleGroups;
     });
-  }, [contacts, inviteSearch, selectedInviteTags]);
+  }, [contacts, inviteSearch, selectedInviteRoleGroups, selectedInviteTags]);
 
   const selectedInviteContacts = useMemo(
     () => contacts.filter(contact => selectedContactIds.has(contact.id)),
@@ -230,6 +322,9 @@ export default function EventsPage() {
       });
       if (!res.ok) throw new Error("Failed to create event");
 
+      if (form.addToCalendar) {
+        openCalendarEvent(form);
+      }
       setForm(emptyForm);
       setShowForm(false);
       await loadEvents();
@@ -245,6 +340,15 @@ export default function EventsPage() {
       const next = new Set(prev);
       if (next.has(tag)) next.delete(tag);
       else next.add(tag);
+      return next;
+    });
+  };
+
+  const toggleInviteRoleGroup = (group: string) => {
+    setSelectedInviteRoleGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
       return next;
     });
   };
@@ -277,6 +381,7 @@ export default function EventsPage() {
   const restartInviteSelection = () => {
     setSelectedContactIds(new Set());
     setSelectedInviteTags(new Set());
+    setSelectedInviteRoleGroups(new Set());
     setInviteSearch("");
   };
 
@@ -362,12 +467,32 @@ export default function EventsPage() {
               placeholder="Time, e.g. 12:00 PM"
               className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text outline-none placeholder:text-muted focus:border-accent/60"
             />
+            <label className="grid gap-1">
+              <span className="text-xs text-muted">
+                {form.eventType === "one-time" ? "Calendar date" : "Calendar start date"}
+              </span>
+              <input
+                type="date"
+                value={form.calendarStartDate}
+                onChange={(e) => setForm((prev) => ({ ...prev, calendarStartDate: e.target.value }))}
+                className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text outline-none focus:border-accent/60"
+              />
+            </label>
             <input
               value={form.ownerUserId}
               onChange={(e) => setForm((prev) => ({ ...prev, ownerUserId: e.target.value }))}
               placeholder="Owner user ID"
-              className="md:col-span-2 rounded-md border border-soft bg-base px-3 py-2 text-sm text-text outline-none placeholder:text-muted focus:border-accent/60"
+              className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text outline-none placeholder:text-muted focus:border-accent/60"
             />
+            <label className="md:col-span-2 flex items-center gap-2 rounded-md border border-soft bg-base px-3 py-2 text-sm text-muted">
+              <input
+                type="checkbox"
+                checked={form.addToCalendar}
+                onChange={(e) => setForm((prev) => ({ ...prev, addToCalendar: e.target.checked }))}
+                className="h-4 w-4 rounded border-soft bg-base text-accent focus:ring-accent"
+              />
+              Add this event to the client calendar after saving
+            </label>
             {createError ? <p className="text-sm text-red-300 md:col-span-2">{createError}</p> : null}
             <div className="md:col-span-2 flex justify-end gap-3">
               <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-muted hover:text-text">Cancel</button>
@@ -447,6 +572,7 @@ export default function EventsPage() {
               </div>
               <div className="flex flex-wrap gap-2">
                 <a href={selectedEvent.event_url} target="_blank" rel="noreferrer" className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-text">Open Link</a>
+                <button onClick={() => openExistingCalendarEvent(selectedEvent)} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Add to Calendar</button>
                 <button onClick={() => setShowInvitePanel(v => !v)} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Invite Contacts</button>
               </div>
               {showInvitePanel ? (
@@ -476,8 +602,30 @@ export default function EventsPage() {
                     placeholder="Search invitees"
                     className="w-full rounded-md border border-soft bg-panel px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
                   />
-                  {availableInviteTags.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-[11px] uppercase tracking-wide text-muted">Role groups</p>
                     <div className="flex max-h-24 flex-wrap gap-2 overflow-auto">
+                      {availableInviteRoleGroups.map(group => {
+                        const selected = selectedInviteRoleGroups.has(group);
+                        return (
+                          <button
+                            key={group}
+                            type="button"
+                            onClick={() => toggleInviteRoleGroup(group)}
+                            className={`rounded-full border px-2 py-1 text-xs transition ${
+                              selected ? "border-accent/60 bg-accent/15 text-text" : "border-soft text-muted hover:bg-soft/40 hover:text-text"
+                            }`}
+                          >
+                            {group}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-[11px] uppercase tracking-wide text-muted">Tags</p>
+                    {availableInviteTags.length > 0 ? (
+                      <div className="flex max-h-24 flex-wrap gap-2 overflow-auto">
                       {availableInviteTags.map(tag => {
                         const selected = selectedInviteTags.has(tag);
                         return (
@@ -493,8 +641,11 @@ export default function EventsPage() {
                           </button>
                         );
                       })}
-                    </div>
-                  ) : null}
+                      </div>
+                    ) : (
+                      <p className="rounded-md border border-soft px-3 py-2 text-xs text-muted">No contact tags available yet.</p>
+                    )}
+                  </div>
                   <div className="max-h-72 overflow-auto rounded-md border border-soft">
                     {contactsLoading ? (
                       <p className="p-3 text-sm text-muted">Loading contacts...</p>
@@ -512,6 +663,7 @@ export default function EventsPage() {
                           <span className="min-w-0">
                             <span className="block truncate text-sm font-medium text-text">{compactName(contact)}</span>
                             <span className="block truncate text-xs text-muted">{contact.email || "No email"}</span>
+                            <span className="mt-1 inline-flex rounded-full border border-soft px-2 py-0.5 text-[10px] text-muted">{roleGroupFor(contact)}</span>
                           </span>
                           <span className={`h-4 w-4 shrink-0 rounded border ${selected ? "border-accent bg-accent" : "border-soft bg-panel"}`} />
                         </button>

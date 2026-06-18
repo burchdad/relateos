@@ -95,11 +95,11 @@ export default function RelationshipCard({
   };
 
   return (
-    <article className="card-reveal rounded-lg border border-soft/70 bg-panel/70 p-3 shadow-[0_6px_18px_rgba(28,58,42,0.08)] sm:p-4">
+    <article className={`card-reveal relative rounded-lg border border-soft/70 bg-white p-3 shadow-[0_6px_18px_rgba(28,58,42,0.08)] sm:p-4 ${showMoreActions ? "z-30" : "z-0"}`}>
       <div className="flex flex-wrap items-start justify-between gap-2.5">
         <div>
           <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-            <h3 className="text-base font-semibold tracking-tight">{item.name}</h3>
+            <h3 className="text-base font-semibold tracking-tight text-black">{item.name}</h3>
             <p className="text-[11px] uppercase tracking-[0.14em] text-muted">Priority {item.priority_score.toFixed(1)}</p>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -145,13 +145,13 @@ export default function RelationshipCard({
             {showDetails ? "Hide details" : "Show details"}
           </button>
         </div>
-        <p className="rounded-md border border-soft/70 bg-cream-light/70 p-2.5 text-text/95">
+        <p className="rounded-md border border-soft/70 bg-white p-2.5 text-text/95">
           {item.suggested_message ?? "Quick check-in could help maintain momentum and keep this relationship warm."}
         </p>
       </div>
 
       {showDetails ? (
-        <div className="mt-3 space-y-2 rounded-lg border border-soft/70 bg-cream-light/60 p-3 text-sm">
+        <div className="mt-3 space-y-2 rounded-lg border border-soft/70 bg-white p-3 text-sm">
           <p>
             <span className="text-amber">Why it matters:</span> {item.summary ?? "High-leverage relationship worth a proactive touchpoint."}
           </p>
@@ -231,7 +231,7 @@ export default function RelationshipCard({
       </div>
 
       {showExplanation ? (
-        <div className="mt-3 rounded-lg border border-soft/70 bg-cream-light/60 p-3 text-xs text-text/90">
+        <div className="mt-3 rounded-lg border border-soft/70 bg-white p-3 text-xs text-text/90">
           {explanationLoading ? (
             <p className="text-muted">Loading score explanation...</p>
           ) : explanation ? (

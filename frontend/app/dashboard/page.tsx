@@ -8,7 +8,7 @@ import DashboardList from "@/components/DashboardList";
 import DemoGuide from "@/components/DemoGuide";
 import { resolveApiUrl } from "@/components/api";
 import { ROLE_OPTIONS } from "@/components/roleTaxonomy";
-import { CampaignInsights, ContentCampaignStats, PriorityItem, ScoreExplanation } from "@/components/types";
+import { CampaignInsights, EventItem, PriorityItem, ScoreExplanation } from "@/components/types";
 
 type RelationshipFormState = {
   firstName: string;
@@ -20,14 +20,27 @@ type RelationshipFormState = {
   ownerUserId: string;
 };
 
+const dayLabels = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+const eventSchedule = (event: EventItem) => {
+  if (event.day_of_week === null) {
+    return `One-time at ${event.time_of_day}`;
+  }
+  return `${dayLabels[event.day_of_week]} at ${event.time_of_day}`;
+};
+
 export default function DashboardPage() {
   const API_URL = useMemo(resolveApiUrl, []);
   const [items, setItems] = useState<PriorityItem[]>([]);
   const [explanations, setExplanations] = useState<Record<string, ScoreExplanation>>({});
   const [loadingExplanation, setLoadingExplanation] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
-  const [campaigns, setCampaigns] = useState<ContentCampaignStats[]>([]);
+  const [events, setEvents] = useState<EventItem[]>([]);
   const [campaignInsights, setCampaignInsights] = useState<CampaignInsights | null>(null);
+  const [assistantPrompt, setAssistantPrompt] = useState("Who should I focus on next, and what should I say?");
+  const [assistantAnswer, setAssistantAnswer] = useState("");
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantError, setAssistantError] = useState("");
   const [error, setError] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -57,10 +70,10 @@ export default function DashboardPage() {
       setItems(data);
       setExplanations({});
       setLoadingExplanation({});
-      const campaignRes = await fetch(`${API_URL}/content/campaigns/active`, { cache: "no-store" });
-      if (campaignRes.ok) {
-        const campaignRows = (await campaignRes.json()) as ContentCampaignStats[];
-        setCampaigns(campaignRows);
+      const eventsRes = await fetch(`${API_URL}/events`, { cache: "no-store" });
+      if (eventsRes.ok) {
+        const eventRows = (await eventsRes.json()) as EventItem[];
+        setEvents(eventRows.slice(0, 8));
       }
       const insightsRes = await fetch(`${API_URL}/relateos/campaign-insights`, { cache: "no-store" });
       if (insightsRes.ok) {
@@ -75,6 +88,44 @@ export default function DashboardPage() {
       setLoading(false);
     }
   }, [API_URL]);
+
+  const askAssistant = async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+    setAssistantError("");
+    setAssistantAnswer("");
+
+    const target = items[0];
+    if (!target) {
+      setAssistantError("Add a relationship first so Teifke AI has live context to work from.");
+      return;
+    }
+
+    setAssistantLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/ai/message/${target.relationship_id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          goal: assistantPrompt.trim() || "Recommend the next best relationship action.",
+          style_profile: {
+            tone: "direct",
+            length: "short",
+            energy: "medium",
+            emoji_usage: "none",
+          },
+        }),
+      });
+      if (!res.ok) {
+        throw new Error("Teifke AI could not generate a response.");
+      }
+      const payload = (await res.json()) as { content: string };
+      setAssistantAnswer(payload.content);
+    } catch (error) {
+      setAssistantError(error instanceof Error ? error.message : "Teifke AI could not generate a response.");
+    } finally {
+      setAssistantLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchPriorities();
@@ -347,7 +398,7 @@ export default function DashboardPage() {
   return (
     <>
       <section className="mx-auto min-h-screen max-w-[1380px] px-4 py-5 sm:px-6 lg:px-8 lg:py-8 xl:px-10">
-        <header className="mb-5 rounded-lg border border-soft/70 bg-panel/55 p-4 sm:p-5">
+        <header className="mb-5 rounded-lg border border-soft/70 bg-white p-4 sm:p-5">
         <p className="text-[11px] uppercase tracking-[0.18em] text-accent">RelateOS</p>
         <h1 className="mt-1.5 text-2xl font-semibold tracking-tight sm:text-3xl">Today&apos;s Focus</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted">
@@ -367,6 +418,58 @@ export default function DashboardPage() {
           </button>
         </div>
         </header>
+
+        <section className="mb-4 rounded-lg border border-soft/70 bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.18em] text-accent">Teifke AI</p>
+              <h2 className="mt-1 text-base font-semibold text-text">Assistant</h2>
+              <p className="mt-1 text-xs text-muted">
+                Ask for a next move. The assistant uses the top priority relationship as live context.
+              </p>
+            </div>
+            {items[0] ? (
+              <span className="rounded-full border border-soft bg-soft/60 px-2.5 py-1 text-[11px] text-muted">
+                Context: {items[0].name}
+              </span>
+            ) : null}
+          </div>
+          <form onSubmit={askAssistant} className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
+            <input
+              value={assistantPrompt}
+              onChange={(event) => setAssistantPrompt(event.target.value)}
+              placeholder="Ask Teifke AI what to do next"
+              className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text outline-none placeholder:text-muted focus:border-accent/60"
+            />
+            <button
+              type="submit"
+              disabled={assistantLoading}
+              className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {assistantLoading ? "Thinking..." : "Ask Teifke AI"}
+            </button>
+          </form>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {[
+              "Who should I contact first?",
+              "Write a short follow-up.",
+              "What is the risk today?",
+            ].map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => setAssistantPrompt(prompt)}
+                className="rounded-full border border-soft px-2.5 py-1 text-[11px] text-muted hover:bg-soft/50 hover:text-text"
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+          {assistantAnswer ? (
+            <p className="mt-3 rounded-md border border-soft/70 bg-base p-3 text-sm text-text">{assistantAnswer}</p>
+          ) : null}
+          {assistantError ? <p className="mt-3 text-sm text-red-300">{assistantError}</p> : null}
+        </section>
 
         {showCreateForm ? (
           <div className="fixed inset-0 z-50 bg-canvas/70 backdrop-blur-sm" role="presentation">
@@ -487,30 +590,26 @@ export default function DashboardPage() {
         {error ? <p className="text-red-300">{error}</p> : null}
         {deleteError ? <p className="mt-2 text-red-300">{deleteError}</p> : null}
 
-        {!loading && campaigns.length > 0 ? (
-          <section className="mb-4 rounded-lg border border-soft/70 bg-panel/45 p-4">
+        {!loading && events.length > 0 ? (
+          <section className="mb-4 rounded-lg border border-soft/70 bg-white p-4">
             <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-text">Active Campaigns</h2>
-              <Link href="/content" className="text-xs text-accent hover:underline">Open Content Engine</Link>
+              <h2 className="text-base font-semibold text-text">Upcoming Events</h2>
+              <Link href="/events" className="text-xs text-accent hover:underline">Open Events</Link>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
-              {campaigns.map((campaign) => (
-                <article key={campaign.content_id} className="rounded-md border border-soft/60 bg-cream-light/55 p-3 text-xs text-muted">
-                  <p className="text-sm font-semibold text-text">{campaign.title}</p>
-                  {campaign.experiment_key ? (
-                    <p className="mt-1 text-xs text-muted">
-                      {campaign.experiment_key} {campaign.experiment_variant ? `• ${campaign.experiment_variant}` : ""}
-                    </p>
-                  ) : null}
-                  <p className="mt-1">Sent {campaign.sent_count} • Engaged {campaign.responded_count} • Pending {campaign.pending_count}</p>
-                  <Link href={`/content`} className="mt-2 inline-block text-accent hover:underline">View campaign</Link>
+              {events.map((event) => (
+                <article key={event.id} className="rounded-md border border-soft/60 bg-white p-3 text-xs text-muted">
+                  <p className="text-sm font-semibold text-text">{event.title}</p>
+                  <p className="mt-1">{event.description}</p>
+                  <p className="mt-1 font-medium text-muted">{eventSchedule(event)}</p>
+                  <Link href={`/events?event_id=${encodeURIComponent(event.id)}`} className="mt-2 inline-block text-accent hover:underline">View event</Link>
                 </article>
               ))}
             </div>
           </section>
         ) : null}
         {!loading && campaignInsights ? (
-          <section className="mb-4 rounded-lg border border-soft/70 bg-panel/45 p-4">
+          <section className="mb-4 rounded-lg border border-soft/70 bg-white p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-text">Proof View</h2>
@@ -522,7 +621,7 @@ export default function DashboardPage() {
           </section>
         ) : null}
         {!loading && !error && items.length === 0 ? (
-          <div className="rounded-lg border border-soft/70 bg-panel/45 p-5 text-sm text-muted">
+          <div className="rounded-lg border border-soft/70 bg-white p-5 text-sm text-muted">
             <p>Your dashboard gets smart after one contact with context. Add one now, or load sample relationships.</p>
             <div className="mt-4">
               <button
@@ -540,7 +639,7 @@ export default function DashboardPage() {
         {!loading && !error && items.length > 0 ? (
           <>
             {selectedIds.size > 0 ? (
-              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-soft/70 bg-panel/45 p-3 text-sm">
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-soft/70 bg-white p-3 text-sm">
                 <label className="flex items-center gap-2 text-text">
                   <input
                     type="checkbox"
