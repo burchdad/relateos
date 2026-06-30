@@ -49,10 +49,17 @@ Implemented tables:
 - `content_insights`
 - `events`
 - `content_relationship_targets`
+- `app_users`
 
 ## API Endpoints
 
 Base prefix: `/api/v1`
+
+Auth:
+
+- `POST /auth/register`
+- `POST /auth/login`
+- `GET /auth/me`
 
 Relationships:
 
@@ -144,7 +151,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` and set `OPENAI_API_KEY` (optional for full AI output).
+Edit `.env` and set `OPENAI_API_KEY` (optional for full AI output). For any shared or deployed environment, also set `AUTH_SECRET_KEY` to a long random value so login tokens cannot be forged with the development default.
 
 Start API:
 
@@ -270,6 +277,8 @@ Environment variables for both services:
 - `REDIS_URL`
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
+- `AUTH_SECRET_KEY`
+- `AUTH_TOKEN_TTL_HOURS` (default `168`)
 - `CONTENT_BULK_SEND_MAX` (default `20`)
 - `API_V1_PREFIX=/api/v1`
 - `CORS_ORIGINS=https://<your-vercel-domain>`

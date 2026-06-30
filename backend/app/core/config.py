@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     openai_transcription_model: str = "whisper-1"
     recording_transcription_max_bytes: int = 25_000_000
     content_bulk_send_max: int = 20
+    auth_secret_key: str = "change-me-in-production"
+    auth_token_ttl_hours: int = 24 * 7
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

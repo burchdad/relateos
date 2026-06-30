@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { Route } from "next";
+import { clearAuthToken } from "@/components/authClient";
 
 type NavItem = {
   href: Route;
@@ -65,7 +66,14 @@ function NavSection({ title, items, pathname }: { title: string; items: NavItem[
   );
 }
 
-export default function SidebarNav() {
+type SidebarNavProps = {
+  user?: {
+    email: string;
+    name: string;
+  } | null;
+};
+
+export default function SidebarNav({ user }: SidebarNavProps) {
   const pathname = usePathname();
   const mobileItems = [...coreNav, ...intelligenceNav, ...systemNav];
 
@@ -100,6 +108,17 @@ export default function SidebarNav() {
         <NavSection title="Core Navigation" items={coreNav} pathname={pathname} />
         <NavSection title="Intelligence Layer" items={intelligenceNav} pathname={pathname} />
         <NavSection title="System" items={systemNav} pathname={pathname} />
+        <section className="rounded-lg border border-sage-pale/20 bg-sage/10 p-3">
+          <p className="truncate text-xs font-semibold text-cream-light">{user?.name || "Signed in"}</p>
+          <p className="mt-1 truncate text-[11px] text-sage-pale/75">{user?.email}</p>
+          <button
+            type="button"
+            onClick={clearAuthToken}
+            className="mt-3 w-full rounded-md border border-sage-pale/30 px-3 py-2 text-xs font-semibold text-sage-pale hover:bg-sage/20 hover:text-cream-light"
+          >
+            Log Out
+          </button>
+        </section>
       </nav>
     </aside>
   );

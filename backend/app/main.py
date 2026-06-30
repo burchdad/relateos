@@ -15,6 +15,7 @@ from sqlalchemy import inspect, text
 from app.core.config import settings
 from app.core.database import Base, engine
 from app.routes.ai import router as ai_router
+from app.routes.auth import router as auth_router
 from app.routes.contacts import router as contacts_router
 from app.routes.connections import router as connections_router
 from app.routes.content import router as content_router
@@ -31,6 +32,7 @@ from app.routes.recording_artifacts import router as recording_artifacts_router
 from app.routes.relateos import router as relateos_router
 from app.routes.relationships import router as relationships_router
 from app.routes.style_profiles import router as style_profiles_router
+from app.services.auth_service import AuthService
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +147,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def _api_auth_middleware(request: Request, call_next):
+    path = request.url.path
+    auth_prefix = f"{settings.api_v1_prefix}/auth"
+    if (
+        request.method == "OPTIONS"
+        or not path.startswith(settings.api_v1_prefix)
+        or path.startswith(auth_prefix)
+    ):
+        return await call_next(request)
+
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        user = AuthService.bearer_user(db, request.headers.get("authorization"))
+        if not user:
+            return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+        request.state.user = user
+    finally:
+        db.close()
+
+    return await call_next(request)
+
 _CORS_REGEX = re.compile(
     r"https://.*\.vercel\.app"
     r"|https://.*\.railway\.app"
@@ -186,6 +213,7 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
     )
 
 app.include_router(relationships_router, prefix=settings.api_v1_prefix)
+app.include_router(auth_router, prefix=settings.api_v1_prefix)
 app.include_router(interactions_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_router, prefix=settings.api_v1_prefix)
 app.include_router(connections_router, prefix=settings.api_v1_prefix)

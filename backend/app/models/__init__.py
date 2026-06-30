@@ -1,5 +1,6 @@
 from app.models.entities import (
 	AIInsight,
+	AppUser,
 	ContentInsight,
 	ContentItem,
 	ContentRelationshipTarget,
@@ -19,6 +20,7 @@ __all__ = [
 	"Interaction",
 	"Opportunity",
 	"AIInsight",
+	"AppUser",
 	"RelationshipSignal",
 	"UserStyleProfile",
 	"ContentItem",
