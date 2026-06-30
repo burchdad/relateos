@@ -1,6 +1,7 @@
 from app.models.entities import (
 	AIInsight,
 	AppUser,
+	PasswordResetToken,
 	ContentInsight,
 	ContentItem,
 	ContentRelationshipTarget,
@@ -21,6 +22,7 @@ __all__ = [
 	"Opportunity",
 	"AIInsight",
 	"AppUser",
+	"PasswordResetToken",
 	"RelationshipSignal",
 	"UserStyleProfile",
 	"ContentItem",

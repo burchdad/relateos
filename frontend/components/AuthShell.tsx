@@ -11,6 +11,7 @@ type User = {
   id: string;
   email: string;
   name: string;
+  onboarding_complete: boolean;
 };
 
 const shouldAttachAuth = (input: RequestInfo | URL, apiUrl: string) => {
@@ -25,6 +26,9 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [checking, setChecking] = useState(true);
   const isLoginPage = pathname === "/login";
+  const isOnboardingPage = pathname === "/onboarding";
+  const isResetPasswordPage = pathname === "/reset-password";
+  const isPublicAuthPage = isLoginPage || isResetPasswordPage;
 
   useEffect(() => {
     const originalFetch = window.fetch.bind(window);
@@ -50,7 +54,7 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
       if (!token) {
         setUser(null);
         setChecking(false);
-        if (!isLoginPage) router.replace("/login");
+        if (!isPublicAuthPage) router.replace("/login");
         return;
       }
 
@@ -62,12 +66,19 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
         if (!res.ok) {
           throw new Error("Session expired");
         }
-        setUser((await res.json()) as User);
-        if (isLoginPage) router.replace("/dashboard");
+        const nextUser = (await res.json()) as User;
+        setUser(nextUser);
+        if (isLoginPage) {
+          router.replace(nextUser.onboarding_complete ? "/dashboard" : "/onboarding");
+        } else if (!nextUser.onboarding_complete && !isOnboardingPage) {
+          router.replace("/onboarding");
+        } else if (nextUser.onboarding_complete && isOnboardingPage) {
+          router.replace("/dashboard");
+        }
       } catch {
         clearAuthToken();
         setUser(null);
-        if (!isLoginPage) router.replace("/login");
+        if (!isPublicAuthPage) router.replace("/login");
       } finally {
         setChecking(false);
       }
@@ -76,9 +87,9 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
     checkSession();
     window.addEventListener(AUTH_CHANGED_EVENT, checkSession);
     return () => window.removeEventListener(AUTH_CHANGED_EVENT, checkSession);
-  }, [API_URL, isLoginPage, router]);
+  }, [API_URL, isLoginPage, isOnboardingPage, isPublicAuthPage, router]);
 
-  if (isLoginPage) {
+  if (isPublicAuthPage) {
     return <main className="min-h-screen">{children}</main>;
   }
 
@@ -90,6 +101,10 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
         </div>
       </main>
     );
+  }
+
+  if (isOnboardingPage) {
+    return <main className="min-h-screen">{children}</main>;
   }
 
   return (

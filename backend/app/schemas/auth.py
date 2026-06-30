@@ -8,6 +8,14 @@ class UserOut(BaseModel):
     id: UUID
     email: str
     name: str
+    company_name: str | None = None
+    role_title: str | None = None
+    relationship_focus: str | None = None
+    primary_goal: str | None = None
+    timezone: str | None = None
+    wants_calendar_connection: bool = False
+    wants_contact_import: bool = False
+    onboarding_complete: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -22,6 +30,30 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str = Field(min_length=3, max_length=255)
     password: str = Field(min_length=1, max_length=128)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+
+
+class ForgotPasswordResponse(BaseModel):
+    message: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class ProfileSetupRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    company_name: str = Field(min_length=2, max_length=255)
+    role_title: str = Field(min_length=2, max_length=255)
+    relationship_focus: str = Field(min_length=2, max_length=100)
+    primary_goal: str = Field(min_length=2, max_length=100)
+    timezone: str = Field(min_length=2, max_length=100)
+    wants_calendar_connection: bool = False
+    wants_contact_import: bool = False
 
 
 class AuthResponse(BaseModel):

@@ -279,6 +279,10 @@ Environment variables for both services:
 - `OPENAI_MODEL`
 - `AUTH_SECRET_KEY`
 - `AUTH_TOKEN_TTL_HOURS` (default `168`)
+- `PASSWORD_RESET_TOKEN_TTL_MINUTES` (default `30`)
+- `FRONTEND_APP_URL=https://<your-vercel-domain>`
+- `RESEND_API_KEY`
+- `AUTH_EMAIL_FROM=Teifke / Relationships <hello@yourdomain.com>`
 - `CONTENT_BULK_SEND_MAX` (default `20`)
 - `API_V1_PREFIX=/api/v1`
 - `CORS_ORIGINS=https://<your-vercel-domain>`

@@ -7,11 +7,14 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import quote
 
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.entities import AppUser
+from app.models.entities import AppUser, PasswordResetToken
+from app.schemas.auth import ProfileSetupRequest
+from app.services.email_service import EmailService
 
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -29,6 +32,10 @@ def _b64url_decode(data: str) -> bytes:
 
 def _secret() -> bytes:
     return settings.auth_secret_key.encode("utf-8")
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 class AuthService:
@@ -81,6 +88,85 @@ class AuthService:
         db.commit()
         db.refresh(user)
         return user
+
+    @staticmethod
+    def update_profile(db: Session, user: AppUser, payload: ProfileSetupRequest) -> AppUser:
+        user.name = payload.name.strip()
+        user.company_name = payload.company_name.strip()
+        user.role_title = payload.role_title.strip()
+        user.relationship_focus = payload.relationship_focus.strip()
+        user.primary_goal = payload.primary_goal.strip()
+        user.timezone = payload.timezone.strip()
+        user.wants_calendar_connection = payload.wants_calendar_connection
+        user.wants_contact_import = payload.wants_contact_import
+        user.onboarding_complete = True
+        db.commit()
+        db.refresh(user)
+        return user
+
+    @staticmethod
+    def request_password_reset(db: Session, *, email: str) -> None:
+        normalized_email = AuthService.normalize_email(email)
+        if not AuthService.validate_email(normalized_email):
+            return
+        user = db.query(AppUser).filter(AppUser.email == normalized_email).first()
+        if not user or not user.is_active:
+            return
+
+        now = datetime.now(timezone.utc)
+        db.query(PasswordResetToken).filter(
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.used_at.is_(None),
+        ).update({"used_at": now})
+
+        token = secrets.token_urlsafe(32)
+        reset_token = PasswordResetToken(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            token_hash=_token_hash(token),
+            expires_at=now + timedelta(minutes=settings.password_reset_token_ttl_minutes),
+        )
+        db.add(reset_token)
+        db.commit()
+
+        reset_url = f"{settings.frontend_app_url.rstrip('/')}/reset-password?token={quote(token)}"
+        EmailService.send_password_reset(
+            to_email=user.email,
+            name=user.name,
+            reset_url=reset_url,
+            idempotency_key=f"password-reset-{reset_token.id}",
+        )
+
+    @staticmethod
+    def reset_password(db: Session, *, token: str, password: str) -> None:
+        if len(password) < 8:
+            raise ValueError("Password must be at least 8 characters.")
+
+        reset_token = (
+            db.query(PasswordResetToken)
+            .filter(
+                PasswordResetToken.token_hash == _token_hash(token),
+                PasswordResetToken.used_at.is_(None),
+            )
+            .first()
+        )
+        now = datetime.now(timezone.utc)
+        if not reset_token:
+            raise ValueError("This password reset link is invalid or expired.")
+
+        expires_at = reset_token.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at < now:
+            raise ValueError("This password reset link is invalid or expired.")
+
+        user = db.query(AppUser).filter(AppUser.id == reset_token.user_id).first()
+        if not user or not user.is_active:
+            raise ValueError("This password reset link is invalid or expired.")
+
+        user.password_hash = AuthService.hash_password(password)
+        reset_token.used_at = now
+        db.commit()
 
     @staticmethod
     def authenticate(db: Session, *, email: str, password: str) -> AppUser | None:
