@@ -61,13 +61,24 @@ def sync_zoom_recordings(db: Session = Depends(get_db), user: AppUser = Depends(
     workspace_id = _workspace_id(db, user)
     imported = ZoomImportService.import_recent_recordings(db, workspace_id=workspace_id)
     errors = imported.get("errors", [])
+    recordings_found = int(imported.get("recordings_found_count") or 0)
+    imported_total = (
+        int(imported.get("imported_content_count") or 0)
+        + int(imported.get("imported_meeting_count") or 0)
+        + int(imported.get("imported_attendee_count") or 0)
+        + int(imported.get("imported_artifact_count") or 0)
+    )
     return AgentSyncResponse.model_validate(
         {
             "job_id": str(uuid.uuid4()),
             "mode": "archive",
             "status": "partial" if errors else "completed",
             "message": (
-                "Zoom sync completed. Recordings, attendees, and available transcript/chat artifacts were imported."
+                "Zoom sync completed, but no Zoom cloud recordings were found in the last year."
+                if not errors and recordings_found == 0
+                else "Zoom sync completed. No new Zoom records were imported because the available recordings already exist."
+                if not errors and imported_total == 0
+                else "Zoom sync completed. Recordings, attendees, and available transcript/chat artifacts were imported."
                 if not errors
                 else "Zoom sync partially completed. Review Zoom scopes, recording access, or transcript availability."
             ),

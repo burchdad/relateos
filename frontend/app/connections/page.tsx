@@ -213,9 +213,10 @@ export default function ConnectionsPage() {
           </div>
         ) : null}
         {syncResult && !syncResult.blockers.length ? (
-          <div className="mt-3 grid gap-2 md:grid-cols-5">
+          <div className="mt-3 grid gap-2 md:grid-cols-6">
             {[
               ["Status", syncResult.status],
+              ["Recordings found", syncResult.recordings_found_count],
               ["Content imported", syncResult.imported_content_count],
               ["Meetings imported", syncResult.imported_meeting_count],
               ["Attendees imported", syncResult.imported_attendee_count],

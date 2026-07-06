@@ -518,6 +518,7 @@ export type AgentSyncResponse = {
   imported_meeting_count: number;
   imported_attendee_count: number;
   imported_artifact_count: number;
+  recordings_found_count: number;
   errors: string[];
 };
 

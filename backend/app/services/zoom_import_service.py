@@ -22,7 +22,7 @@ ZOOM_TOKEN_URL = "https://zoom.us/oauth/token"
 
 class ZoomImportService:
     @staticmethod
-    def import_recent_recordings(db: Session, days: int = 30, workspace_id=None) -> dict:
+    def import_recent_recordings(db: Session, days: int = 365, workspace_id=None) -> dict:
         credentials = ZoomImportService._credentials(db, workspace_id)
         if not ZoomImportService._has_usable_credentials(credentials):
             return {
@@ -30,6 +30,7 @@ class ZoomImportService:
                 "imported_meeting_count": 0,
                 "imported_attendee_count": 0,
                 "imported_artifact_count": 0,
+                "recordings_found_count": 0,
                 "errors": ["Missing Zoom OAuth connection or legacy server-to-server credentials."],
             }
 
@@ -38,6 +39,7 @@ class ZoomImportService:
         imported_meetings = 0
         imported_attendees = 0
         imported_artifacts = 0
+        recordings_found = 0
 
         try:
             token = ZoomImportService._access_token(db, credentials, workspace_id)
@@ -47,21 +49,24 @@ class ZoomImportService:
                 "imported_meeting_count": 0,
                 "imported_attendee_count": 0,
                 "imported_artifact_count": 0,
+                "recordings_found_count": 0,
                 "errors": [f"Zoom token request failed: {exc}"],
             }
 
         to_date = date.today()
-        from_date = to_date - timedelta(days=min(days, 30))
+        oldest_date = to_date - timedelta(days=max(days, 1))
         user_id = credentials.get("recording_user_id") or "me"
 
         try:
-            recordings = ZoomImportService._list_recordings(token, user_id, from_date, to_date)
+            recordings = ZoomImportService._list_recordings_windowed(token, user_id, oldest_date, to_date)
+            recordings_found = len(recordings)
         except Exception as exc:
             return {
                 "imported_content_count": 0,
                 "imported_meeting_count": 0,
                 "imported_attendee_count": 0,
                 "imported_artifact_count": 0,
+                "recordings_found_count": 0,
                 "errors": [f"Zoom recording import failed: {exc}"],
             }
 
@@ -122,6 +127,7 @@ class ZoomImportService:
             "imported_meeting_count": imported_meetings,
             "imported_attendee_count": imported_attendees,
             "imported_artifact_count": imported_artifacts,
+            "recordings_found_count": recordings_found,
             "errors": errors,
         }
 
@@ -166,6 +172,7 @@ class ZoomImportService:
             "imported_meeting_count": 1,
             "imported_attendee_count": response.attendees_added,
             "imported_artifact_count": imported_artifacts,
+            "recordings_found_count": 1,
             "errors": [],
         }
 
@@ -213,13 +220,45 @@ class ZoomImportService:
 
     @staticmethod
     def _list_recordings(token: str, user_id: str, from_date: date, to_date: date) -> list[dict[str, Any]]:
+        recordings: list[dict[str, Any]] = []
+        next_page_token = ""
+        while True:
+            page = ZoomImportService._list_recordings_page(token, user_id, from_date, to_date, next_page_token)
+            recordings.extend(page.get("meetings", []))
+            next_page_token = str(page.get("next_page_token") or "")
+            if not next_page_token:
+                break
+        return recordings
+
+    @staticmethod
+    def _list_recordings_windowed(token: str, user_id: str, oldest_date: date, to_date: date) -> list[dict[str, Any]]:
+        recordings: list[dict[str, Any]] = []
+        seen = set()
+        window_end = to_date
+        while window_end >= oldest_date:
+            window_start = max(oldest_date, window_end - timedelta(days=29))
+            for recording in ZoomImportService._list_recordings(token, user_id, window_start, window_end):
+                key = str(recording.get("uuid") or recording.get("id") or recording.get("start_time") or len(seen))
+                if key in seen:
+                    continue
+                seen.add(key)
+                recordings.append(recording)
+            window_end = window_start - timedelta(days=1)
+        return recordings
+
+    @staticmethod
+    def _list_recordings_page(token: str, user_id: str, from_date: date, to_date: date, next_page_token: str = "") -> dict[str, Any]:
+        params = {
+            "from": from_date.isoformat(),
+            "to": to_date.isoformat(),
+            "page_size": 100,
+        }
+        if next_page_token:
+            params["next_page_token"] = next_page_token
+
         response = httpx.get(
             f"{ZOOM_API_BASE}/users/{user_id}/recordings",
-            params={
-                "from": from_date.isoformat(),
-                "to": to_date.isoformat(),
-                "page_size": 100,
-            },
+            params=params,
             headers={"Authorization": f"Bearer {token}"},
             timeout=30,
         )
@@ -227,17 +266,13 @@ class ZoomImportService:
             user_id = ZoomImportService._first_user_id(token)
             response = httpx.get(
                 f"{ZOOM_API_BASE}/users/{user_id}/recordings",
-                params={
-                    "from": from_date.isoformat(),
-                    "to": to_date.isoformat(),
-                    "page_size": 100,
-                },
+                params=params,
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=30,
             )
         if response.status_code >= 400:
             raise RuntimeError(ZoomImportService._error_text(response))
-        return response.json().get("meetings", [])
+        return response.json()
 
     @staticmethod
     def _first_user_id(token: str) -> str:
