@@ -1,4 +1,5 @@
 import base64
+import json
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote
@@ -128,6 +129,118 @@ class ZoomImportService:
             "imported_attendee_count": imported_attendees,
             "imported_artifact_count": imported_artifacts,
             "recordings_found_count": recordings_found,
+            "ai_notes_found_count": 0,
+            "errors": errors,
+        }
+
+    @staticmethod
+    def import_ai_companion_summaries(db: Session, days: int = 365, workspace_id=None) -> dict:
+        credentials = ZoomImportService._credentials(db, workspace_id)
+        if not ZoomImportService._has_usable_credentials(credentials):
+            return {
+                "imported_content_count": 0,
+                "imported_meeting_count": 0,
+                "imported_attendee_count": 0,
+                "imported_artifact_count": 0,
+                "recordings_found_count": 0,
+                "ai_notes_found_count": 0,
+                "errors": ["Missing Zoom OAuth connection."],
+            }
+
+        try:
+            token = ZoomImportService._access_token(db, credentials, workspace_id)
+        except Exception as exc:
+            return {
+                "imported_content_count": 0,
+                "imported_meeting_count": 0,
+                "imported_attendee_count": 0,
+                "imported_artifact_count": 0,
+                "recordings_found_count": 0,
+                "ai_notes_found_count": 0,
+                "errors": [f"Zoom token request failed: {exc}"],
+            }
+
+        to_time = datetime.now(timezone.utc)
+        from_time = to_time - timedelta(days=max(days, 1))
+        try:
+            summaries = ZoomImportService._list_meeting_summaries(token, from_time, to_time)
+        except Exception as exc:
+            return {
+                "imported_content_count": 0,
+                "imported_meeting_count": 0,
+                "imported_attendee_count": 0,
+                "imported_artifact_count": 0,
+                "recordings_found_count": 0,
+                "ai_notes_found_count": 0,
+                "errors": [f"Zoom AI summary import failed: {exc}"],
+            }
+
+        imported_meetings = 0
+        imported_artifacts = 0
+        errors: list[str] = []
+        for summary_item in summaries:
+            meeting_ref = summary_item.get("meeting_uuid") or summary_item.get("meeting_id")
+            if not meeting_ref:
+                continue
+            try:
+                detail = ZoomImportService._get_meeting_summary(token, str(meeting_ref))
+            except Exception as exc:
+                errors.append(f"Meeting summary unavailable for {summary_item.get('meeting_topic') or meeting_ref}: {exc}")
+                continue
+
+            response = MeetingService.ingest_intelligence_report(
+                db,
+                MeetingIntelligenceReportRequest(
+                    provider="zoom_ai_companion",
+                    external_meeting_id=str(detail.get("meeting_uuid") or detail.get("meeting_id") or meeting_ref),
+                    title=str(detail.get("summary_title") or detail.get("meeting_topic") or "Zoom AI Summary"),
+                    platform="zoom",
+                    meeting_url=str(detail.get("summary_doc_url") or ""),
+                    started_at=ZoomImportService._parse_zoom_time(detail.get("meeting_start_time") or detail.get("summary_start_time")),
+                    ended_at=ZoomImportService._parse_zoom_time(detail.get("meeting_end_time") or detail.get("summary_end_time")),
+                    summary=ZoomImportService._summary_text(detail),
+                    transcript=None,
+                    participants=[],
+                    raw_payload={
+                        "source": "zoom_ai_companion_summary",
+                        "summary_list_item": summary_item,
+                        "summary_detail": detail,
+                    },
+                    auto_create_contacts=True,
+                ),
+            )
+            imported_meetings += 1
+            if not ZoomImportService._ai_summary_artifact_exists(db, response.meeting_id, detail):
+                RecordingArtifactService.create(
+                    db,
+                    response.meeting_id,
+                    RecordingArtifactCreate(
+                        artifact_type="summary",
+                        file_name=ZoomImportService._ai_summary_file_name(detail),
+                        content_type="text/markdown",
+                        source_url=str(detail.get("summary_doc_url") or "") or None,
+                        text_content=ZoomImportService._summary_text(detail),
+                        file_size_bytes=len(ZoomImportService._summary_text(detail).encode("utf-8")),
+                        status="ready",
+                        extraction_notes=["Imported from Zoom AI Companion meeting summary."],
+                        raw_metadata={
+                            "source": "zoom_ai_companion_summary",
+                            "zoom_meeting_uuid": detail.get("meeting_uuid"),
+                            "zoom_meeting_id": detail.get("meeting_id"),
+                            "summary_created_time": detail.get("summary_created_time"),
+                            "summary_last_modified_time": detail.get("summary_last_modified_time"),
+                        },
+                    ),
+                )
+                imported_artifacts += 1
+
+        return {
+            "imported_content_count": 0,
+            "imported_meeting_count": imported_meetings,
+            "imported_attendee_count": 0,
+            "imported_artifact_count": imported_artifacts,
+            "recordings_found_count": 0,
+            "ai_notes_found_count": len(summaries),
             "errors": errors,
         }
 
@@ -170,11 +283,12 @@ class ZoomImportService:
         return {
             "imported_content_count": 0,
             "imported_meeting_count": 1,
-            "imported_attendee_count": response.attendees_added,
-            "imported_artifact_count": imported_artifacts,
-            "recordings_found_count": 1,
-            "errors": [],
-        }
+                "imported_attendee_count": response.attendees_added,
+                "imported_artifact_count": imported_artifacts,
+                "recordings_found_count": 1,
+                "ai_notes_found_count": 0,
+                "errors": [],
+            }
 
     @staticmethod
     def _credentials(db: Session, workspace_id=None) -> dict[str, str]:
@@ -270,6 +384,55 @@ class ZoomImportService:
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=30,
             )
+        if response.status_code >= 400:
+            raise RuntimeError(ZoomImportService._error_text(response))
+        return response.json()
+
+    @staticmethod
+    def _list_meeting_summaries(token: str, from_time: datetime, to_time: datetime) -> list[dict[str, Any]]:
+        summaries: list[dict[str, Any]] = []
+        seen = set()
+        window_end = to_time
+        while window_end >= from_time:
+            window_start = max(from_time, window_end - timedelta(days=29))
+            next_page_token = ""
+            while True:
+                params = {
+                    "from": window_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "to": window_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "page_size": 30,
+                }
+                if next_page_token:
+                    params["next_page_token"] = next_page_token
+                response = httpx.get(
+                    f"{ZOOM_API_BASE}/meetings/meeting_summaries",
+                    params=params,
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=30,
+                )
+                if response.status_code >= 400:
+                    raise RuntimeError(ZoomImportService._error_text(response))
+                payload = response.json()
+                for item in payload.get("summaries", []):
+                    key = str(item.get("meeting_uuid") or item.get("meeting_id") or item.get("summary_created_time") or len(seen))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    summaries.append(item)
+                next_page_token = str(payload.get("next_page_token") or "")
+                if not next_page_token:
+                    break
+            window_end = window_start - timedelta(seconds=1)
+        return summaries
+
+    @staticmethod
+    def _get_meeting_summary(token: str, meeting_id: str) -> dict[str, Any]:
+        encoded = quote(quote(meeting_id, safe=""), safe="")
+        response = httpx.get(
+            f"{ZOOM_API_BASE}/meetings/{encoded}/meeting_summary",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
         if response.status_code >= 400:
             raise RuntimeError(ZoomImportService._error_text(response))
         return response.json()
@@ -472,6 +635,51 @@ class ZoomImportService:
             f"Meeting ID: {recording.get('id') or 'unknown'}\n"
             f"Started: {recording.get('start_time') or 'unknown'}\n"
             f"Recording files: {file_count}"
+        )
+
+    @staticmethod
+    def _summary_text(summary: dict[str, Any]) -> str:
+        parts: list[str] = []
+        if summary.get("summary_content"):
+            parts.append(str(summary["summary_content"]))
+        elif summary.get("summary_overview"):
+            parts.append(str(summary["summary_overview"]))
+        for detail in summary.get("summary_details") or []:
+            if isinstance(detail, dict):
+                label = detail.get("label")
+                value = detail.get("summary")
+                if value:
+                    parts.append(f"## {label or 'Summary'}\n{value}")
+        next_steps = summary.get("next_steps") or []
+        if next_steps:
+            parts.append("## Next steps\n" + "\n".join(f"- {item}" for item in next_steps))
+        if not parts:
+            parts.append(json.dumps(summary, indent=2, default=str))
+        return "\n\n".join(parts)
+
+    @staticmethod
+    def _ai_summary_file_name(summary: dict[str, Any]) -> str:
+        topic = "".join(ch for ch in str(summary.get("meeting_topic") or summary.get("summary_title") or "zoom-ai-summary") if ch.isalnum() or ch in {"-", "_", " "})
+        created = ZoomImportService._parse_zoom_time(summary.get("summary_created_time") or summary.get("meeting_start_time"))
+        date_label = created.date().isoformat() if created else "unknown-date"
+        return f"{topic.strip() or 'zoom-ai-summary'}-{date_label}-ai-summary.md"
+
+    @staticmethod
+    def _ai_summary_artifact_exists(db: Session, meeting_id, summary: dict[str, Any]) -> bool:
+        metadata = {
+            "source": "zoom_ai_companion_summary",
+            "zoom_meeting_uuid": summary.get("meeting_uuid"),
+        }
+        if not summary.get("meeting_uuid"):
+            metadata = {
+                "source": "zoom_ai_companion_summary",
+                "zoom_meeting_id": summary.get("meeting_id"),
+            }
+        return (
+            db.query(RecordingArtifact)
+            .filter(RecordingArtifact.meeting_id == meeting_id, RecordingArtifact.raw_metadata.contains(metadata))
+            .first()
+            is not None
         )
 
     @staticmethod

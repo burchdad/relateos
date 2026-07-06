@@ -207,6 +207,7 @@ class ConnectionsService:
             "imported_attendee_count": 0,
             "imported_artifact_count": 0,
             "recordings_found_count": 0,
+            "ai_notes_found_count": 0,
             "errors": [],
         }
         if not blockers and mode in {"archive", "full"}:

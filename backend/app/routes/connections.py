@@ -68,6 +68,35 @@ def sync_zoom_recordings(db: Session = Depends(get_db), user: AppUser = Depends(
         + int(imported.get("imported_attendee_count") or 0)
         + int(imported.get("imported_artifact_count") or 0)
     )
+
+
+@router.post("/zoom/ai-companion/sync", response_model=AgentSyncResponse)
+def sync_zoom_ai_companion(db: Session = Depends(get_db), user: AppUser = Depends(current_user)):
+    workspace_id = _workspace_id(db, user)
+    imported = ZoomImportService.import_ai_companion_summaries(db, workspace_id=workspace_id)
+    errors = imported.get("errors", [])
+    ai_notes_found = int(imported.get("ai_notes_found_count") or 0)
+    imported_total = int(imported.get("imported_meeting_count") or 0) + int(imported.get("imported_artifact_count") or 0)
+    return AgentSyncResponse.model_validate(
+        {
+            "job_id": str(uuid.uuid4()),
+            "mode": "archive",
+            "status": "partial" if errors else "completed",
+            "message": (
+                "Zoom AI sync completed, but no AI Companion meeting summaries were found in the last year."
+                if not errors and ai_notes_found == 0
+                else "Zoom AI sync completed. No new AI Companion summaries were imported because the available notes already exist."
+                if not errors and imported_total == 0
+                else "Zoom AI sync completed. AI Companion summaries were imported into meeting intelligence."
+                if not errors
+                else "Zoom AI sync partially completed. Review Zoom meeting summary scopes or AI Companion account settings."
+            ),
+            "pipeline": ConnectionsService.overview(db, workspace_id)["pipeline"],
+            "blockers": [],
+            "requested_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            **imported,
+        }
+    )
     return AgentSyncResponse.model_validate(
         {
             "job_id": str(uuid.uuid4()),

@@ -120,6 +120,24 @@ export default function ConnectionsPage() {
     }
   };
 
+  const runZoomAiSync = async () => {
+    setSyncing("archive");
+    setMessage("");
+    setSyncResult(null);
+    try {
+      const res = await fetch(`${API_URL}/connections/zoom/ai-companion/sync`, { method: "POST" });
+      if (!res.ok) throw await apiError(res, "Could not sync Zoom AI notes");
+      const data = (await res.json()) as AgentSyncResponse;
+      setSyncResult(data);
+      setMessage(data.message);
+      await loadConnections();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not sync Zoom AI notes");
+    } finally {
+      setSyncing(null);
+    }
+  };
+
   const startOAuth = async (connectorKey: ConnectorStatus["key"]) => {
     const path =
       connectorKey === "zoom"
@@ -175,6 +193,13 @@ export default function ConnectionsPage() {
               {syncing === "archive" ? "Syncing..." : "Sync Zoom Recordings"}
             </button>
             <button
+              onClick={runZoomAiSync}
+              disabled={Boolean(syncing)}
+              className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110 disabled:opacity-50"
+            >
+              {syncing === "archive" ? "Syncing..." : "Sync Zoom AI Notes"}
+            </button>
+            <button
               onClick={() => runSync("archive")}
               disabled={Boolean(syncing)}
               className="rounded-md border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent hover:bg-accent/20 disabled:opacity-50"
@@ -213,10 +238,11 @@ export default function ConnectionsPage() {
           </div>
         ) : null}
         {syncResult && !syncResult.blockers.length ? (
-          <div className="mt-3 grid gap-2 md:grid-cols-6">
+          <div className="mt-3 grid gap-2 md:grid-cols-7">
             {[
               ["Status", syncResult.status],
               ["Recordings found", syncResult.recordings_found_count],
+              ["AI notes found", syncResult.ai_notes_found_count],
               ["Content imported", syncResult.imported_content_count],
               ["Meetings imported", syncResult.imported_meeting_count],
               ["Attendees imported", syncResult.imported_attendee_count],

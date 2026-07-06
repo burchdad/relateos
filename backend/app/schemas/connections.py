@@ -57,6 +57,7 @@ class AgentSyncResponse(BaseModel):
     imported_attendee_count: int = 0
     imported_artifact_count: int = 0
     recordings_found_count: int = 0
+    ai_notes_found_count: int = 0
     errors: list[str] = Field(default_factory=list)
 
 
