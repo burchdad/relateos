@@ -4,9 +4,127 @@ import { useMemo, useState } from "react";
 import { resolveApiUrl } from "@/components/api";
 
 const SOURCE_TYPES = [
-  "contacts", "linkedin", "webinar_attendees", "story_viewers",
+  "contacts", "google_contacts", "outlook_contacts", "mobile_contacts", "linkedin", "webinar_attendees", "story_viewers",
   "podcast_leads", "deal_list", "vendor_list", "buyer_leads", "seller_leads",
 ];
+
+const CONTACT_EXPORT_MAPPING = {
+  "Full Name": "person.full_name",
+  "First Name": "person.first_name",
+  "Last Name": "person.last_name",
+  "Name": "person.full_name",
+  "Email": "person.email",
+  "Email Address": "person.email",
+  "E-mail Address": "person.email",
+  "E-mail 1 - Value": "person.email",
+  "Phone": "person.phone",
+  "Mobile Phone": "person.phone",
+  "Phone 1 - Value": "person.phone",
+  "Company": "organization.name",
+  "Company Name": "organization.name",
+  "Organization 1 - Name": "organization.name",
+  "Title": "person.primary_role",
+  "Job Title": "person.primary_role",
+  "Organization 1 - Title": "person.primary_role",
+  "Notes": "person.notes_summary",
+  "Source": "person.source",
+};
+
+type ParsedVCardContact = {
+  fullName: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  company: string;
+  title: string;
+  notes: string;
+};
+
+const csvEscape = (value: string) => `"${String(value || "").replace(/"/g, '""')}"`;
+
+const unfoldVCardLines = (text: string) => {
+  return text.replace(/\r\n[ \t]/g, "").replace(/\n[ \t]/g, "").split(/\r?\n/);
+};
+
+const cleanVCardValue = (value: string) => {
+  return value
+    .replace(/\\n/g, " ")
+    .replace(/\\,/g, ",")
+    .replace(/\\;/g, ";")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const vCardValue = (line: string) => {
+  const index = line.indexOf(":");
+  return index >= 0 ? cleanVCardValue(line.slice(index + 1)) : "";
+};
+
+const parseVCards = (text: string): ParsedVCardContact[] => {
+  const lines = unfoldVCardLines(text);
+  const cards: string[][] = [];
+  let current: string[] = [];
+
+  lines.forEach(line => {
+    if (line.toUpperCase().startsWith("BEGIN:VCARD")) current = [];
+    else if (line.toUpperCase().startsWith("END:VCARD")) {
+      if (current.length) cards.push(current);
+      current = [];
+    } else if (current) current.push(line);
+  });
+
+  return cards.map(card => {
+    const contact: ParsedVCardContact = {
+      fullName: "",
+      firstName: "",
+      lastName: "",
+      email: "",
+      phone: "",
+      company: "",
+      title: "",
+      notes: "",
+    };
+
+    card.forEach(line => {
+      const key = line.split(/[;:]/)[0]?.toUpperCase();
+      const value = vCardValue(line);
+      if (!value) return;
+      if (key === "FN") contact.fullName = contact.fullName || value;
+      if (key === "N") {
+        const [lastName = "", firstName = ""] = value.split(";");
+        contact.firstName = contact.firstName || firstName;
+        contact.lastName = contact.lastName || lastName;
+      }
+      if (key === "EMAIL") contact.email = contact.email || value;
+      if (key === "TEL") contact.phone = contact.phone || value;
+      if (key === "ORG") contact.company = contact.company || value.split(";")[0];
+      if (key === "TITLE") contact.title = contact.title || value;
+      if (key === "NOTE") contact.notes = contact.notes || value;
+    });
+
+    if (!contact.fullName) {
+      contact.fullName = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
+    }
+    return contact;
+  }).filter(contact => contact.fullName || contact.email || contact.phone);
+};
+
+const contactsToCsvBlob = (contacts: ParsedVCardContact[], source: string) => {
+  const headers = ["Full Name", "First Name", "Last Name", "Email", "Phone", "Company", "Title", "Notes", "Source"];
+  const rows = contacts.map(contact => [
+    contact.fullName,
+    contact.firstName,
+    contact.lastName,
+    contact.email,
+    contact.phone,
+    contact.company,
+    contact.title,
+    contact.notes,
+    source,
+  ].map(csvEscape).join(","));
+  return new Blob([[headers.join(","), ...rows].join("\n")], { type: "text/csv;charset=utf-8" });
+};
 
 type MapResult = {
   suggested_table: string;
@@ -77,6 +195,9 @@ export default function ImportsPage() {
   const [selectedAnalyzeSheets, setSelectedAnalyzeSheets] = useState<string[]>([]);
   const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
   const [importError, setImportError] = useState<string>("");
+  const [contactExportFile, setContactExportFile] = useState<File | null>(null);
+  const [importingContactExport, setImportingContactExport] = useState(false);
+  const [vcardPreviewCount, setVcardPreviewCount] = useState<number | null>(null);
 
   // Engagement import
   const [engageRows, setEngageRows] = useState("");
@@ -276,14 +397,54 @@ export default function ImportsPage() {
     }
   };
 
+  const importContactExportFile = async (file: File, sourceLabel: string) => {
+    setImportingContactExport(true);
+    setUploadResult(null);
+    setImportError("");
+    try {
+      const lowerName = file.name.toLowerCase();
+      const formData = new FormData();
+
+      if (lowerName.endsWith(".vcf") || lowerName.endsWith(".vcard")) {
+        const contacts = parseVCards(await file.text());
+        if (!contacts.length) {
+          setImportError("No contacts were found in that vCard file.");
+          return;
+        }
+        setVcardPreviewCount(contacts.length);
+        formData.append("file", contactsToCsvBlob(contacts, sourceLabel), `${sourceLabel.toLowerCase().replace(/\s+/g, "-")}-contacts.csv`);
+      } else {
+        formData.append("file", file);
+        setVcardPreviewCount(null);
+      }
+
+      formData.append("source_type", "contacts");
+      formData.append("include_all_sheets", "false");
+      formData.append("mapping_override_json", JSON.stringify(CONTACT_EXPORT_MAPPING));
+
+      const res = await fetch(`${API_URL}/imports/upload`, { method: "POST", body: formData });
+      const body = await res.json();
+      if (!res.ok) {
+        setImportError(String(body?.detail || "Contact import failed"));
+        return;
+      }
+      setUploadResult(body as UploadResult);
+    } finally {
+      setImportingContactExport(false);
+    }
+  };
+
   // Active import mode
-  const [importMode, setImportMode] = useState<"file" | "url" | "engagement" | "columns">("file");
+  const [importMode, setImportMode] = useState<"file" | "google_contacts" | "outlook_contacts" | "mobile_contacts" | "url" | "engagement" | "columns">("file");
 
   const isFileBusy = uploadingWorkbook || analyzing;
   const isUrlBusy = importingUrl || analyzing;
 
   const IMPORT_MODES = [
     { id: "file", label: "File Upload", desc: "Excel (.xlsx) or CSV" },
+    { id: "google_contacts", label: "Google Contacts", desc: "Gmail contact export" },
+    { id: "outlook_contacts", label: "Outlook Contacts", desc: "Microsoft 365 export" },
+    { id: "mobile_contacts", label: "Mobile Contacts", desc: "iPhone / Android vCard" },
     { id: "url", label: "Google Sheets", desc: "Paste a public spreadsheet URL" },
     { id: "engagement", label: "Engagement Events", desc: "Story views, webinars, social" },
     { id: "columns", label: "Column Mapper", desc: "Paste headers, let AI map them" },
@@ -311,11 +472,19 @@ export default function ImportsPage() {
       </div>
 
       {/* Step 1 — Source Selector */}
-      <div className="rounded-xl border border-soft bg-panel p-1 flex gap-1">
+      <div className="rounded-xl border border-soft bg-panel p-1 grid gap-1 sm:grid-cols-2 lg:grid-cols-4">
         {IMPORT_MODES.map(m => (
           <button
             key={m.id}
-            onClick={() => { setImportMode(m.id); setUploadResult(null); setImportError(""); setAnalysis(null); setShowAnalysisModal(false); }}
+            onClick={() => {
+              setImportMode(m.id);
+              setUploadResult(null);
+              setImportError("");
+              setAnalysis(null);
+              setShowAnalysisModal(false);
+              setContactExportFile(null);
+              setVcardPreviewCount(null);
+            }}
             className={`flex-1 rounded-lg px-4 py-3 text-left transition ${importMode === m.id ? "bg-accent/20 border border-accent/40" : "hover:bg-base border border-transparent"}`}
           >
             <p className={`text-sm font-medium ${importMode === m.id ? "text-accent" : "text-text"}`}>{m.label}</p>
@@ -338,6 +507,71 @@ export default function ImportsPage() {
                 onChange={e => { setUploadFile(e.target.files?.[0] ?? null); setUploadResult(null); setAnalysis(null); setShowAnalysisModal(false); }}
                 className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text file:mr-3 file:border-0 file:bg-accent/15 file:px-3 file:py-1.5 file:text-accent"
               />
+            </div>
+          </div>
+        )}
+
+        {/* EMAIL + MOBILE CONTACT EXPORTS */}
+        {(importMode === "google_contacts" || importMode === "outlook_contacts" || importMode === "mobile_contacts") && (
+          <div className="space-y-5">
+            <div className="grid gap-3 md:grid-cols-3">
+              {[
+                ["Google Contacts", "Export contacts.google.com as Google CSV or vCard.", importMode === "google_contacts"],
+                ["Outlook Contacts", "Export People / Contacts as CSV from Microsoft 365.", importMode === "outlook_contacts"],
+                ["Mobile Contacts", "Export iPhone or Android contacts as .vcf / vCard.", importMode === "mobile_contacts"],
+              ].map(([title, copy, active]) => (
+                <div key={String(title)} className={`rounded-lg border p-4 ${active ? "border-accent/40 bg-accent/5" : "border-soft bg-base"}`}>
+                  <p className="font-semibold text-text">{String(title)}</p>
+                  <p className="mt-1 text-xs text-muted">{String(copy)}</p>
+                </div>
+              ))}
+            </div>
+
+            <div>
+              <label className="text-xs text-muted uppercase tracking-wide block mb-1">
+                {importMode === "mobile_contacts" ? "vCard contact file" : "Exported contacts file"}
+              </label>
+              <input
+                type="file"
+                accept={importMode === "mobile_contacts" ? ".vcf,.vcard" : ".csv,.vcf,.vcard"}
+                onChange={e => {
+                  const file = e.target.files?.[0] ?? null;
+                  setContactExportFile(file);
+                  setUploadResult(null);
+                  setImportError("");
+                  setVcardPreviewCount(null);
+                }}
+                className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text file:mr-3 file:border-0 file:bg-accent/15 file:px-3 file:py-1.5 file:text-accent"
+              />
+              <p className="text-xs text-muted mt-2">
+                {importMode === "google_contacts"
+                  ? "Direct Google Contacts sync will live in Connections. For now, export Google CSV or vCard and upload it here."
+                  : importMode === "outlook_contacts"
+                    ? "Direct Microsoft Graph sync will live in Connections. For now, upload an Outlook People CSV export."
+                    : "iPhone and Android contact exports usually download as .vcf files. RelateOS converts them to contacts before import."}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={() => contactExportFile && importContactExportFile(
+                  contactExportFile,
+                  importMode === "google_contacts" ? "Google Contacts" : importMode === "outlook_contacts" ? "Outlook Contacts" : "Mobile Contacts"
+                )}
+                disabled={!contactExportFile || importingContactExport}
+                className="rounded-lg bg-accent/20 border border-accent/40 px-5 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition disabled:opacity-50"
+              >
+                {importingContactExport ? "Importing..." : "Import Contacts"}
+              </button>
+              <a
+                href="/connections"
+                className="rounded-lg border border-soft px-5 py-2 text-sm font-medium text-text hover:bg-base transition"
+              >
+                Open Connections
+              </a>
+              {vcardPreviewCount !== null ? (
+                <p className="text-xs text-muted">Parsed {vcardPreviewCount.toLocaleString()} vCard contact(s).</p>
+              ) : null}
             </div>
           </div>
         )}
