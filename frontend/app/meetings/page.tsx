@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { upload } from "@vercel/blob/client";
 import { resolveApiUrl } from "@/components/api";
 import type {
@@ -29,8 +29,6 @@ export default function MeetingsPage() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ title: "", platform: "zoom", meeting_url: "", transcript: "" });
-  const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<Meeting | null>(null);
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
@@ -60,7 +58,7 @@ export default function MeetingsPage() {
   const [ingestingReport, setIngestingReport] = useState(false);
   const [showAdvancedReport, setShowAdvancedReport] = useState(false);
 
-  const fetchMeetings = async () => {
+  const fetchMeetings = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(`${API_URL}/meetings`, { cache: "no-store" });
@@ -68,9 +66,9 @@ export default function MeetingsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [API_URL]);
 
-  useEffect(() => { fetchMeetings(); }, []);
+  useEffect(() => { void fetchMeetings(); }, [fetchMeetings]);
 
   const fetchRecordingArtifacts = async (meetingId: string) => {
     const [artifactsRes, summaryRes] = await Promise.all([
@@ -92,30 +90,10 @@ export default function MeetingsPage() {
     await fetchRecordingArtifacts(meeting.id);
   };
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      const res = await fetch(`${API_URL}/meetings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      if (res.ok) {
-        setShowForm(false);
-        setForm({ title: "", platform: "zoom", meeting_url: "", transcript: "" });
-        await fetchMeetings();
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleImportAttendees = async () => {
     if (!selected || !importText.trim()) return;
     setImporting(true);
     try {
-      // Parse CSV-like pasted text: name,email
       const rows = importText.split("\n").filter(Boolean).map(line => {
         const [name, email] = line.split(",").map(s => s.trim());
         return { name, email, attendance_status: "attended" };
@@ -227,12 +205,12 @@ export default function MeetingsPage() {
       }
 
       if (textFiles.length) {
-      const formData = new FormData();
+        const formData = new FormData();
         textFiles.forEach(file => formData.append("files", file));
-      const res = await fetch(`${API_URL}/meetings/${selected.id}/recording-artifacts/upload`, {
-        method: "POST",
-        body: formData,
-      });
+        const res = await fetch(`${API_URL}/meetings/${selected.id}/recording-artifacts/upload`, {
+          method: "POST",
+          body: formData,
+        });
         if (!res.ok) return;
       }
 
@@ -248,9 +226,7 @@ export default function MeetingsPage() {
     setTranscribingArtifacts(true);
     setTranscriptionResult(null);
     try {
-      const res = await fetch(`${API_URL}/meetings/${selected.id}/recording-artifacts/transcribe-pending`, {
-        method: "POST",
-      });
+      const res = await fetch(`${API_URL}/meetings/${selected.id}/recording-artifacts/transcribe-pending`, { method: "POST" });
       const body = await res.json();
       if (res.ok) {
         setTranscriptionResult(body);
@@ -282,14 +258,16 @@ export default function MeetingsPage() {
       const body = await res.json();
       if (!res.ok) {
         setReportStatus(String(body?.detail || "Failed to ingest meeting report."));
-        return;
+        return false;
       }
       setReportStatus(
         `Captured meeting ${body.meeting_id}: ${body.attendees_added} attendees, ${body.contacts_created} contacts, ${body.relationship_edges_created} graph edges.`
       );
       await fetchMeetings();
+      return true;
     } catch (error) {
       setReportStatus(error instanceof Error ? error.message : "Could not capture meeting report.");
+      return false;
     } finally {
       setIngestingReport(false);
     }
@@ -311,7 +289,7 @@ export default function MeetingsPage() {
       .filter(Boolean)
       .map(text => ({ text }));
 
-    await ingestReportPayload({
+    const captured = await ingestReportPayload({
       ...reportForm,
       title: reportForm.title.trim(),
       participants,
@@ -319,199 +297,261 @@ export default function MeetingsPage() {
       auto_create_contacts: true,
     });
 
-    setReportForm({ title: "", provider: "read_ai", platform: "zoom", meeting_url: "", summary: "", transcript: "" });
-    setParticipantText("");
-    setActionText("");
+    if (captured) {
+      setReportForm({ title: "", provider: "read_ai", platform: "zoom", meeting_url: "", summary: "", transcript: "" });
+      setParticipantText("");
+      setActionText("");
+      setShowForm(false);
+    }
   };
 
   const handleAdvancedJsonCapture = async () => {
     if (!reportJson.trim()) return;
     try {
       const parsed = JSON.parse(reportJson);
-      await ingestReportPayload(parsed);
-      setReportJson("");
+      const captured = await ingestReportPayload(parsed);
+      if (captured) {
+        setReportJson("");
+        setShowForm(false);
+      }
     } catch (error) {
       setReportStatus(error instanceof Error ? error.message : "Invalid JSON report.");
     }
   };
 
+  const totalAttendees = meetings.reduce((sum, meeting) => sum + meeting.attendees.length, 0);
+  const meetingsWithNotes = meetings.filter(meeting => meeting.transcript || meeting.summary).length;
+  const needsReview = meetings.filter(meeting => !meeting.summary && !meeting.transcript && meeting.attendees.length === 0).length;
+  const selectedArtifactCount = artifactSummary ? artifactSummary.total : 0;
+
+  const captureModal = showForm ? (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-forest/70 px-4 py-8 backdrop-blur-sm">
+      <div className="w-full max-w-5xl rounded-xl border border-soft bg-panel shadow-xl">
+        <div className="flex items-start justify-between gap-4 border-b border-soft px-5 py-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.22em] text-accent">Meeting Capture</p>
+            <h3 className="mt-1 text-lg font-semibold text-text">Add meeting intelligence</h3>
+            <p className="mt-1 text-sm text-muted">Paste notes, attendees, transcripts, or an exported AI report.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowForm(false)}
+            className="rounded-lg border border-soft bg-base px-3 py-2 text-sm font-medium text-muted transition hover:text-text"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="space-y-4 p-5">
+          <div className="grid gap-3 md:grid-cols-2">
+            <input
+              required
+              value={reportForm.title}
+              onChange={e => setReportForm(p => ({ ...p, title: e.target.value }))}
+              placeholder="Meeting title"
+              className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <select
+                value={reportForm.platform}
+                onChange={e => setReportForm(p => ({ ...p, platform: e.target.value }))}
+                className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60"
+              >
+                {["zoom", "google_meet", "teams", "phone", "in_person", "other"].map(platform => (
+                  <option key={platform} value={platform}>{platform.replace(/_/g, " ")}</option>
+                ))}
+              </select>
+              <select
+                value={reportForm.provider}
+                onChange={e => setReportForm(p => ({ ...p, provider: e.target.value }))}
+                className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60"
+              >
+                <option value="read_ai">Read.ai</option>
+                <option value="zoom_ai">Zoom AI</option>
+                <option value="manual">Manual notes</option>
+                <option value="skool">Skool</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <input
+              value={reportForm.meeting_url}
+              onChange={e => setReportForm(p => ({ ...p, meeting_url: e.target.value }))}
+              placeholder="Meeting link or recording URL"
+              className="md:col-span-2 rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+            />
+            <textarea
+              value={reportForm.summary}
+              onChange={e => setReportForm(p => ({ ...p, summary: e.target.value }))}
+              placeholder="Meeting summary"
+              className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-28 resize-none"
+            />
+            <textarea
+              value={participantText}
+              onChange={e => setParticipantText(e.target.value)}
+              placeholder={"Attendees: one per line\nAlex Lee, alex@example.com, SF Buyer\nMorgan Smith, morgan@example.com, CRE Seller"}
+              className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-28 resize-none"
+            />
+            <textarea
+              value={actionText}
+              onChange={e => setActionText(e.target.value)}
+              placeholder={"Action items: one per line\nSend deal packet\nSchedule follow-up call"}
+              className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-24 resize-none"
+            />
+            <textarea
+              value={reportForm.transcript}
+              onChange={e => setReportForm(p => ({ ...p, transcript: e.target.value }))}
+              placeholder="Transcript or raw notes"
+              className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-24 resize-none"
+            />
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={handleSimpleReportCapture}
+              disabled={ingestingReport || !reportForm.title.trim()}
+              className="rounded-lg bg-accent border border-accent px-4 py-2 text-sm font-semibold text-forest transition hover:bg-accent/90 disabled:opacity-50"
+            >
+              {ingestingReport ? "Capturing..." : "Capture Meeting"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAdvancedReport(v => !v)}
+              className="rounded-lg border border-soft bg-base px-3 py-2 text-sm font-medium text-muted transition hover:text-text"
+            >
+              {showAdvancedReport ? "Hide JSON" : "Advanced JSON"}
+            </button>
+            {reportStatus ? <p className="text-xs text-muted">{reportStatus}</p> : null}
+          </div>
+
+          {showAdvancedReport && (
+            <div className="rounded-lg border border-soft bg-base/60 p-3 space-y-3">
+              <textarea
+                value={reportJson}
+                onChange={e => setReportJson(e.target.value)}
+                placeholder='{"provider":"read_ai","title":"Investor call","summary":"...","action_items":[{"text":"Send deal packet"}],"participants":[{"name":"Alex Lee","email":"alex@example.com"}]}'
+                className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-28 resize-none"
+              />
+              <button
+                onClick={handleAdvancedJsonCapture}
+                disabled={ingestingReport || !reportJson.trim()}
+                className="rounded-lg bg-soft/30 border border-soft px-4 py-2 text-sm font-medium text-muted hover:text-text transition disabled:opacity-50"
+              >
+                Capture JSON
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold text-text">Meeting Intelligence</h2>
-          <p className="text-sm text-muted mt-1">Import attendees, paste transcripts, and generate AI follow-ups.</p>
+          <p className="text-xs uppercase tracking-[0.22em] text-accent">Meeting Intelligence</p>
+          <h2 className="mt-1 text-2xl font-semibold text-text">Meetings</h2>
+          <p className="text-sm text-muted mt-1">Review calls, transcripts, attendees, and follow-ups from one workspace.</p>
         </div>
-        <button onClick={() => setShowForm(true)} className="rounded-lg bg-accent/20 border border-accent/40 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition">
+        <button onClick={() => setShowForm(true)} className="rounded-lg bg-accent border border-accent px-4 py-2 text-sm font-semibold text-forest hover:bg-accent/90 transition">
           + Add Meeting
         </button>
       </div>
 
-      {showForm && (
-        <div className="rounded-xl border border-accent/30 bg-panel p-5">
-          <h3 className="font-semibold text-text mb-4">New Meeting / Webinar</h3>
-          <form onSubmit={handleCreate} className="grid grid-cols-2 gap-3">
-            <input required placeholder="Meeting Title" value={form.title}
-              onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
-              className="col-span-2 rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
-            />
-            <select value={form.platform} onChange={e => setForm(p => ({ ...p, platform: e.target.value }))}
-              className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none">
-              {["zoom", "google_meet", "teams", "other"].map(p => <option key={p} value={p}>{p}</option>)}
-            </select>
-            <input placeholder="Meeting URL" value={form.meeting_url}
-              onChange={e => setForm(p => ({ ...p, meeting_url: e.target.value }))}
-              className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
-            />
-            <textarea placeholder="Paste transcript or notes…" value={form.transcript}
-              onChange={e => setForm(p => ({ ...p, transcript: e.target.value }))}
-              className="col-span-2 rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-28 resize-none"
-            />
-            <div className="col-span-2 flex gap-3 justify-end">
-              <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-muted hover:text-text transition">Cancel</button>
-              <button type="submit" disabled={saving} className="rounded-lg bg-accent/20 border border-accent/40 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition">
-                {saving ? "Saving…" : "Save Meeting"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      <div className="rounded-xl border border-accent/30 bg-panel p-5 space-y-4">
-        <div>
-          <p className="font-medium text-text text-sm">Capture Meeting Notes</p>
-          <p className="text-xs text-muted mt-1">
-            Add a meeting summary, action items, and attendees. RelateOS will create contacts and update the network graph.
-          </p>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <input
-            required
-            value={reportForm.title}
-            onChange={e => setReportForm(p => ({ ...p, title: e.target.value }))}
-            placeholder="Meeting title"
-            className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
-          />
-          <div className="grid grid-cols-2 gap-3">
-            <select
-              value={reportForm.platform}
-              onChange={e => setReportForm(p => ({ ...p, platform: e.target.value }))}
-              className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60"
-            >
-              {["zoom", "google_meet", "teams", "phone", "in_person", "other"].map(platform => (
-                <option key={platform} value={platform}>{platform.replace(/_/g, " ")}</option>
-              ))}
-            </select>
-            <select
-              value={reportForm.provider}
-              onChange={e => setReportForm(p => ({ ...p, provider: e.target.value }))}
-              className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60"
-            >
-              <option value="read_ai">Read.ai</option>
-              <option value="skool">Skool</option>
-              <option value="zoom_ai">Zoom AI</option>
-              <option value="manual">Manual notes</option>
-              <option value="other">Other</option>
-            </select>
+      <div className="grid gap-3 md:grid-cols-4">
+        {[
+          ["Total meetings", meetings.length],
+          ["Needs review", needsReview],
+          ["With notes", meetingsWithNotes],
+          ["Attendees", totalAttendees],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-lg border border-soft bg-panel px-4 py-3">
+            <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
+            <p className="mt-1 text-2xl font-semibold text-text">{value}</p>
           </div>
-          <input
-            value={reportForm.meeting_url}
-            onChange={e => setReportForm(p => ({ ...p, meeting_url: e.target.value }))}
-            placeholder="Meeting link"
-            className="md:col-span-2 rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
-          />
-          <textarea
-            value={reportForm.summary}
-            onChange={e => setReportForm(p => ({ ...p, summary: e.target.value }))}
-            placeholder="Meeting summary"
-            className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-28 resize-none"
-          />
-          <textarea
-            value={participantText}
-            onChange={e => setParticipantText(e.target.value)}
-            placeholder={"Attendees: one per line\nAlex Lee, alex@example.com, SF Buyer\nMorgan Smith, morgan@example.com, CRE Seller"}
-            className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-28 resize-none"
-          />
-          <textarea
-            value={actionText}
-            onChange={e => setActionText(e.target.value)}
-            placeholder={"Action items: one per line\nSend deal packet\nSchedule follow-up call"}
-            className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-24 resize-none"
-          />
-          <textarea
-            value={reportForm.transcript}
-            onChange={e => setReportForm(p => ({ ...p, transcript: e.target.value }))}
-            placeholder="Transcript or raw notes"
-            className="rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-24 resize-none"
-          />
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <button
-            onClick={handleSimpleReportCapture}
-            disabled={ingestingReport || !reportForm.title.trim()}
-            className="rounded-lg bg-accent/20 border border-accent/40 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition disabled:opacity-50"
-          >
-            {ingestingReport ? "Capturing..." : "Capture Meeting"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowAdvancedReport(v => !v)}
-            className="px-3 py-2 text-xs text-muted hover:text-text transition"
-          >
-            {showAdvancedReport ? "Hide advanced JSON" : "Advanced JSON"}
-          </button>
-          {reportStatus ? <p className="text-xs text-muted">{reportStatus}</p> : null}
-        </div>
-        {showAdvancedReport && (
-          <div className="rounded-lg border border-soft bg-base/60 p-3 space-y-3">
-            <textarea
-              value={reportJson}
-              onChange={e => setReportJson(e.target.value)}
-              placeholder='{"provider":"read_ai","title":"Investor call","summary":"...","action_items":[{"text":"Send deal packet"}],"participants":[{"name":"Alex Lee","email":"alex@example.com"}]}'
-              className="w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60 h-28 resize-none"
-            />
-            <button
-              onClick={handleAdvancedJsonCapture}
-              disabled={ingestingReport || !reportJson.trim()}
-              className="rounded-lg bg-soft/30 border border-soft px-4 py-2 text-sm font-medium text-muted hover:text-text transition disabled:opacity-50"
-            >
-              Capture JSON
-            </button>
-          </div>
-        )}
+        ))}
       </div>
 
-      <div className="grid md:grid-cols-3 gap-6">
-        {/* Meeting list */}
-        <div className="space-y-3">
-          {loading && <p className="text-muted text-sm">Loading…</p>}
-          {!loading && meetings.length === 0 && <p className="text-muted text-sm">No meetings yet.</p>}
-          {meetings.map(m => (
-            <div key={m.id} onClick={() => { void selectMeeting(m); }}
-              className={`rounded-xl border p-4 cursor-pointer transition hover:border-accent/40 ${selected?.id === m.id ? "border-accent/60 bg-panel" : "border-soft bg-panel/50"}`}>
-              <p className="font-medium text-text text-sm">{m.title}</p>
-              <p className="text-xs text-muted mt-1">{m.platform || "Meeting"} · {m.attendees.length} attendees</p>
-              {m.scheduled_at && <p className="text-xs text-muted mt-1">{new Date(m.scheduled_at).toLocaleDateString()}</p>}
-            </div>
-          ))}
-        </div>
+      {captureModal}
 
-        {/* Detail panel */}
-        {selected && (
-          <div className="md:col-span-2 space-y-5">
+      <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+        <section className="rounded-xl border border-soft bg-panel p-4">
+          <h3 className="font-semibold text-text">Meeting Inbox</h3>
+          <p className="mt-1 text-xs text-muted">Select a meeting to review notes, artifacts, attendees, and follow-up drafts.</p>
+
+          <div className="mt-4 space-y-3">
+            {loading && <p className="text-muted text-sm">Loading...</p>}
+            {!loading && meetings.length === 0 && (
+              <div className="rounded-lg border border-soft bg-base p-4">
+                <p className="font-medium text-text text-sm">No meetings yet.</p>
+                <p className="mt-1 text-xs text-muted">Connect Zoom or add meeting notes manually to start building relationship intelligence.</p>
+                <button
+                  onClick={() => setShowForm(true)}
+                  className="mt-4 rounded-lg bg-accent/20 border border-accent/40 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition"
+                >
+                  Add Meeting Notes
+                </button>
+              </div>
+            )}
+            {meetings.map(meeting => (
+              <button
+                type="button"
+                key={meeting.id}
+                onClick={() => { void selectMeeting(meeting); }}
+                className={`w-full rounded-lg border p-4 text-left transition hover:border-accent/40 ${selected?.id === meeting.id ? "border-accent/70 bg-base" : "border-soft bg-base/70"}`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-text text-sm">{meeting.title}</p>
+                    <p className="text-xs text-muted mt-1">{meeting.platform || "Meeting"} · {meeting.attendees.length} attendees</p>
+                  </div>
+                  <span className="rounded-full border border-soft bg-panel px-2 py-1 text-[11px] uppercase tracking-wide text-muted">
+                    {meeting.summary || meeting.transcript ? "Notes" : "Raw"}
+                  </span>
+                </div>
+                {meeting.scheduled_at && <p className="text-xs text-muted mt-2">{new Date(meeting.scheduled_at).toLocaleDateString()}</p>}
+                {meeting.summary && <p className="mt-3 line-clamp-2 text-xs text-muted">{meeting.summary}</p>}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {selected ? (
+          <section className="space-y-5">
             <div className="rounded-xl border border-soft bg-panel p-5">
-              <h3 className="font-semibold text-text mb-1">{selected.title}</h3>
-              <p className="text-xs text-muted">{selected.platform} · {selected.attendees.length} attendees</p>
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h3 className="font-semibold text-text mb-1">{selected.title}</h3>
+                  <p className="text-xs text-muted">{selected.platform || "Meeting"} · {selected.attendees.length} attendees</p>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  {[
+                    ["Artifacts", selectedArtifactCount],
+                    ["Actions", selected.action_items?.length || 0],
+                    ["People", selected.attendees.length],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-lg border border-soft bg-base px-3 py-2">
+                      <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
+                      <p className="text-lg font-semibold text-text">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
               {selected.summary && <p className="text-sm text-muted mt-3">{selected.summary}</p>}
+              {selected.action_items?.length ? (
+                <div className="mt-4 grid gap-2">
+                  {selected.action_items.slice(0, 3).map(item => (
+                    <p key={item} className="rounded-md border border-soft bg-base px-3 py-2 text-xs text-muted">{item}</p>
+                  ))}
+                </div>
+              ) : null}
             </div>
 
             <div className="rounded-xl border border-accent/30 bg-panel p-5 space-y-3">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="font-medium text-text text-sm">AI Recording Intelligence</p>
-                  <p className="mt-1 text-xs text-muted">
-                    Scan captions, transcripts, or accessible replay media for participant signals, action items, summaries, and follow-up context.
-                  </p>
+                  <p className="mt-1 text-xs text-muted">Scan captions, transcripts, or accessible replay media for participant signals, action items, summaries, and follow-up context.</p>
                 </div>
                 <button
                   onClick={handleAnalyzeRecording}
@@ -527,12 +567,10 @@ export default function MeetingsPage() {
                   <input
                     value={recordingAccessUrl}
                     onChange={e => setRecordingAccessUrl(e.target.value)}
-                    placeholder="Paste the Zoom rec/play URL after registration"
+                    placeholder="Paste the Zoom recording or replay URL"
                     className="mt-2 w-full rounded-lg border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
                   />
-                  <p className="mt-2 text-xs text-muted">
-                    Use the authorized Zoom play page when a Skool link opens a registration screen; RelateOS inspects that page for chat, captions, and download assets.
-                  </p>
+                  <p className="mt-2 text-xs text-muted">Use this when the meeting record needs a recording page before it can be analyzed.</p>
                 </div>
                 <button
                   onClick={handleSaveRecordingAccessUrl}
@@ -586,9 +624,7 @@ export default function MeetingsPage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="font-medium text-text text-sm">Recording Artifacts</p>
-                  <p className="mt-1 text-xs text-muted">
-                    Upload Zoom chat, captions, transcripts, audio, or video files from the recording download menu.
-                  </p>
+                  <p className="mt-1 text-xs text-muted">Upload Zoom chat, captions, transcripts, audio, or video files from the recording download menu.</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <button
@@ -614,9 +650,7 @@ export default function MeetingsPage() {
               {transcriptionResult ? (
                 <div className="rounded-lg border border-soft bg-base p-3">
                   <p className="text-xs uppercase tracking-wide text-muted">Transcription</p>
-                  <p className="mt-1 text-sm text-text">
-                    Processed {transcriptionResult.processed}; created {transcriptionResult.transcripts_created} transcript artifact(s).
-                  </p>
+                  <p className="mt-1 text-sm text-text">Processed {transcriptionResult.processed}; created {transcriptionResult.transcripts_created} transcript artifact(s).</p>
                   {transcriptionResult.errors.map(error => (
                     <p key={error} className="mt-1 text-xs text-muted">{error}</p>
                   ))}
@@ -645,9 +679,7 @@ export default function MeetingsPage() {
                         <p className="text-sm font-medium text-text">{artifact.file_name || artifact.artifact_type}</p>
                         <span className="text-xs uppercase tracking-wide text-muted">{artifact.status.replace(/_/g, " ")}</span>
                       </div>
-                      <p className="mt-1 text-xs text-muted">
-                        {artifact.artifact_type} · {Math.round(artifact.file_size_bytes / 1024)} KB
-                      </p>
+                      <p className="mt-1 text-xs text-muted">{artifact.artifact_type} · {Math.round(artifact.file_size_bytes / 1024)} KB</p>
                       {artifact.extraction_notes.slice(0, 2).map(note => (
                         <p key={note} className="mt-1 text-xs text-muted">{note}</p>
                       ))}
@@ -659,7 +691,6 @@ export default function MeetingsPage() {
               )}
             </div>
 
-            {/* Import attendees */}
             <div className="rounded-xl border border-soft bg-panel p-5 space-y-3">
               <p className="font-medium text-text text-sm">Manual Attendee Fallback</p>
               <p className="text-xs text-muted">Paste rows as: Name, Email (one per line)</p>
@@ -669,23 +700,22 @@ export default function MeetingsPage() {
               />
               <button onClick={handleImportAttendees} disabled={importing || !importText.trim()}
                 className="rounded-lg bg-accent/20 border border-accent/40 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition disabled:opacity-50">
-                {importing ? "Importing…" : "Import Attendees"}
+                {importing ? "Importing..." : "Import Attendees"}
               </button>
             </div>
 
-            {/* Attendees */}
             {selected.attendees.length > 0 && (
               <div className="rounded-xl border border-soft bg-panel p-5">
                 <p className="font-medium text-text text-sm mb-3">Attendees ({selected.attendees.length})</p>
                 <div className="space-y-2">
-                  {selected.attendees.map(a => (
-                    <div key={a.id} className="flex items-center justify-between text-sm">
+                  {selected.attendees.map(attendee => (
+                    <div key={attendee.id} className="flex items-center justify-between text-sm">
                       <div>
-                        <span className="text-text">{a.name || "—"}</span>
-                        {a.email && <span className="text-muted ml-2">{a.email}</span>}
+                        <span className="text-text">{attendee.name || "-"}</span>
+                        {attendee.email && <span className="text-muted ml-2">{attendee.email}</span>}
                       </div>
-                      <span className={`text-xs capitalize ${a.followup_status === "sent" ? "text-green-400" : "text-muted"}`}>
-                        {a.followup_status.replace(/_/g, " ")}
+                      <span className={`text-xs capitalize ${attendee.followup_status === "sent" ? "text-green-700" : "text-muted"}`}>
+                        {attendee.followup_status.replace(/_/g, " ")}
                       </span>
                     </div>
                   ))}
@@ -693,13 +723,12 @@ export default function MeetingsPage() {
               </div>
             )}
 
-            {/* Generate follow-ups */}
             <div className="rounded-xl border border-soft bg-panel p-5 space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <p className="font-medium text-text text-sm">AI Follow-Up Generator</p>
                 <button onClick={handleGenerateFollowups} disabled={generating}
                   className="rounded-lg bg-accent/20 border border-accent/40 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition disabled:opacity-50">
-                  {generating ? "Generating…" : "Generate Follow-Ups"}
+                  {generating ? "Generating..." : "Generate Follow-Ups"}
                 </button>
               </div>
               {followups && (
@@ -709,18 +738,38 @@ export default function MeetingsPage() {
                     <p className="text-sm text-text">{String((followups as Record<string, unknown>).summary)}</p>
                   </div>
                   {Array.isArray((followups as Record<string, unknown>).followup_drafts) &&
-                    ((followups as Record<string, unknown>).followup_drafts as Record<string, unknown>[]).slice(0, 3).map((d, i) => (
-                      <div key={i} className="rounded-lg border border-soft bg-base p-3 space-y-1">
-                        <p className="text-xs font-medium text-accent">{String(d.attendee_name)}</p>
-                        <p className="text-xs text-muted font-medium">{String(d.subject)}</p>
-                        <p className="text-xs text-muted whitespace-pre-wrap">{String(d.body)}</p>
+                    ((followups as Record<string, unknown>).followup_drafts as Record<string, unknown>[]).slice(0, 3).map((draft, index) => (
+                      <div key={index} className="rounded-lg border border-soft bg-base p-3 space-y-1">
+                        <p className="text-xs font-medium text-accent">{String(draft.attendee_name)}</p>
+                        <p className="text-xs text-muted font-medium">{String(draft.subject)}</p>
+                        <p className="text-xs text-muted whitespace-pre-wrap">{String(draft.body)}</p>
                       </div>
                     ))
                   }
                 </div>
               )}
             </div>
-          </div>
+          </section>
+        ) : (
+          <section className="rounded-xl border border-soft bg-panel p-8">
+            <p className="text-xs uppercase tracking-[0.22em] text-accent">Review Queue</p>
+            <h3 className="mt-2 text-xl font-semibold text-text">Select a meeting to review intelligence.</h3>
+            <p className="mt-2 max-w-2xl text-sm text-muted">
+              This page is for what happens after a call: import notes, attach Zoom files, pull transcripts into usable assets, review attendees, and draft follow-ups.
+            </p>
+            <div className="mt-6 grid gap-3 md:grid-cols-3">
+              {[
+                ["Capture", "Add notes, transcripts, attendees, and action items."],
+                ["Analyze", "Attach recordings or transcript files and extract context."],
+                ["Follow up", "Generate drafts tied to meeting participants."],
+              ].map(([title, copy]) => (
+                <div key={title} className="rounded-lg border border-soft bg-base p-4">
+                  <p className="font-semibold text-text text-sm">{title}</p>
+                  <p className="mt-1 text-xs text-muted">{copy}</p>
+                </div>
+              ))}
+            </div>
+          </section>
         )}
       </div>
     </div>
