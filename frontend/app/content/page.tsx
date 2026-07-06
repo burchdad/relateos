@@ -14,32 +14,37 @@ import {
   ContentSourceType,
   ContentTarget,
   FollowUpExecuteResponse,
-  SkoolAgentStatus,
-  SkoolAgentSyncResponse,
 } from "@/components/types";
 
 type LoadingMap = Record<string, boolean>;
-
-const SKOOL_COMMUNITY_URL = "https://www.skool.com/ourdealpartner";
 
 const SOURCE_DIRECTORY: {
   type: ContentSourceType;
   label: string;
   description: string;
-  status: "ready" | "sync_next" | "planned";
-  url?: string;
+  status: "available" | "connect" | "planned";
 }[] = [
   {
-    type: "skool",
-    label: "Our Deal Partner Skool",
-    description: "Community posts, classroom resources, calls, and member-facing content.",
-    status: "ready",
-    url: SKOOL_COMMUNITY_URL,
+    type: "upload",
+    label: "Manual Upload / Link",
+    description: "Add URLs, PDFs, transcripts, recordings, and reusable content assets directly.",
+    status: "available",
   },
-  { type: "youtube", label: "YouTube", description: "Long-form videos, clips, webinars, and channel archives.", status: "sync_next" },
-  { type: "facebook", label: "Facebook", description: "Page posts, group posts, lives, and audience comments.", status: "sync_next" },
-  { type: "instagram", label: "Instagram", description: "Reels, carousels, stories, and DM-driving posts.", status: "sync_next" },
-  { type: "zoom", label: "Zoom / Recordings", description: "Webinars, coaching calls, replays, and transcripts.", status: "ready" },
+  {
+    type: "zoom",
+    label: "Zoom Meetings",
+    description: "Recording links, AI notes, transcripts, summaries, and meeting follow-up assets.",
+    status: "connect",
+  },
+  {
+    type: "skool",
+    label: "Skool Community",
+    description: "Community posts, classroom resources, member content, and session links.",
+    status: "connect",
+  },
+  { type: "youtube", label: "YouTube", description: "Long-form videos, clips, webinars, and channel archives.", status: "planned" },
+  { type: "facebook", label: "Facebook", description: "Page posts, group posts, lives, and audience comments.", status: "planned" },
+  { type: "instagram", label: "Instagram", description: "Reels, carousels, stories, and DM-driving posts.", status: "planned" },
   { type: "podcast", label: "Podcast", description: "Episodes, guest clips, show notes, and follow-up assets.", status: "planned" },
 ];
 
@@ -60,9 +65,6 @@ export default function ContentPage() {
   const [createError, setCreateError] = useState("");
   const [sourceFilter, setSourceFilter] = useState<ContentSourceType | "all">("all");
   const [query, setQuery] = useState("");
-  const [skoolAgent, setSkoolAgent] = useState<SkoolAgentStatus | null>(null);
-  const [syncingSkool, setSyncingSkool] = useState<"archive" | "live_session" | "full" | null>(null);
-  const [skoolStatus, setSkoolStatus] = useState("");
 
   const loadContent = useCallback(async () => {
     setLoading(true);
@@ -80,10 +82,6 @@ export default function ContentPage() {
         setStatsByContent(
           Object.fromEntries(statsRows.map((row) => [row.content_id, row]))
         );
-      }
-      const skoolRes = await fetch(`${API_URL}/content/skool/agent`, { cache: "no-store" });
-      if (skoolRes.ok) {
-        setSkoolAgent((await skoolRes.json()) as SkoolAgentStatus);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
@@ -140,48 +138,6 @@ export default function ContentPage() {
     const withInsights = items.filter(item => item.latest_insight).length;
     return { sourceCounts, targetCount, withInsights };
   }, [items, statsByContent]);
-
-  const addSkoolDirectorySource = async () => {
-    const skoolSource = SOURCE_DIRECTORY[0];
-    if (!skoolSource.url) return;
-    await onCreateContent({
-      title: skoolSource.label,
-      description: "Main Skool community for Our Deal Partner. Use this as the hub for community content, classroom posts, events, and member-facing delivery.",
-      source_type: "skool",
-      source_url: skoolSource.url,
-    });
-  };
-
-  const runSkoolAgentSync = async (mode: "archive" | "live_session" | "full") => {
-    setSyncingSkool(mode);
-    setSkoolStatus("");
-    try {
-      const res = await fetch(`${API_URL}/content/skool/sync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          community_url: SKOOL_COMMUNITY_URL,
-          classroom_url: `${SKOOL_COMMUNITY_URL}/classroom`,
-          mode,
-          auto_create_content: true,
-          auto_create_meetings: true,
-          auto_generate_followups: true,
-        }),
-      });
-      if (!res.ok) {
-        throw new Error("Could not start Skool agent sync.");
-      }
-      const data = (await res.json()) as SkoolAgentSyncResponse;
-      setSkoolAgent(data);
-      setSkoolStatus(data.message);
-      setSourceFilter("skool");
-      await loadContent();
-    } catch (error) {
-      setSkoolStatus(error instanceof Error ? error.message : "Could not start Skool agent sync.");
-    } finally {
-      setSyncingSkool(null);
-    }
-  };
 
   const onViewTargets = async (contentId: string, force = false) => {
     if (!force && (targetsByContent[contentId] || loadingTargets[contentId])) {
@@ -312,9 +268,9 @@ export default function ContentPage() {
       <header className="flex items-start justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.24em] text-accent">Content directory</p>
-          <h1 className="mt-1 text-2xl font-semibold text-text">Content</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-text">Content Library</h1>
           <p className="text-sm text-muted mt-1">
-            Centralize Skool, YouTube, Facebook, Instagram, Zoom, and other content so past assets can feed relationship workflows.
+            Organize videos, posts, recordings, transcripts, and links that can be matched to contacts and follow-ups.
           </p>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
@@ -349,15 +305,11 @@ export default function ContentPage() {
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-text">Source Directory</h2>
-            <p className="mt-1 text-xs text-muted">Register channels now, then connect sync jobs as credentials become available.</p>
+            <p className="mt-1 text-xs text-muted">Track content sources here. Manage account connections and credentials in Connections.</p>
           </div>
-          <button
-            onClick={addSkoolDirectorySource}
-            disabled={creating || items.some(item => item.source_url === "https://www.skool.com/ourdealpartner")}
-            className="rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-xs font-medium text-accent hover:bg-accent/20 disabled:opacity-50"
-          >
-            Add Skool Hub
-          </button>
+          <Link href="/connections" className="rounded-md border border-soft px-3 py-2 text-xs font-medium text-text hover:bg-soft/40">
+            Manage Connections
+          </Link>
         </div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {SOURCE_DIRECTORY.map(source => (
@@ -368,99 +320,51 @@ export default function ContentPage() {
                   <p className="mt-1 text-xs text-muted">{source.description}</p>
                 </div>
                 <span className="rounded-full border border-soft bg-soft/30 px-2 py-1 text-[10px] uppercase tracking-wide text-muted">
-                  {source.status.replace(/_/g, " ")}
+                  {source.status}
                 </span>
               </div>
               <div className="mt-3 flex items-center justify-between text-xs">
                 <button onClick={() => setSourceFilter(source.type)} className="text-accent hover:underline">
                   View {contentStats.sourceCounts[source.type] || 0} items
                 </button>
-                {source.url ? <a href={source.url} target="_blank" rel="noreferrer" className="text-muted hover:text-text">Open source</a> : null}
+                {source.status === "connect" ? (
+                  <Link href="/connections" className="text-muted hover:text-text">Connect source</Link>
+                ) : null}
               </div>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="rounded-lg border border-accent/30 bg-panel p-5 space-y-4">
+      <section className="rounded-lg border border-soft bg-panel p-5 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-text">Skool / Zoom Agent</h2>
+            <h2 className="text-base font-semibold text-text">Content Automation</h2>
             <p className="mt-1 text-xs text-muted">
-              Configure once. The agent scans Skool, imports recordings, captures attendance and engagement, stores meeting intelligence, and prepares follow-ups.
+              Connected sources can feed relationship workflows once credentials, sync rules, and profile settings are configured.
             </p>
           </div>
-          <a href={SKOOL_COMMUNITY_URL} target="_blank" rel="noreferrer" className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">
-            Open Skool
-          </a>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/connections" className="rounded-md bg-accent px-3 py-2 text-xs font-semibold text-text hover:brightness-110">
+              Open Connections
+            </Link>
+            <Link href="/settings" className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">
+              Profile Settings
+            </Link>
+          </div>
         </div>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {[
-            ["Community", skoolAgent?.community_url || SKOOL_COMMUNITY_URL],
-            ["Schedule", skoolAgent?.schedule_label || "Every Thursday class session"],
-            ["Agent status", (skoolAgent?.status || "needs_connector").replace(/_/g, " ")],
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-lg border border-soft bg-base p-4">
-              <p className="text-[11px] uppercase tracking-wide text-muted">{label}</p>
-              <p className="mt-2 break-words text-sm font-semibold text-text">{value}</p>
-            </div>
-          ))}
-        </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          {(skoolAgent?.capabilities || []).map(capability => (
-            <article key={capability.key} className="rounded-lg border border-soft bg-base p-4">
-              <div className="flex items-start justify-between gap-2">
-                <h3 className="text-sm font-semibold text-text">{capability.label}</h3>
-                <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${
-                  capability.status === "ready"
-                    ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
-                    : capability.status === "planned"
-                      ? "border-sky-400/30 bg-sky-400/10 text-sky-200"
-                      : "border-amber-400/30 bg-amber-400/10 text-amber-200"
-                }`}>
-                  {capability.status.replace(/_/g, " ")}
-                </span>
-              </div>
-              <p className="mt-2 text-xs text-muted">{capability.detail}</p>
+            ["Connected sources", "Zoom, calendar, community, and content accounts belong in Connections."],
+            ["Content intelligence", "Imported notes, transcripts, and links become searchable assets."],
+            ["Relationship targeting", "Assets can be matched to contacts when there is a relevant reason to follow up."],
+            ["Follow-up workflows", "Use content history to draft timely messages and campaign touchpoints."],
+          ].map(([label, detail]) => (
+            <article key={label} className="rounded-lg border border-soft bg-base p-4">
+              <h3 className="text-sm font-semibold text-text">{label}</h3>
+              <p className="mt-2 text-xs text-muted">{detail}</p>
             </article>
           ))}
-        </div>
-        {skoolAgent?.next_steps?.length ? (
-          <div className="rounded-lg border border-soft bg-base p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Connector steps</p>
-            <div className="mt-3 grid gap-2 md:grid-cols-3">
-              {skoolAgent.next_steps.map(step => (
-                <p key={step} className="rounded-md border border-soft bg-panel px-3 py-2 text-xs text-muted">{step}</p>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={() => runSkoolAgentSync("archive")}
-            disabled={Boolean(syncingSkool)}
-            className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110 disabled:opacity-50"
-          >
-            {syncingSkool === "archive" ? "Starting..." : "Sync Classroom Archive"}
-          </button>
-          <button
-            onClick={() => runSkoolAgentSync("live_session")}
-            disabled={Boolean(syncingSkool)}
-            className="rounded-md border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent hover:bg-accent/20 disabled:opacity-50"
-          >
-            {syncingSkool === "live_session" ? "Preparing..." : "Prepare Live Agent"}
-          </button>
-          <button
-            onClick={() => runSkoolAgentSync("full")}
-            disabled={Boolean(syncingSkool)}
-            className="rounded-md border border-soft px-4 py-2 text-sm text-text hover:bg-soft/40 disabled:opacity-50"
-          >
-            {syncingSkool === "full" ? "Starting..." : "Full Sync"}
-          </button>
-          <Link href="/meetings" className="rounded-md border border-soft px-4 py-2 text-sm text-text hover:bg-soft/40">
-            Meeting Follow-Ups
-          </Link>
-          {skoolStatus ? <p className="text-xs text-muted">{skoolStatus}</p> : null}
         </div>
       </section>
 
@@ -490,7 +394,7 @@ export default function ContentPage() {
 
       {!loading && !error && filteredItems.length === 0 ? (
         <div className="rounded-lg border border-soft bg-panel p-6 text-sm text-muted">
-          <p>No content matches this view. Add the Skool hub or connect a channel sync.</p>
+          <p>No content matches this view. Add a content item or connect a source from Connections.</p>
         </div>
       ) : null}
 
