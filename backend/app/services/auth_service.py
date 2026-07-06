@@ -14,7 +14,7 @@ from urllib.parse import quote
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.entities import AppUser, PasswordResetToken, Workspace
+from app.models.entities import AppUser, PasswordResetToken, RegistrationVerification, Workspace
 from app.schemas.auth import ProfileSetupRequest
 from app.services.email_service import EmailService
 
@@ -23,6 +23,7 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 HASH_ITERATIONS = 210_000
 TOTP_INTERVAL_SECONDS = 30
 TOTP_DIGITS = 6
+REGISTRATION_CODE_TTL_MINUTES = 10
 
 
 def _b64url_encode(data: bytes) -> str:
@@ -121,6 +122,109 @@ class AuthService:
         )
         workspace = Workspace(id=uuid.uuid4(), name=f"{user.name}'s Workspace", owner_user_id=user.id)
         user.workspace_id = workspace.id
+        db.add(workspace)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return user
+
+    @staticmethod
+    def start_registration_verification(db: Session, *, name: str, email: str, password: str) -> dict[str, str]:
+        normalized_email = AuthService.normalize_email(email)
+        clean_name = name.strip()
+        if len(clean_name) < 2:
+            raise ValueError("Name must be at least 2 characters.")
+        if not AuthService.validate_email(normalized_email):
+            raise ValueError("Enter a valid email address.")
+        if len(password) < 8:
+            raise ValueError("Password must be at least 8 characters.")
+        existing = db.query(AppUser).filter(AppUser.email == normalized_email).first()
+        if existing:
+            raise ValueError("An account with that email already exists.")
+
+        now = datetime.now(timezone.utc)
+        db.query(RegistrationVerification).filter(
+            RegistrationVerification.email == normalized_email,
+            RegistrationVerification.used_at.is_(None),
+        ).update({"used_at": now})
+
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        challenge_token = secrets.token_urlsafe(32)
+        verification = RegistrationVerification(
+            id=uuid.uuid4(),
+            email=normalized_email,
+            name=clean_name,
+            password_hash=AuthService.hash_password(password),
+            code_hash=_token_hash(f"{normalized_email}:{code}"),
+            challenge_hash=_token_hash(challenge_token),
+            expires_at=now + timedelta(minutes=REGISTRATION_CODE_TTL_MINUTES),
+        )
+        db.add(verification)
+        db.commit()
+
+        EmailService.send_registration_code(
+            to_email=normalized_email,
+            name=clean_name,
+            code=code,
+            idempotency_key=f"registration-verification-{verification.id}",
+        )
+        return {
+            "email_verification_challenge_token": challenge_token,
+            "message": "Check your email for a verification code to finish creating your account.",
+        }
+
+    @staticmethod
+    def complete_registration_verification(
+        db: Session,
+        *,
+        email: str,
+        code: str | None,
+        challenge_token: str | None,
+    ) -> AppUser:
+        normalized_email = AuthService.normalize_email(email)
+        cleaned_code = re.sub(r"\D+", "", code or "")
+        if len(cleaned_code) != 6 or not challenge_token:
+            raise ValueError("Enter the six-digit code from your email.")
+
+        verification = (
+            db.query(RegistrationVerification)
+            .filter(
+                RegistrationVerification.email == normalized_email,
+                RegistrationVerification.challenge_hash == _token_hash(challenge_token),
+                RegistrationVerification.used_at.is_(None),
+            )
+            .first()
+        )
+        now = datetime.now(timezone.utc)
+        if not verification:
+            raise ValueError("This verification code is invalid or expired.")
+
+        expires_at = verification.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at < now:
+            verification.used_at = now
+            db.commit()
+            raise ValueError("This verification code is invalid or expired.")
+
+        if not hmac.compare_digest(verification.code_hash, _token_hash(f"{normalized_email}:{cleaned_code}")):
+            raise ValueError("Invalid verification code.")
+
+        existing = db.query(AppUser).filter(AppUser.email == normalized_email).first()
+        if existing:
+            verification.used_at = now
+            db.commit()
+            raise ValueError("An account with that email already exists.")
+
+        user = AppUser(
+            id=uuid.uuid4(),
+            name=verification.name,
+            email=normalized_email,
+            password_hash=verification.password_hash,
+        )
+        workspace = Workspace(id=uuid.uuid4(), name=f"{user.name}'s Workspace", owner_user_id=user.id)
+        user.workspace_id = workspace.id
+        verification.used_at = now
         db.add(workspace)
         db.add(user)
         db.commit()

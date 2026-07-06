@@ -27,6 +27,8 @@ class RegisterRequest(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     email: str = Field(min_length=3, max_length=255)
     password: str = Field(min_length=8, max_length=128)
+    email_verification_code: str | None = Field(default=None, max_length=12)
+    email_verification_challenge_token: str | None = Field(default=None, max_length=255)
 
 
 class LoginRequest(BaseModel):
@@ -70,6 +72,14 @@ class LoginResponse(BaseModel):
     user: UserOut | None = None
     requires_2fa: bool = False
     two_factor_challenge_token: str | None = None
+    message: str | None = None
+
+
+class RegisterResponse(BaseModel):
+    token: str | None = None
+    user: UserOut | None = None
+    requires_email_verification: bool = False
+    email_verification_challenge_token: str | None = None
     message: str | None = None
 
 

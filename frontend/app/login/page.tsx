@@ -16,6 +16,8 @@ type AuthPayload = {
   } | null;
   requires_2fa?: boolean;
   two_factor_challenge_token?: string | null;
+  requires_email_verification?: boolean;
+  email_verification_challenge_token?: string | null;
   message?: string | null;
 };
 
@@ -29,6 +31,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [twoFactorChallenge, setTwoFactorChallenge] = useState<string | null>(null);
+  const [emailVerificationCode, setEmailVerificationCode] = useState("");
+  const [emailVerificationChallenge, setEmailVerificationChallenge] = useState<string | null>(null);
   const [resetEmail, setResetEmail] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -45,7 +49,15 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           mode === "register"
-            ? { name: name.trim(), email: email.trim(), password }
+            ? {
+                name: name.trim(),
+                email: email.trim(),
+                password,
+                ...(emailVerificationChallenge ? {
+                  email_verification_code: emailVerificationCode.trim(),
+                  email_verification_challenge_token: emailVerificationChallenge,
+                } : {}),
+              }
             : {
                 email: email.trim(),
                 password,
@@ -63,6 +75,12 @@ export default function LoginPage() {
       }
 
       const payload = (await res.json()) as AuthPayload;
+      if (payload.requires_email_verification) {
+        setEmailVerificationChallenge(payload.email_verification_challenge_token || null);
+        setEmailVerificationCode("");
+        setNotice(payload.message || "Check your email for a verification code.");
+        return;
+      }
       if (payload.requires_2fa) {
         setTwoFactorChallenge(payload.two_factor_challenge_token || null);
         setTwoFactorCode("");
@@ -119,30 +137,59 @@ export default function LoginPage() {
 
         <form onSubmit={submit} className="mt-5 grid gap-3">
           {mode === "register" ? (
-            <input
-              required
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Name"
-              className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text outline-none placeholder:text-muted focus:border-accent/60"
-            />
+            <>
+              <input
+                required
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                disabled={Boolean(emailVerificationChallenge)}
+                placeholder="Name"
+                className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text outline-none placeholder:text-muted focus:border-accent/60 disabled:text-muted"
+              />
+            </>
           ) : null}
           <input
             required
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
+            disabled={Boolean(emailVerificationChallenge)}
             placeholder="Email"
-            className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text outline-none placeholder:text-muted focus:border-accent/60"
+            className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text outline-none placeholder:text-muted focus:border-accent/60 disabled:text-muted"
           />
           <input
             required
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            disabled={Boolean(emailVerificationChallenge)}
             placeholder={mode === "register" ? "Password, minimum 8 characters" : "Password"}
-            className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text outline-none placeholder:text-muted focus:border-accent/60"
+            className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text outline-none placeholder:text-muted focus:border-accent/60 disabled:text-muted"
           />
+          {emailVerificationChallenge ? (
+            <div className="grid gap-2">
+              <input
+                required
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={emailVerificationCode}
+                onChange={(event) => setEmailVerificationCode(event.target.value)}
+                placeholder="Email verification code"
+                className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text outline-none placeholder:text-muted focus:border-accent/60"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setEmailVerificationChallenge(null);
+                  setEmailVerificationCode("");
+                  setNotice("");
+                }}
+                className="justify-self-start text-xs font-medium text-muted hover:text-text"
+              >
+                Use a different email
+              </button>
+            </div>
+          ) : null}
           {twoFactorChallenge ? (
             <input
               required
@@ -163,7 +210,7 @@ export default function LoginPage() {
             disabled={submitting}
             className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-text hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {submitting ? "Working..." : twoFactorChallenge ? "Verify Code" : mode === "login" ? "Sign In" : "Create Account"}
+            {submitting ? "Working..." : emailVerificationChallenge ? "Verify Email" : twoFactorChallenge ? "Verify Code" : mode === "login" ? "Sign In" : "Create Account"}
           </button>
         </form>
 
@@ -174,6 +221,8 @@ export default function LoginPage() {
             setForgotOpen(false);
             setTwoFactorChallenge(null);
             setTwoFactorCode("");
+            setEmailVerificationChallenge(null);
+            setEmailVerificationCode("");
             setError("");
             setNotice("");
           }}

@@ -10,6 +10,7 @@ from app.schemas.auth import (
     LoginRequest,
     ProfileSetupRequest,
     RegisterRequest,
+    RegisterResponse,
     ResetPasswordRequest,
     TwoFactorSetupResponse,
     TwoFactorStatusResponse,
@@ -26,13 +27,31 @@ def _auth_response(user) -> AuthResponse:
     return AuthResponse(token=AuthService.issue_token(user), user=UserOut.model_validate(user))
 
 
-@router.post("/register", response_model=AuthResponse, status_code=201)
+@router.post("/register", response_model=RegisterResponse)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     try:
-        user = AuthService.create_user(db, name=payload.name, email=payload.email, password=payload.password)
+        if payload.email_verification_code:
+            user = AuthService.complete_registration_verification(
+                db,
+                email=payload.email,
+                code=payload.email_verification_code,
+                challenge_token=payload.email_verification_challenge_token,
+            )
+            auth = _auth_response(user)
+            return RegisterResponse(token=auth.token, user=auth.user)
+        challenge = AuthService.start_registration_verification(
+            db,
+            name=payload.name,
+            email=payload.email,
+            password=payload.password,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return _auth_response(user)
+    return RegisterResponse(
+        requires_email_verification=True,
+        email_verification_challenge_token=challenge["email_verification_challenge_token"],
+        message=challenge["message"],
+    )
 
 
 @router.post("/login", response_model=LoginResponse)
