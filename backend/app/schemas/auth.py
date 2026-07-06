@@ -17,6 +17,7 @@ class UserOut(BaseModel):
     wants_calendar_connection: bool = False
     wants_contact_import: bool = False
     onboarding_complete: bool = False
+    two_factor_enabled: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -31,6 +32,8 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str = Field(min_length=3, max_length=255)
     password: str = Field(min_length=1, max_length=128)
+    two_factor_code: str | None = Field(default=None, max_length=12)
+    two_factor_challenge_token: str | None = Field(default=None, max_length=512)
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -60,3 +63,24 @@ class ProfileSetupRequest(BaseModel):
 class AuthResponse(BaseModel):
     token: str
     user: UserOut
+
+
+class LoginResponse(BaseModel):
+    token: str | None = None
+    user: UserOut | None = None
+    requires_2fa: bool = False
+    two_factor_challenge_token: str | None = None
+    message: str | None = None
+
+
+class TwoFactorStatusResponse(BaseModel):
+    enabled: bool
+
+
+class TwoFactorSetupResponse(BaseModel):
+    secret: str
+    otpauth_url: str
+
+
+class TwoFactorVerifyRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=12)

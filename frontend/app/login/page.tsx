@@ -7,13 +7,16 @@ import { resolveApiUrl } from "@/components/api";
 import { saveAuthToken } from "@/components/authClient";
 
 type AuthPayload = {
-  token: string;
-  user: {
+  token?: string | null;
+  user?: {
     id: string;
     email: string;
     name: string;
     onboarding_complete: boolean;
-  };
+  } | null;
+  requires_2fa?: boolean;
+  two_factor_challenge_token?: string | null;
+  message?: string | null;
 };
 
 export default function LoginPage() {
@@ -24,6 +27,8 @@ export default function LoginPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [twoFactorChallenge, setTwoFactorChallenge] = useState<string | null>(null);
   const [resetEmail, setResetEmail] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -41,7 +46,14 @@ export default function LoginPage() {
         body: JSON.stringify(
           mode === "register"
             ? { name: name.trim(), email: email.trim(), password }
-            : { email: email.trim(), password }
+            : {
+                email: email.trim(),
+                password,
+                ...(twoFactorChallenge ? {
+                  two_factor_code: twoFactorCode.trim(),
+                  two_factor_challenge_token: twoFactorChallenge,
+                } : {}),
+              }
         ),
       });
 
@@ -51,6 +63,15 @@ export default function LoginPage() {
       }
 
       const payload = (await res.json()) as AuthPayload;
+      if (payload.requires_2fa) {
+        setTwoFactorChallenge(payload.two_factor_challenge_token || null);
+        setTwoFactorCode("");
+        setNotice(payload.message || "Enter your authenticator app code.");
+        return;
+      }
+      if (!payload.token || !payload.user) {
+        throw new Error("Could not complete sign in.");
+      }
       saveAuthToken(payload.token);
       router.replace(mode === "register" || !payload.user.onboarding_complete ? "/onboarding" : "/dashboard");
     } catch (err) {
@@ -122,6 +143,17 @@ export default function LoginPage() {
             placeholder={mode === "register" ? "Password, minimum 8 characters" : "Password"}
             className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text outline-none placeholder:text-muted focus:border-accent/60"
           />
+          {twoFactorChallenge ? (
+            <input
+              required
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={twoFactorCode}
+              onChange={(event) => setTwoFactorCode(event.target.value)}
+              placeholder="Authenticator code"
+              className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text outline-none placeholder:text-muted focus:border-accent/60"
+            />
+          ) : null}
 
           {error ? <p className="rounded-md border border-red-300/40 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
           {notice ? <p className="rounded-md border border-sage/40 bg-sage-pale px-3 py-2 text-sm text-text">{notice}</p> : null}
@@ -131,7 +163,7 @@ export default function LoginPage() {
             disabled={submitting}
             className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-text hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {submitting ? "Working..." : mode === "login" ? "Sign In" : "Create Account"}
+            {submitting ? "Working..." : twoFactorChallenge ? "Verify Code" : mode === "login" ? "Sign In" : "Create Account"}
           </button>
         </form>
 
@@ -140,6 +172,8 @@ export default function LoginPage() {
           onClick={() => {
             setMode((current) => (current === "login" ? "register" : "login"));
             setForgotOpen(false);
+            setTwoFactorChallenge(null);
+            setTwoFactorCode("");
             setError("");
             setNotice("");
           }}

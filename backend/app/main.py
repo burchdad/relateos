@@ -54,7 +54,7 @@ ENVIRONMENT = os.getenv("RAILWAY_ENVIRONMENT", os.getenv("ENVIRONMENT", "dev"))
 app = FastAPI(title=settings.app_name)
 
 REQUIRED_CONTENT_ITEM_COLUMNS = ["experiment_key", "experiment_variant"]
-REQUIRED_APP_USER_COLUMNS = ["workspace_id"]
+REQUIRED_APP_USER_COLUMNS = ["workspace_id", "two_factor_enabled", "two_factor_secret", "two_factor_pending_secret"]
 
 
 def _normalize_origin(raw_origin: str) -> str | None:
@@ -149,6 +149,9 @@ def _ensure_workspace_connector_schema() -> None:
             )
         )
         connection.execute(text("ALTER TABLE app_users ADD COLUMN IF NOT EXISTS workspace_id UUID NULL"))
+        connection.execute(text("ALTER TABLE app_users ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN NOT NULL DEFAULT false"))
+        connection.execute(text("ALTER TABLE app_users ADD COLUMN IF NOT EXISTS two_factor_secret TEXT NULL"))
+        connection.execute(text("ALTER TABLE app_users ADD COLUMN IF NOT EXISTS two_factor_pending_secret TEXT NULL"))
         connection.execute(
             text(
                 """

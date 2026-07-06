@@ -6,10 +6,14 @@ from app.schemas.auth import (
     AuthResponse,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
+    LoginResponse,
     LoginRequest,
     ProfileSetupRequest,
     RegisterRequest,
     ResetPasswordRequest,
+    TwoFactorSetupResponse,
+    TwoFactorStatusResponse,
+    TwoFactorVerifyRequest,
     UserOut,
 )
 from app.services.auth_service import AuthService
@@ -31,12 +35,26 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     return _auth_response(user)
 
 
-@router.post("/login", response_model=AuthResponse)
+@router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = AuthService.authenticate(db, email=payload.email, password=payload.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-    return _auth_response(user)
+    if user.two_factor_enabled:
+        if payload.two_factor_code:
+            if not AuthService.verify_2fa_challenge(db, payload.two_factor_challenge_token, user):
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Two-factor challenge expired. Sign in again.")
+            if not AuthService.verify_two_factor_code(user, payload.two_factor_code):
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authenticator code")
+            auth = _auth_response(user)
+            return LoginResponse(token=auth.token, user=auth.user)
+        return LoginResponse(
+            requires_2fa=True,
+            two_factor_challenge_token=AuthService.issue_2fa_challenge(user),
+            message="Enter your authenticator app code.",
+        )
+    auth = _auth_response(user)
+    return LoginResponse(token=auth.token, user=auth.user)
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
@@ -74,3 +92,51 @@ def update_profile(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     return AuthService.update_profile(db, user, payload)
+
+
+@router.get("/2fa/status", response_model=TwoFactorStatusResponse)
+def two_factor_status(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    user = AuthService.bearer_user(db, authorization)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    return AuthService.two_factor_status(user)
+
+
+@router.post("/2fa/setup", response_model=TwoFactorSetupResponse)
+def two_factor_setup(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    user = AuthService.bearer_user(db, authorization)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    return AuthService.start_two_factor_setup(db, user)
+
+
+@router.post("/2fa/enable", response_model=TwoFactorStatusResponse)
+def two_factor_enable(
+    payload: TwoFactorVerifyRequest,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    user = AuthService.bearer_user(db, authorization)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    try:
+        AuthService.enable_two_factor(db, user, payload.code)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return AuthService.two_factor_status(user)
+
+
+@router.post("/2fa/disable", response_model=TwoFactorStatusResponse)
+def two_factor_disable(
+    payload: TwoFactorVerifyRequest,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    user = AuthService.bearer_user(db, authorization)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    try:
+        AuthService.disable_two_factor(db, user, payload.code)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return AuthService.two_factor_status(user)

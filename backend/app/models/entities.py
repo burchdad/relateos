@@ -290,6 +290,9 @@ class AppUser(Base):
     wants_calendar_connection: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     wants_contact_import: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     onboarding_complete: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    two_factor_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    two_factor_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
+    two_factor_pending_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[DateTime] = mapped_column(

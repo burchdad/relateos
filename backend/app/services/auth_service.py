@@ -1,9 +1,11 @@
 import base64
+import struct
 import hashlib
 import hmac
 import json
 import re
 import secrets
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -19,6 +21,8 @@ from app.services.email_service import EmailService
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 HASH_ITERATIONS = 210_000
+TOTP_INTERVAL_SECONDS = 30
+TOTP_DIGITS = 6
 
 
 def _b64url_encode(data: bytes) -> str:
@@ -36,6 +40,37 @@ def _secret() -> bytes:
 
 def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _base32_secret() -> str:
+    return base64.b32encode(secrets.token_bytes(20)).decode("ascii").rstrip("=")
+
+
+def _base32_decode(secret: str) -> bytes:
+    cleaned = re.sub(r"\s+", "", secret or "").upper()
+    padding = "=" * (-len(cleaned) % 8)
+    return base64.b32decode(cleaned + padding, casefold=True)
+
+
+def _totp_code(secret: str, counter: int) -> str:
+    key = _base32_decode(secret)
+    digest = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    value = struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF
+    return str(value % (10 ** TOTP_DIGITS)).zfill(TOTP_DIGITS)
+
+
+def _verify_totp(secret: str | None, code: str | None, *, window: int = 1) -> bool:
+    if not secret or not code:
+        return False
+    cleaned = re.sub(r"\D+", "", code)
+    if len(cleaned) != TOTP_DIGITS:
+        return False
+    current_counter = int(time.time() // TOTP_INTERVAL_SECONDS)
+    for drift in range(-window, window + 1):
+        if hmac.compare_digest(_totp_code(secret, current_counter + drift), cleaned):
+            return True
+    return False
 
 
 class AuthService:
@@ -188,6 +223,77 @@ class AuthService:
         if not AuthService.verify_password(password, user.password_hash):
             return None
         return user
+
+    @staticmethod
+    def issue_2fa_challenge(user: AppUser) -> str:
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        payload: dict[str, Any] = {
+            "sub": str(user.id),
+            "purpose": "2fa",
+            "nonce": secrets.token_urlsafe(12),
+            "exp": int(expires_at.timestamp()),
+        }
+        payload_raw = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+        signature = hmac.new(_secret(), payload_raw.encode("ascii"), hashlib.sha256).digest()
+        return f"{payload_raw}.{_b64url_encode(signature)}"
+
+    @staticmethod
+    def verify_2fa_challenge(db: Session, token: str | None, user: AppUser) -> bool:
+        if not token:
+            return False
+        try:
+            payload_raw, signature_raw = token.split(".", 1)
+            expected = hmac.new(_secret(), payload_raw.encode("ascii"), hashlib.sha256).digest()
+            if not hmac.compare_digest(_b64url_decode(signature_raw), expected):
+                return False
+            payload = json.loads(_b64url_decode(payload_raw).decode("utf-8"))
+            if payload.get("purpose") != "2fa":
+                return False
+            if int(payload.get("exp", 0)) < int(datetime.now(timezone.utc).timestamp()):
+                return False
+            user_id = uuid.UUID(str(payload.get("sub")))
+        except Exception:
+            return False
+        return user_id == user.id and db.query(AppUser.id).filter(AppUser.id == user.id, AppUser.is_active.is_(True)).first() is not None
+
+    @staticmethod
+    def verify_two_factor_code(user: AppUser, code: str | None) -> bool:
+        return _verify_totp(user.two_factor_secret, code)
+
+    @staticmethod
+    def two_factor_status(user: AppUser) -> dict[str, bool]:
+        return {"enabled": bool(user.two_factor_enabled)}
+
+    @staticmethod
+    def start_two_factor_setup(db: Session, user: AppUser) -> dict[str, str]:
+        secret = _base32_secret()
+        user.two_factor_pending_secret = secret
+        db.commit()
+        label = quote(f"Teifke Relationships:{user.email}")
+        issuer = quote("Teifke Relationships")
+        return {
+            "secret": secret,
+            "otpauth_url": f"otpauth://totp/{label}?secret={secret}&issuer={issuer}&digits={TOTP_DIGITS}&period={TOTP_INTERVAL_SECONDS}",
+        }
+
+    @staticmethod
+    def enable_two_factor(db: Session, user: AppUser, code: str) -> None:
+        secret = user.two_factor_pending_secret or user.two_factor_secret
+        if not _verify_totp(secret, code):
+            raise ValueError("Invalid authenticator code.")
+        user.two_factor_secret = secret
+        user.two_factor_pending_secret = None
+        user.two_factor_enabled = True
+        db.commit()
+
+    @staticmethod
+    def disable_two_factor(db: Session, user: AppUser, code: str) -> None:
+        if user.two_factor_enabled and not _verify_totp(user.two_factor_secret, code):
+            raise ValueError("Invalid authenticator code.")
+        user.two_factor_enabled = False
+        user.two_factor_secret = None
+        user.two_factor_pending_secret = None
+        db.commit()
 
     @staticmethod
     def issue_token(user: AppUser) -> str:

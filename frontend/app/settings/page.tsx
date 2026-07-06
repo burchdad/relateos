@@ -28,6 +28,11 @@ type StyleProfile = {
   emoji_usage: string;
 };
 
+type TwoFactorSetup = {
+  secret: string;
+  otpauth_url: string;
+};
+
 const focusOptions = ["Clients", "Investors", "Partners", "Events", "Community", "Content audience"];
 const goalOptions = ["Prioritize follow-up", "Invite people to events", "Send better content", "Track deals", "Build partner network", "Clean up contacts"];
 
@@ -59,6 +64,10 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingStyle, setSavingStyle] = useState(false);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  const [twoFactorSetup, setTwoFactorSetup] = useState<TwoFactorSetup | null>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [twoFactorBusy, setTwoFactorBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [preferences, setPreferences] = useState({
     dailyFocusDigest: true,
@@ -91,6 +100,12 @@ export default function SettingsPage() {
           setStyle(await styleRes.json());
         } else {
           setStyle({ ...defaultStyle, owner_user_id: user.id });
+        }
+
+        const twoFactorRes = await fetch(`${API_URL}/auth/2fa/status`, { cache: "no-store" });
+        if (twoFactorRes.ok) {
+          const payload = (await twoFactorRes.json()) as { enabled: boolean };
+          setTwoFactorEnabled(payload.enabled);
         }
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Could not load settings.");
@@ -162,12 +177,82 @@ export default function SettingsPage() {
     }
   };
 
+  const startTwoFactorSetup = async () => {
+    setTwoFactorBusy(true);
+    setStatus("");
+    try {
+      const res = await fetch(`${API_URL}/auth/2fa/setup`, { method: "POST" });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(payload?.detail || "Could not start two-factor setup.");
+      }
+      setTwoFactorSetup(await res.json());
+      setTwoFactorCode("");
+      setStatus("Add this account to your authenticator app, then enter the six-digit code to finish.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not start two-factor setup.");
+    } finally {
+      setTwoFactorBusy(false);
+    }
+  };
+
+  const enableTwoFactor = async () => {
+    setTwoFactorBusy(true);
+    setStatus("");
+    try {
+      const res = await fetch(`${API_URL}/auth/2fa/enable`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: twoFactorCode.trim() }),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(payload?.detail || "Could not enable two-factor authentication.");
+      }
+      const payload = (await res.json()) as { enabled: boolean };
+      setTwoFactorEnabled(payload.enabled);
+      setTwoFactorSetup(null);
+      setTwoFactorCode("");
+      setStatus("Two-factor authentication is now enabled.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not enable two-factor authentication.");
+    } finally {
+      setTwoFactorBusy(false);
+    }
+  };
+
+  const disableTwoFactor = async () => {
+    setTwoFactorBusy(true);
+    setStatus("");
+    try {
+      const res = await fetch(`${API_URL}/auth/2fa/disable`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: twoFactorCode.trim() }),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(payload?.detail || "Could not disable two-factor authentication.");
+      }
+      const payload = (await res.json()) as { enabled: boolean };
+      setTwoFactorEnabled(payload.enabled);
+      setTwoFactorSetup(null);
+      setTwoFactorCode("");
+      setStatus("Two-factor authentication is now disabled.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not disable two-factor authentication.");
+    } finally {
+      setTwoFactorBusy(false);
+    }
+  };
+
   const readyItems = [
     Boolean(profile.company_name),
     Boolean(profile.role_title),
     Boolean(profile.relationship_focus),
     Boolean(profile.primary_goal),
     Boolean(profile.timezone),
+    twoFactorEnabled,
   ].filter(Boolean).length;
 
   return (
@@ -181,7 +266,7 @@ export default function SettingsPage() {
           </div>
           <div className="rounded-lg border border-soft bg-base px-4 py-3">
             <p className="text-xs uppercase tracking-wide text-muted">Setup complete</p>
-            <p className="mt-1 text-2xl font-semibold text-text">{readyItems}/5</p>
+            <p className="mt-1 text-2xl font-semibold text-text">{readyItems}/6</p>
           </div>
         </div>
       </header>
@@ -313,6 +398,7 @@ export default function SettingsPage() {
                 ["Timezone", Boolean(profile.timezone)],
                 ["Connectors", Boolean(profile.wants_calendar_connection || profile.wants_contact_import)],
                 ["AI style", Boolean(style.tone && style.length)],
+                ["Account security", twoFactorEnabled],
               ].map(([label, complete]) => (
                 <div key={String(label)} className="flex items-center justify-between rounded-md border border-soft bg-base px-3 py-2 text-sm">
                   <span className="text-text">{String(label)}</span>
@@ -335,6 +421,90 @@ export default function SettingsPage() {
                 Import Contacts
               </Link>
             </div>
+          </article>
+
+          <article className="rounded-lg border border-soft bg-panel p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-text">Account Security</h2>
+                <p className="mt-1 text-sm text-muted">Require an authenticator app code after password sign-in.</p>
+              </div>
+              <span className={`rounded-full border px-3 py-1 text-xs uppercase tracking-wide ${twoFactorEnabled ? "border-sage bg-sage-pale text-forest" : "border-honey bg-honey-light text-text"}`}>
+                {twoFactorEnabled ? "2FA on" : "2FA off"}
+              </span>
+            </div>
+
+            {twoFactorSetup ? (
+              <div className="mt-4 grid gap-3">
+                <div className="rounded-md border border-soft bg-base p-3">
+                  <p className="text-xs uppercase tracking-wide text-muted">Manual setup key</p>
+                  <p className="mt-1 break-all font-mono text-sm font-semibold text-text">{twoFactorSetup.secret}</p>
+                  <p className="mt-2 text-xs text-muted">Use Google Authenticator, Microsoft Authenticator, 1Password, or another TOTP app.</p>
+                </div>
+                <label className="grid gap-1 text-sm font-medium text-text">
+                  Verification code
+                  <input
+                    value={twoFactorCode}
+                    onChange={event => setTwoFactorCode(event.target.value)}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="123456"
+                    className="rounded-md border border-soft bg-base px-3 py-2 text-sm outline-none focus:border-accent/60"
+                  />
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={enableTwoFactor}
+                    disabled={twoFactorBusy || twoFactorCode.trim().length < 6}
+                    className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-105 disabled:opacity-50"
+                  >
+                    {twoFactorBusy ? "Checking..." : "Enable 2FA"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTwoFactorSetup(null);
+                      setTwoFactorCode("");
+                    }}
+                    className="rounded-md border border-soft bg-base px-4 py-2 text-sm font-medium text-text hover:bg-soft/30"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : twoFactorEnabled ? (
+              <div className="mt-4 grid gap-3">
+                <label className="grid gap-1 text-sm font-medium text-text">
+                  Authenticator code
+                  <input
+                    value={twoFactorCode}
+                    onChange={event => setTwoFactorCode(event.target.value)}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="Enter code to disable"
+                    className="rounded-md border border-soft bg-base px-3 py-2 text-sm outline-none focus:border-accent/60"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={disableTwoFactor}
+                  disabled={twoFactorBusy || twoFactorCode.trim().length < 6}
+                  className="rounded-md border border-soft bg-base px-4 py-2 text-sm font-semibold text-text hover:bg-soft/30 disabled:opacity-50"
+                >
+                  {twoFactorBusy ? "Checking..." : "Disable 2FA"}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={startTwoFactorSetup}
+                disabled={twoFactorBusy}
+                className="mt-4 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-105 disabled:opacity-50"
+              >
+                {twoFactorBusy ? "Starting..." : "Set Up 2FA"}
+              </button>
+            )}
           </article>
         </aside>
       </section>
