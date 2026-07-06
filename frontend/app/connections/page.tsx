@@ -15,6 +15,11 @@ const STATUS_STYLES: Record<ConnectorStatus["status"], string> = {
 
 const CONNECTOR_ORDER = ["zoom", "google_calendar", "skool", "read_ai", "openai"];
 
+const apiError = async (res: Response, fallback: string) => {
+  const payload = (await res.json().catch(() => null)) as { detail?: string; message?: string } | null;
+  return new Error(payload?.detail || payload?.message || `${fallback} (${res.status})`);
+};
+
 export default function ConnectionsPage() {
   const API_URL = useMemo(resolveApiUrl, []);
   const [overview, setOverview] = useState<ConnectionsOverview | null>(null);
@@ -29,7 +34,7 @@ export default function ConnectionsPage() {
     setLoading(true);
     try {
       const res = await fetch(`${API_URL}/connections`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Could not load connections");
+      if (!res.ok) throw await apiError(res, "Could not load connections");
       const data = (await res.json()) as ConnectionsOverview;
       data.connectors.sort((a, b) => CONNECTOR_ORDER.indexOf(a.key) - CONNECTOR_ORDER.indexOf(b.key));
       setOverview(data);
@@ -64,7 +69,7 @@ export default function ConnectionsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ values }),
       });
-      if (!res.ok) throw new Error(`Could not save ${connector.name}`);
+      if (!res.ok) throw await apiError(res, `Could not save ${connector.name}`);
       const payload = (await res.json()) as { connector: ConnectorStatus; message: string };
       setMessage(payload.message);
       setDrafts(prev => ({ ...prev, [connector.key]: {} }));
@@ -86,7 +91,7 @@ export default function ConnectionsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode }),
       });
-      if (!res.ok) throw new Error("Could not start agent sync");
+      if (!res.ok) throw await apiError(res, "Could not start agent sync");
       const data = (await res.json()) as AgentSyncResponse;
       setSyncResult(data);
       setMessage(data.message);
@@ -103,7 +108,7 @@ export default function ConnectionsPage() {
     setSyncResult(null);
     try {
       const res = await fetch(`${API_URL}/connections/zoom/sync`, { method: "POST" });
-      if (!res.ok) throw new Error("Could not sync Zoom recordings");
+      if (!res.ok) throw await apiError(res, "Could not sync Zoom recordings");
       const data = (await res.json()) as AgentSyncResponse;
       setSyncResult(data);
       setMessage(data.message);
@@ -126,7 +131,7 @@ export default function ConnectionsPage() {
     setMessage("");
     try {
       const res = await fetch(`${API_URL}/connections/${path}`);
-      if (!res.ok) throw new Error("Could not start connection flow");
+      if (!res.ok) throw await apiError(res, "Could not start connection flow");
       const payload = (await res.json()) as { auth_url: string };
       window.location.href = payload.auth_url;
     } catch (error) {

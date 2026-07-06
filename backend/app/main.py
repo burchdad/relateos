@@ -54,6 +54,7 @@ ENVIRONMENT = os.getenv("RAILWAY_ENVIRONMENT", os.getenv("ENVIRONMENT", "dev"))
 app = FastAPI(title=settings.app_name)
 
 REQUIRED_CONTENT_ITEM_COLUMNS = ["experiment_key", "experiment_variant"]
+REQUIRED_APP_USER_COLUMNS = ["workspace_id"]
 
 
 def _normalize_origin(raw_origin: str) -> str | None:
@@ -100,6 +101,12 @@ def _validate_schema_requirements() -> None:
     inspector = inspect(engine)
     if not inspector.has_table("content_items"):
         raise RuntimeError("Missing required table: content_items")
+    if not inspector.has_table("app_users"):
+        raise RuntimeError("Missing required table: app_users")
+    if not inspector.has_table("workspaces"):
+        raise RuntimeError("Missing required table: workspaces")
+    if not inspector.has_table("connector_credentials"):
+        raise RuntimeError("Missing required table: connector_credentials")
 
     existing_columns = {column["name"] for column in inspector.get_columns("content_items")}
     missing_columns = [
@@ -111,12 +118,83 @@ def _validate_schema_requirements() -> None:
             + ", ".join(missing_columns)
         )
 
+    app_user_columns = {column["name"] for column in inspector.get_columns("app_users")}
+    missing_app_user_columns = [
+        column_name for column_name in REQUIRED_APP_USER_COLUMNS if column_name not in app_user_columns
+    ]
+    if missing_app_user_columns:
+        raise RuntimeError(
+            "Schema validation failed for app_users. Missing columns: "
+            + ", ".join(missing_app_user_columns)
+        )
+
+
+def _ensure_workspace_connector_schema() -> None:
+    """Repair the small workspace/OAuth schema on hosts that skip Alembic."""
+    if engine.dialect.name != "postgresql":
+        return
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS workspaces (
+                    id UUID PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    owner_user_id UUID NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        connection.execute(text("ALTER TABLE app_users ADD COLUMN IF NOT EXISTS workspace_id UUID NULL"))
+        connection.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint WHERE conname = 'app_users_workspace_id_fkey'
+                    ) THEN
+                        ALTER TABLE app_users
+                        ADD CONSTRAINT app_users_workspace_id_fkey
+                        FOREIGN KEY (workspace_id) REFERENCES workspaces(id);
+                    END IF;
+                END $$;
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS connector_credentials (
+                    id UUID PRIMARY KEY,
+                    workspace_id UUID NOT NULL REFERENCES workspaces(id),
+                    connector_key VARCHAR(80) NOT NULL,
+                    values JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS ix_connector_credentials_workspace_key
+                ON connector_credentials (workspace_id, connector_key)
+                """
+            )
+        )
+
 
 @app.on_event("startup")
 def startup_tasks():
     if settings.auto_create_tables:
         try:
             Base.metadata.create_all(bind=engine)
+            _ensure_workspace_connector_schema()
             logger.info("Auto-create tables enabled: metadata created.")
         except Exception as exc:
             logger.warning("Auto-create tables failed: %s", exc)
