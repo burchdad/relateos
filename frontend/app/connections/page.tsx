@@ -13,7 +13,7 @@ const STATUS_STYLES: Record<ConnectorStatus["status"], string> = {
   needs_config: "border-amber-400/30 bg-amber-400/10 text-amber-200",
 };
 
-const CONNECTOR_ORDER = ["skool", "zoom", "read_ai", "openai"];
+const CONNECTOR_ORDER = ["zoom", "google_calendar", "skool", "read_ai", "openai"];
 
 export default function ConnectionsPage() {
   const API_URL = useMemo(resolveApiUrl, []);
@@ -97,6 +97,43 @@ export default function ConnectionsPage() {
     }
   };
 
+  const runZoomSync = async () => {
+    setSyncing("archive");
+    setMessage("");
+    setSyncResult(null);
+    try {
+      const res = await fetch(`${API_URL}/connections/zoom/sync`, { method: "POST" });
+      if (!res.ok) throw new Error("Could not sync Zoom recordings");
+      const data = (await res.json()) as AgentSyncResponse;
+      setSyncResult(data);
+      setMessage(data.message);
+      await loadConnections();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not sync Zoom recordings");
+    } finally {
+      setSyncing(null);
+    }
+  };
+
+  const startOAuth = async (connectorKey: ConnectorStatus["key"]) => {
+    const path =
+      connectorKey === "zoom"
+        ? "zoom/oauth/start"
+        : connectorKey === "google_calendar"
+          ? "google-calendar/oauth/start"
+          : "";
+    if (!path) return;
+    setMessage("");
+    try {
+      const res = await fetch(`${API_URL}/connections/${path}`);
+      if (!res.ok) throw new Error("Could not start connection flow");
+      const payload = (await res.json()) as { auth_url: string };
+      window.location.href = payload.auth_url;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not start connection flow");
+    }
+  };
+
   const readyConnectors = overview?.connectors.filter(connector => connector.status === "ready").length || 0;
   const totalConnectors = overview?.connectors.length || 0;
 
@@ -126,9 +163,16 @@ export default function ConnectionsPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => runSync("archive")}
+              onClick={runZoomSync}
               disabled={Boolean(syncing)}
               className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110 disabled:opacity-50"
+            >
+              {syncing === "archive" ? "Syncing..." : "Sync Zoom Recordings"}
+            </button>
+            <button
+              onClick={() => runSync("archive")}
+              disabled={Boolean(syncing)}
+              className="rounded-md border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent hover:bg-accent/20 disabled:opacity-50"
             >
               {syncing === "archive" ? "Starting..." : "Sync Archive"}
             </button>
@@ -164,12 +208,13 @@ export default function ConnectionsPage() {
           </div>
         ) : null}
         {syncResult && !syncResult.blockers.length ? (
-          <div className="mt-3 grid gap-2 md:grid-cols-4">
+          <div className="mt-3 grid gap-2 md:grid-cols-5">
             {[
               ["Status", syncResult.status],
               ["Content imported", syncResult.imported_content_count],
               ["Meetings imported", syncResult.imported_meeting_count],
               ["Attendees imported", syncResult.imported_attendee_count],
+              ["Artifacts imported", syncResult.imported_artifact_count],
             ].map(([label, value]) => (
               <div key={label} className="rounded-md border border-soft bg-base px-3 py-2">
                 <p className="text-[11px] uppercase tracking-wide text-muted">{label}</p>
@@ -207,6 +252,9 @@ export default function ConnectionsPage() {
             <div className="mt-4 grid gap-3">
               {connector.fields.map(field => {
                 const configured = connector.configured_fields.includes(field.key);
+                if ((connector.key === "zoom" || connector.key === "google_calendar") && ["access_token", "refresh_token"].includes(field.key)) {
+                  return null;
+                }
                 return (
                   <label key={field.key} className="grid gap-1">
                     <span className="flex items-center justify-between gap-2 text-xs text-muted">
@@ -229,13 +277,23 @@ export default function ConnectionsPage() {
               <p className="text-xs text-muted">
                 Missing: {connector.missing_fields.length ? connector.missing_fields.join(", ") : "none"}
               </p>
-              <button
-                onClick={() => saveConnector(connector)}
-                disabled={saving[connector.key] || !Object.values(drafts[connector.key] || {}).some(Boolean)}
-                className="rounded-md border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent hover:bg-accent/20 disabled:opacity-50"
-              >
-                {saving[connector.key] ? "Saving..." : "Save Connector"}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                {connector.key === "zoom" || connector.key === "google_calendar" ? (
+                  <button
+                    onClick={() => startOAuth(connector.key)}
+                    className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110"
+                  >
+                    {connector.status === "ready" ? `Reconnect ${connector.name}` : `Connect ${connector.name}`}
+                  </button>
+                ) : null}
+                <button
+                  onClick={() => saveConnector(connector)}
+                  disabled={saving[connector.key] || !Object.values(drafts[connector.key] || {}).some(Boolean)}
+                  className="rounded-md border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent hover:bg-accent/20 disabled:opacity-50"
+                >
+                  {saving[connector.key] ? "Saving..." : "Save Connector"}
+                </button>
+              </div>
             </div>
           </article>
         ))}

@@ -490,7 +490,7 @@ export type ConnectorField = {
 };
 
 export type ConnectorStatus = {
-  key: "skool" | "zoom" | "read_ai" | "openai";
+  key: "skool" | "zoom" | "google_calendar" | "read_ai" | "openai";
   name: string;
   status: "ready" | "needs_config" | "partial";
   purpose: string;
@@ -517,6 +517,7 @@ export type AgentSyncResponse = {
   imported_content_count: number;
   imported_meeting_count: number;
   imported_attendee_count: number;
+  imported_artifact_count: number;
   errors: string[];
 };
 

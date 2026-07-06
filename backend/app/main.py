@@ -152,10 +152,16 @@ app.add_middleware(
 async def _api_auth_middleware(request: Request, call_next):
     path = request.url.path
     auth_prefix = f"{settings.api_v1_prefix}/auth"
+    zoom_webhook_path = f"{settings.api_v1_prefix}/connections/zoom/webhook"
+    zoom_oauth_callback_path = f"{settings.api_v1_prefix}/connections/zoom/oauth/callback"
+    google_oauth_callback_path = f"{settings.api_v1_prefix}/connections/google-calendar/oauth/callback"
     if (
         request.method == "OPTIONS"
         or not path.startswith(settings.api_v1_prefix)
         or path.startswith(auth_prefix)
+        or path == zoom_webhook_path
+        or path == zoom_oauth_callback_path
+        or path == google_oauth_callback_path
     ):
         return await call_next(request)
 

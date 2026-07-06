@@ -283,6 +283,17 @@ Environment variables for both services:
 - `FRONTEND_APP_URL=https://<your-vercel-domain>`
 - `RESEND_API_KEY`
 - `AUTH_EMAIL_FROM=Teifke / Relationships <hello@yourdomain.com>`
+- `ZOOM_ACCOUNT_ID`
+- `ZOOM_CLIENT_ID`
+- `ZOOM_CLIENT_SECRET`
+- `ZOOM_RECORDING_USER_ID` (optional; defaults to first accessible active user)
+- `ZOOM_WEBHOOK_SECRET_TOKEN` (optional, recommended for recording-completed webhooks)
+- `ZOOM_OAUTH_CLIENT_ID`
+- `ZOOM_OAUTH_CLIENT_SECRET`
+- `ZOOM_OAUTH_REDIRECT_URI=https://<your-api-domain>/api/v1/connections/zoom/oauth/callback`
+- `GOOGLE_CALENDAR_CLIENT_ID`
+- `GOOGLE_CALENDAR_CLIENT_SECRET`
+- `GOOGLE_CALENDAR_REDIRECT_URI=https://<your-api-domain>/api/v1/connections/google-calendar/oauth/callback`
 - `CONTENT_BULK_SEND_MAX` (default `20`)
 - `API_V1_PREFIX=/api/v1`
 - `CORS_ORIGINS=https://<your-vercel-domain>`
@@ -308,6 +319,9 @@ Deploy `frontend/` and set:
 - CORS allows only Vercel domains
 - Worker can connect to Redis and Postgres
 - Posting `POST /interactions` enqueues AI tasks successfully
+- Zoom recording sync imports meetings, attendees, and recording artifacts from `POST /api/v1/connections/zoom/sync`
+- If using Zoom webhooks, register `https://<your-api-domain>/api/v1/connections/zoom/webhook` for recording completion events
+- For multi-client deployments, Zoom and Google Calendar should be connected through the in-app OAuth buttons. Legacy Zoom env vars are only a single-account fallback.
 
 ## MVP Workflow
 

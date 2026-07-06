@@ -12,7 +12,7 @@ from urllib.parse import quote
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.entities import AppUser, PasswordResetToken
+from app.models.entities import AppUser, PasswordResetToken, Workspace
 from app.schemas.auth import ProfileSetupRequest
 from app.services.email_service import EmailService
 
@@ -84,6 +84,9 @@ class AuthService:
             email=normalized_email,
             password_hash=AuthService.hash_password(password),
         )
+        workspace = Workspace(id=uuid.uuid4(), name=f"{user.name}'s Workspace", owner_user_id=user.id)
+        user.workspace_id = workspace.id
+        db.add(workspace)
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -100,6 +103,15 @@ class AuthService:
         user.wants_calendar_connection = payload.wants_calendar_connection
         user.wants_contact_import = payload.wants_contact_import
         user.onboarding_complete = True
+        if not user.workspace_id:
+            workspace = Workspace(id=uuid.uuid4(), name=payload.company_name.strip(), owner_user_id=user.id)
+            user.workspace_id = workspace.id
+            db.add(workspace)
+        else:
+            workspace = db.query(Workspace).filter(Workspace.id == user.workspace_id).first()
+            if workspace:
+                workspace.name = payload.company_name.strip()
+                workspace.owner_user_id = workspace.owner_user_id or user.id
         db.commit()
         db.refresh(user)
         return user

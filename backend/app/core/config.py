@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     frontend_app_url: str = "http://localhost:3000"
     resend_api_key: str = ""
     auth_email_from: str = "Teifke / Relationships <onboarding@resend.dev>"
+    zoom_webhook_secret_token: str = ""
+    zoom_oauth_client_id: str = ""
+    zoom_oauth_client_secret: str = ""
+    zoom_oauth_redirect_uri: str = ""
+    google_calendar_client_id: str = ""
+    google_calendar_client_secret: str = ""
+    google_calendar_redirect_uri: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

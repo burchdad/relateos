@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 class UserOut(BaseModel):
     id: UUID
+    workspace_id: UUID | None = None
     email: str
     name: str
     company_name: str | None = None

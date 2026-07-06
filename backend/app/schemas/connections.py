@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-ConnectorKey = Literal["skool", "zoom", "read_ai", "openai"]
+ConnectorKey = Literal["skool", "zoom", "google_calendar", "read_ai", "openai"]
 SyncMode = Literal["archive", "live_session", "full"]
 
 
@@ -36,6 +36,10 @@ class ConnectorUpdateResponse(BaseModel):
     message: str
 
 
+class OAuthStartResponse(BaseModel):
+    auth_url: str
+
+
 class AgentSyncRequest(BaseModel):
     mode: SyncMode = "full"
 
@@ -51,6 +55,7 @@ class AgentSyncResponse(BaseModel):
     imported_content_count: int = 0
     imported_meeting_count: int = 0
     imported_attendee_count: int = 0
+    imported_artifact_count: int = 0
     errors: list[str] = Field(default_factory=list)
 
 
