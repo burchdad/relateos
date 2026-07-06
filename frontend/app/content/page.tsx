@@ -402,16 +402,16 @@ export default function ContentPage() {
         </div>
       </section>
 
-      <section className="rounded-lg border border-soft bg-panel p-5 space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <section className="rounded-lg border border-soft bg-panel p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-text">Content Automation</h2>
+            <h2 className="text-base font-semibold text-text">What Happens Next</h2>
             <p className="mt-1 text-xs text-muted">
-              Connected sources can feed relationship workflows once credentials, sync rules, and profile settings are configured.
+              Content becomes useful once it is understood and matched to the right relationships.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href="/connections" className="rounded-md bg-accent px-3 py-2 text-xs font-semibold text-text hover:brightness-110">
+            <Link href="/connections" className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">
               Open Connections
             </Link>
             <Link href="/settings" className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">
@@ -419,16 +419,22 @@ export default function ContentPage() {
             </Link>
           </div>
         </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid gap-2 md:grid-cols-3">
           {[
-            ["Connected sources", "Zoom, calendar, community, and content accounts belong in Connections."],
-            ["Content intelligence", "Imported notes, transcripts, and links become searchable assets."],
-            ["Relationship targeting", "Assets can be matched to contacts when there is a relevant reason to follow up."],
-            ["Follow-up workflows", "Use content history to draft timely messages and campaign touchpoints."],
-          ].map(([label, detail]) => (
-            <article key={label} className="rounded-lg border border-soft bg-base p-4">
-              <h3 className="text-sm font-semibold text-text">{label}</h3>
-              <p className="mt-2 text-xs text-muted">{detail}</p>
+            { step: "1", title: "Add or import content", detail: "Save a link, transcript, recording, file, or meeting note." },
+            { step: "2", title: "Generate insight", detail: "RelateOS turns the asset into key points, context, and usable angles." },
+            { step: "3", title: "Match to contacts", detail: "The best-fit people and follow-up reasons surface when there is enough signal." },
+          ].map(item => (
+            <article key={item.step} className="rounded-lg border border-soft bg-base p-4">
+              <div className="flex items-start gap-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-text">
+                  {item.step}
+                </span>
+                <div>
+                  <h3 className="text-sm font-semibold text-text">{item.title}</h3>
+                  <p className="mt-1 text-xs text-muted">{item.detail}</p>
+                </div>
+              </div>
             </article>
           ))}
         </div>
