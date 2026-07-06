@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
+import QRCode from "qrcode";
 import { useEffect, useMemo, useState } from "react";
 
 import { resolveApiUrl } from "@/components/api";
@@ -66,6 +68,7 @@ export default function SettingsPage() {
   const [savingStyle, setSavingStyle] = useState(false);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [twoFactorSetup, setTwoFactorSetup] = useState<TwoFactorSetup | null>(null);
+  const [twoFactorQrUrl, setTwoFactorQrUrl] = useState("");
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [twoFactorBusy, setTwoFactorBusy] = useState(false);
   const [status, setStatus] = useState("");
@@ -116,6 +119,35 @@ export default function SettingsPage() {
 
     void loadSettings();
   }, [API_URL]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const buildQrCode = async () => {
+      if (!twoFactorSetup?.otpauth_url) {
+        setTwoFactorQrUrl("");
+        return;
+      }
+      try {
+        const dataUrl = await QRCode.toDataURL(twoFactorSetup.otpauth_url, {
+          errorCorrectionLevel: "M",
+          margin: 2,
+          scale: 6,
+          color: {
+            dark: "#1C3A2A",
+            light: "#FFFFFF",
+          },
+        });
+        if (!cancelled) setTwoFactorQrUrl(dataUrl);
+      } catch {
+        if (!cancelled) setTwoFactorQrUrl("");
+      }
+    };
+
+    void buildQrCode();
+    return () => {
+      cancelled = true;
+    };
+  }, [twoFactorSetup]);
 
   const updateProfile = <Key extends keyof UserProfile>(key: Key, value: UserProfile[Key]) => {
     setProfile(current => ({ ...current, [key]: value }));
@@ -436,10 +468,31 @@ export default function SettingsPage() {
 
             {twoFactorSetup ? (
               <div className="mt-4 grid gap-3">
+                <div className="grid gap-3 rounded-md border border-soft bg-base p-3 sm:grid-cols-[160px_1fr]">
+                  <div className="flex h-40 w-40 items-center justify-center rounded-md border border-soft bg-white p-2">
+                    {twoFactorQrUrl ? (
+                      <Image
+                        src={twoFactorQrUrl}
+                        alt="Authenticator app QR code"
+                        width={144}
+                        height={144}
+                        unoptimized
+                        className="h-full w-full"
+                      />
+                    ) : (
+                      <span className="text-center text-xs text-muted">Generating QR code...</span>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-text">Scan with your authenticator app</p>
+                    <p className="mt-1 text-sm text-muted">Open Google Authenticator, Microsoft Authenticator, 1Password, or another TOTP app and scan this code.</p>
+                    <p className="mt-3 text-xs uppercase tracking-wide text-muted">Manual setup key</p>
+                    <p className="mt-1 break-all font-mono text-sm font-semibold text-text">{twoFactorSetup.secret}</p>
+                  </div>
+                </div>
                 <div className="rounded-md border border-soft bg-base p-3">
-                  <p className="text-xs uppercase tracking-wide text-muted">Manual setup key</p>
-                  <p className="mt-1 break-all font-mono text-sm font-semibold text-text">{twoFactorSetup.secret}</p>
-                  <p className="mt-2 text-xs text-muted">Use Google Authenticator, Microsoft Authenticator, 1Password, or another TOTP app.</p>
+                  <p className="text-sm font-semibold text-text">Finish setup</p>
+                  <p className="mt-1 text-xs text-muted">After scanning, enter the six-digit code from the app to activate two-factor authentication.</p>
                 </div>
                 <label className="grid gap-1 text-sm font-medium text-text">
                   Verification code
