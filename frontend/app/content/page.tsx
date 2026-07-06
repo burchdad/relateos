@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import type { Route } from "next";
 
 import AddContentModal from "@/components/AddContentModal";
 import ContentCard from "@/components/ContentCard";
@@ -17,6 +18,44 @@ import {
 } from "@/components/types";
 
 type LoadingMap = Record<string, boolean>;
+
+type QuickAction =
+  | {
+      title: string;
+      detail: string;
+      action: string;
+      kind: "button";
+    }
+  | {
+      title: string;
+      detail: string;
+      action: string;
+      kind: "link";
+      href: Route;
+    };
+
+const QUICK_ACTIONS: QuickAction[] = [
+  {
+    title: "Add a link or file",
+    detail: "Save a useful resource, transcript, recording, PDF, or article.",
+    action: "Add Link or File",
+    kind: "button",
+  },
+  {
+    title: "Import Zoom notes",
+    detail: "Pull meeting summaries and transcripts from connected Zoom accounts.",
+    action: "Open Connections",
+    kind: "link",
+    href: "/connections",
+  },
+  {
+    title: "Target contacts",
+    detail: "Use content to decide who should receive what, and why now.",
+    action: "View Contacts",
+    kind: "link",
+    href: "/contacts?intent=targets",
+  },
+];
 
 const SOURCE_DIRECTORY: {
   type: ContentSourceType;
@@ -138,6 +177,7 @@ export default function ContentPage() {
     const withInsights = items.filter(item => item.latest_insight).length;
     return { sourceCounts, targetCount, withInsights };
   }, [items, statsByContent]);
+  const hasContent = items.length > 0;
 
   const onViewTargets = async (contentId: string, force = false) => {
     if (!force && (targetsByContent[contentId] || loadingTargets[contentId])) {
@@ -279,7 +319,7 @@ export default function ContentPage() {
             onClick={() => setShowAddModal(true)}
             className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110"
           >
-            Add Content
+            Add Link or File
           </button>
           <Link href="/contacts?intent=targets" className="rounded-lg border border-soft px-4 py-2 text-sm text-text hover:bg-soft/40">
             View Targets in Contacts
@@ -287,19 +327,43 @@ export default function ContentPage() {
         </div>
       </header>
 
-      <div className="grid gap-3 md:grid-cols-4">
-        {[
-          ["Library items", items.length],
-          ["Sources", Object.keys(contentStats.sourceCounts).length],
-          ["With insights", contentStats.withInsights],
-          ["Campaign targets", contentStats.targetCount],
-        ].map(([label, value]) => (
-          <div key={label} className="rounded-lg border border-soft bg-panel p-4">
-            <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
-            <p className="mt-1 text-2xl font-semibold text-text">{String(value)}</p>
-          </div>
+      <section className="grid gap-3 md:grid-cols-3">
+        {QUICK_ACTIONS.map(item => (
+          <article key={item.title} className="rounded-lg border border-soft bg-panel p-4">
+            <h2 className="text-base font-semibold text-text">{item.title}</h2>
+            <p className="mt-2 min-h-10 text-sm text-muted">{item.detail}</p>
+            {item.kind === "button" ? (
+              <button
+                type="button"
+                onClick={() => setShowAddModal(true)}
+                className="mt-4 rounded-md bg-accent px-3 py-2 text-sm font-semibold text-text hover:brightness-110"
+              >
+                {item.action}
+              </button>
+            ) : (
+              <Link href={item.href} className="mt-4 inline-flex rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">
+                {item.action}
+              </Link>
+            )}
+          </article>
         ))}
-      </div>
+      </section>
+
+      {hasContent ? (
+        <div className="grid gap-3 md:grid-cols-4">
+          {[
+            ["Library items", items.length],
+            ["Sources", Object.keys(contentStats.sourceCounts).length],
+            ["With insights", contentStats.withInsights],
+            ["Campaign targets", contentStats.targetCount],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-soft bg-panel p-4">
+              <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
+              <p className="mt-1 text-2xl font-semibold text-text">{String(value)}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       <section className="rounded-lg border border-soft bg-panel p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -394,7 +458,22 @@ export default function ContentPage() {
 
       {!loading && !error && filteredItems.length === 0 ? (
         <div className="rounded-lg border border-soft bg-panel p-6 text-sm text-muted">
-          <p>No content matches this view. Add a content item or connect a source from Connections.</p>
+          <p className="font-semibold text-text">Your content library is ready for its first item.</p>
+          <p className="mt-2">
+            Start with a meeting transcript, Zoom summary, useful link, PDF, or sales resource. RelateOS can use it to suggest who should receive it and why.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setShowAddModal(true)}
+              className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-text hover:brightness-110"
+            >
+              Add Link or File
+            </button>
+            <Link href="/connections" className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">
+              Connect Sources
+            </Link>
+          </div>
         </div>
       ) : null}
 
