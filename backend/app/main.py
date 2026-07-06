@@ -55,6 +55,15 @@ app = FastAPI(title=settings.app_name)
 
 REQUIRED_CONTENT_ITEM_COLUMNS = ["experiment_key", "experiment_variant"]
 REQUIRED_APP_USER_COLUMNS = ["workspace_id", "two_factor_enabled", "two_factor_secret", "two_factor_pending_secret"]
+REQUIRED_WORKSPACE_SCOPED_TABLES = [
+    "organizations",
+    "people",
+    "relationships",
+    "events",
+    "relationship_edges",
+    "engagement_events",
+    "meetings",
+]
 
 
 def _normalize_origin(raw_origin: str) -> str | None:
@@ -128,6 +137,18 @@ def _validate_schema_requirements() -> None:
             + ", ".join(missing_app_user_columns)
         )
 
+    missing_workspace_columns = []
+    for table_name in REQUIRED_WORKSPACE_SCOPED_TABLES:
+        if inspector.has_table(table_name):
+            columns = {column["name"] for column in inspector.get_columns(table_name)}
+            if "workspace_id" not in columns:
+                missing_workspace_columns.append(table_name)
+    if missing_workspace_columns:
+        raise RuntimeError(
+            "Schema validation failed for workspace scoping. Missing workspace_id on: "
+            + ", ".join(missing_workspace_columns)
+        )
+
 
 def _ensure_workspace_connector_schema() -> None:
     """Repair the small workspace/OAuth schema on hosts that skip Alembic."""
@@ -152,6 +173,9 @@ def _ensure_workspace_connector_schema() -> None:
         connection.execute(text("ALTER TABLE app_users ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN NOT NULL DEFAULT false"))
         connection.execute(text("ALTER TABLE app_users ADD COLUMN IF NOT EXISTS two_factor_secret TEXT NULL"))
         connection.execute(text("ALTER TABLE app_users ADD COLUMN IF NOT EXISTS two_factor_pending_secret TEXT NULL"))
+        for table_name in REQUIRED_WORKSPACE_SCOPED_TABLES:
+            connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS workspace_id UUID NULL"))
+            connection.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{table_name}_workspace_id ON {table_name} (workspace_id)"))
         connection.execute(
             text(
                 """

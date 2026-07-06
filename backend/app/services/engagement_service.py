@@ -227,7 +227,7 @@ class EngagementService:
         return summary, enriched_payload
 
     @staticmethod
-    def create(db: Session, payload: EngagementEventCreate) -> EngagementEvent:
+    def create(db: Session, payload: EngagementEventCreate, workspace_id: uuid.UUID | None = None) -> EngagementEvent:
         normalized_type = _normalize_event_type(payload.event_type)
         platform = _normalize_platform(payload.source_platform)
         occurred_at = payload.occurred_at or datetime.now(timezone.utc)
@@ -240,6 +240,7 @@ class EngagementService:
         )
         event = EngagementEvent(
             id=uuid.uuid4(),
+            workspace_id=workspace_id,
             contact_id=payload.contact_id,
             organization_id=payload.organization_id,
             event_type=normalized_type,
@@ -255,21 +256,23 @@ class EngagementService:
         return event
 
     @staticmethod
-    def list_all(db: Session, contact_id: uuid.UUID | None = None, limit: int = 100) -> list[EngagementEvent]:
+    def list_all(db: Session, contact_id: uuid.UUID | None = None, limit: int = 100, workspace_id: uuid.UUID | None = None) -> list[EngagementEvent]:
         q = db.query(EngagementEvent)
+        if workspace_id:
+            q = q.filter(EngagementEvent.workspace_id == workspace_id)
         if contact_id:
             q = q.filter(EngagementEvent.contact_id == contact_id)
         return q.order_by(EngagementEvent.occurred_at.desc()).limit(limit).all()
 
     @staticmethod
-    def bulk_import(db: Session, payload: EngagementImportRequest) -> dict:
+    def bulk_import(db: Session, payload: EngagementImportRequest, workspace_id: uuid.UUID | None = None) -> dict:
         created_events = 0
         created_contacts = 0
         for row in payload.rows:
             contact_id = None
             if row.email and payload.auto_create_contacts:
                 from app.services.contact_service import ContactService
-                contact = ContactService.find_or_create_by_email(db, row.email, row.name)
+                contact = ContactService.find_or_create_by_email(db, row.email, row.name, workspace_id=workspace_id)
                 contact_id = contact.id
                 if contact.source is None:
                     contact.source = "import"
@@ -294,6 +297,7 @@ class EngagementService:
 
             event = EngagementEvent(
                 id=uuid.uuid4(),
+                workspace_id=workspace_id,
                 contact_id=contact_id,
                 event_type=normalized_type,
                 source_platform=platform,
@@ -309,12 +313,12 @@ class EngagementService:
         return {"events_created": created_events, "contacts_created": created_contacts}
 
     @staticmethod
-    def capture(db: Session, payload: EngagementCaptureRequest) -> dict[str, Any]:
+    def capture(db: Session, payload: EngagementCaptureRequest, workspace_id: uuid.UUID | None = None) -> dict[str, Any]:
         contact_id = None
         if payload.email and payload.auto_create_contact:
             from app.services.contact_service import ContactService
 
-            contact = ContactService.find_or_create_by_email(db, payload.email, payload.name)
+            contact = ContactService.find_or_create_by_email(db, payload.email, payload.name, workspace_id=workspace_id)
             contact_id = contact.id
             if contact.source is None:
                 contact.source = "capture"
@@ -331,7 +335,7 @@ class EngagementService:
                 "email": payload.email,
             },
         )
-        event = EngagementService.create(db, event_payload)
+        event = EngagementService.create(db, event_payload, workspace_id=workspace_id)
         return {
             "id": str(event.id),
             "contact_id": str(event.contact_id) if event.contact_id else None,

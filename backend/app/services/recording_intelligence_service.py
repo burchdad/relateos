@@ -50,8 +50,12 @@ GENERIC_ZOOM_TEXT_MARKERS = [
 
 class RecordingIntelligenceService:
     @staticmethod
-    def analyze(db: Session, meeting_id: uuid.UUID) -> MeetingRecordingAnalysisResponse:
-        meeting = MeetingService.get_by_id(db, meeting_id)
+    def analyze(
+        db: Session,
+        meeting_id: uuid.UUID,
+        workspace_id: uuid.UUID | None = None,
+    ) -> MeetingRecordingAnalysisResponse:
+        meeting = MeetingService.get_by_id(db, meeting_id, workspace_id=workspace_id)
         if not meeting:
             raise ValueError("Meeting not found")
 
@@ -163,6 +167,7 @@ class RecordingIntelligenceService:
                 },
                 auto_create_contacts=True,
             ),
+            workspace_id=meeting.workspace_id,
         )
 
         return MeetingRecordingAnalysisResponse(

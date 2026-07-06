@@ -8,8 +8,9 @@ from app.schemas.event import EventCreate
 
 class EventService:
     @staticmethod
-    def create_event(db: Session, payload: EventCreate) -> Event:
+    def create_event(db: Session, payload: EventCreate, workspace_id: UUID | None = None) -> Event:
         event = Event(
+            workspace_id=workspace_id,
             title=payload.title.strip(),
             description=payload.description.strip(),
             event_type=payload.event_type,
@@ -24,9 +25,15 @@ class EventService:
         return event
 
     @staticmethod
-    def get_events(db: Session) -> list[Event]:
-        return db.query(Event).order_by(Event.created_at.desc()).all()
+    def get_events(db: Session, workspace_id: UUID | None = None) -> list[Event]:
+        q = db.query(Event)
+        if workspace_id:
+            q = q.filter(Event.workspace_id == workspace_id)
+        return q.order_by(Event.created_at.desc()).all()
 
     @staticmethod
-    def get_event_by_id(db: Session, event_id: UUID) -> Event | None:
-        return db.query(Event).filter(Event.id == event_id).first()
+    def get_event_by_id(db: Session, event_id: UUID, workspace_id: UUID | None = None) -> Event | None:
+        q = db.query(Event).filter(Event.id == event_id)
+        if workspace_id:
+            q = q.filter(Event.workspace_id == workspace_id)
+        return q.first()

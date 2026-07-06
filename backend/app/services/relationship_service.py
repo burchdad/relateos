@@ -36,7 +36,7 @@ def _next_suggested_action_at(last_interaction_timing: str) -> datetime:
 
 class RelationshipService:
     @staticmethod
-    def create_person_and_relationship(db: Session, payload: RelationshipCreate) -> Relationship:
+    def create_person_and_relationship(db: Session, payload: RelationshipCreate, workspace_id: UUID | None = None) -> Relationship:
         normalized_type = normalize_role(payload.type) or payload.type
         taxonomy = role_metadata(normalized_type)
         person_metadata = {
@@ -56,6 +56,7 @@ class RelationshipService:
         }
 
         person = Person(
+            workspace_id=workspace_id,
             first_name=payload.person.first_name,
             last_name=payload.person.last_name,
             email=payload.person.email,
@@ -84,6 +85,7 @@ class RelationshipService:
         last_contacted_at = _last_contacted_at_from_timing(payload.last_interaction_timing)
 
         relationship = Relationship(
+            workspace_id=workspace_id,
             person_id=person.id,
             type=normalized_type,
             lifecycle_stage=lifecycle_stage,
@@ -112,21 +114,25 @@ class RelationshipService:
         return relationship
 
     @staticmethod
-    def get_by_id(db: Session, relationship_id):
-        return (
-            db.query(Relationship)
-            .options(joinedload(Relationship.person))
-            .filter(Relationship.id == relationship_id)
-            .first()
-        )
+    def get_by_id(db: Session, relationship_id, workspace_id: UUID | None = None):
+        q = db.query(Relationship).options(joinedload(Relationship.person)).filter(Relationship.id == relationship_id)
+        if workspace_id:
+            q = q.filter(Relationship.workspace_id == workspace_id)
+        return q.first()
 
     @staticmethod
-    def list_all(db: Session):
-        return db.query(Relationship).options(joinedload(Relationship.person)).order_by(Relationship.created_at.desc()).all()
+    def list_all(db: Session, workspace_id: UUID | None = None):
+        q = db.query(Relationship).options(joinedload(Relationship.person))
+        if workspace_id:
+            q = q.filter(Relationship.workspace_id == workspace_id)
+        return q.order_by(Relationship.created_at.desc()).all()
 
     @staticmethod
-    def update_lifecycle_stage(db: Session, relationship_id, lifecycle_stage: str):
-        rel = db.query(Relationship).filter(Relationship.id == relationship_id).first()
+    def update_lifecycle_stage(db: Session, relationship_id, lifecycle_stage: str, workspace_id: UUID | None = None):
+        q = db.query(Relationship).filter(Relationship.id == relationship_id)
+        if workspace_id:
+            q = q.filter(Relationship.workspace_id == workspace_id)
+        rel = q.first()
         if not rel:
             return None
         rel.lifecycle_stage = lifecycle_stage
@@ -135,8 +141,8 @@ class RelationshipService:
         return rel
 
     @staticmethod
-    def delete_relationship(db: Session, relationship_id: UUID) -> bool:
-        deleted = RelationshipService.bulk_delete_relationships(db, relationship_ids=[relationship_id], delete_all=False)
+    def delete_relationship(db: Session, relationship_id: UUID, workspace_id: UUID | None = None) -> bool:
+        deleted = RelationshipService.bulk_delete_relationships(db, relationship_ids=[relationship_id], delete_all=False, workspace_id=workspace_id)
         return deleted > 0
 
     @staticmethod
@@ -144,14 +150,21 @@ class RelationshipService:
         db: Session,
         relationship_ids: list[UUID] | None = None,
         delete_all: bool = False,
+        workspace_id: UUID | None = None,
     ) -> int:
         if delete_all:
-            target_relationships = db.query(Relationship).all()
+            q = db.query(Relationship)
+            if workspace_id:
+                q = q.filter(Relationship.workspace_id == workspace_id)
+            target_relationships = q.all()
         else:
             ids = list({rid for rid in (relationship_ids or [])})
             if not ids:
                 return 0
-            target_relationships = db.query(Relationship).filter(Relationship.id.in_(ids)).all()
+            q = db.query(Relationship).filter(Relationship.id.in_(ids))
+            if workspace_id:
+                q = q.filter(Relationship.workspace_id == workspace_id)
+            target_relationships = q.all()
 
         if not target_relationships:
             return 0
@@ -169,11 +182,15 @@ class RelationshipService:
             db.query(Relationship).filter(Relationship.id.in_(target_ids)).delete(synchronize_session=False)
 
             for person_id in person_ids:
-                has_remaining_relationships = (
-                    db.query(Relationship.id).filter(Relationship.person_id == person_id).first() is not None
-                )
+                remaining_q = db.query(Relationship.id).filter(Relationship.person_id == person_id)
+                if workspace_id:
+                    remaining_q = remaining_q.filter(Relationship.workspace_id == workspace_id)
+                has_remaining_relationships = remaining_q.first() is not None
                 if not has_remaining_relationships:
-                    db.query(Person).filter(Person.id == person_id).delete(synchronize_session=False)
+                    person_q = db.query(Person).filter(Person.id == person_id)
+                    if workspace_id:
+                        person_q = person_q.filter(Person.workspace_id == workspace_id)
+                    person_q.delete(synchronize_session=False)
 
             db.commit()
             return len(target_ids)

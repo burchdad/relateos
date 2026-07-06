@@ -11,6 +11,7 @@ class Organization(Base):
     __tablename__ = "organizations"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     org_type: Mapped[str] = mapped_column(
         String(50),
@@ -39,6 +40,7 @@ class Person(Base):
     __tablename__ = "people"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True, index=True)
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -79,6 +81,7 @@ class Relationship(Base):
     __tablename__ = "relationships"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True, index=True)
     person_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("people.id"), nullable=False)
     type: Mapped[str] = mapped_column(String(50), nullable=False)
     lifecycle_stage: Mapped[str] = mapped_column(String(50), default="new")
@@ -232,6 +235,7 @@ class Event(Base):
     __tablename__ = "events"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     event_type: Mapped[str] = mapped_column(Enum("weekly", "monthly", "one-time", name="event_type"), nullable=False)
@@ -413,6 +417,7 @@ class RelationshipEdge(Base):
     __tablename__ = "relationship_edges"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True, index=True)
     source_contact_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("people.id"), nullable=False)
     target_contact_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("people.id"), nullable=False)
     organization_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -437,6 +442,7 @@ class EngagementEvent(Base):
     __tablename__ = "engagement_events"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True, index=True)
     contact_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("people.id"), nullable=True)
     organization_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True
@@ -496,6 +502,7 @@ class Meeting(Base):
     __tablename__ = "meetings"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     platform: Mapped[str | None] = mapped_column(String(50), nullable=True)
     meeting_url: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -132,11 +132,12 @@ def _dashboard_signals(signals: list[RelationshipSignal]):
     )
 
 
-def get_top_priorities(db: Session, limit: int = 10):
+def get_top_priorities(db: Session, limit: int = 10, workspace_id=None):
+    q = db.query(Relationship).options(joinedload(Relationship.person))
+    if workspace_id:
+        q = q.filter(Relationship.workspace_id == workspace_id)
     rows = (
-        db.query(Relationship)
-        .options(joinedload(Relationship.person))
-        .order_by(desc(Relationship.priority_score))
+        q.order_by(desc(Relationship.priority_score))
         .limit(limit)
         .all()
     )
@@ -166,13 +167,11 @@ def get_top_priorities(db: Session, limit: int = 10):
     return output
 
 
-def get_score_explanation(db: Session, relationship_id):
-    rel = (
-        db.query(Relationship)
-        .options(joinedload(Relationship.person))
-        .filter(Relationship.id == relationship_id)
-        .first()
-    )
+def get_score_explanation(db: Session, relationship_id, workspace_id=None):
+    q = db.query(Relationship).options(joinedload(Relationship.person)).filter(Relationship.id == relationship_id)
+    if workspace_id:
+        q = q.filter(Relationship.workspace_id == workspace_id)
+    rel = q.first()
     if not rel:
         return None
 

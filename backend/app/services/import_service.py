@@ -790,6 +790,7 @@ class ImportService:
         file_name: str,
         file_bytes: bytes,
         source_type: str,
+        workspace_id: uuid.UUID | None = None,
         sheet_name: str | None = None,
         sheet_names: list[str] | None = None,
         header_row: int | None = None,
@@ -828,7 +829,11 @@ class ImportService:
 
         organizations = {
             (org.name or "").strip().lower(): org
-            for org in db.query(Organization).all()
+            for org in (
+                db.query(Organization).filter(Organization.workspace_id == workspace_id).all()
+                if workspace_id
+                else db.query(Organization).all()
+            )
             if (org.name or "").strip()
         }
 
@@ -860,30 +865,47 @@ class ImportService:
         for chunk in _chunked(sorted(list(emails | referrer_emails | parent_emails))):
             if not chunk:
                 continue
-            for person in db.query(Person).filter(func.lower(Person.email).in_(chunk)).all():
+            q = db.query(Person).filter(func.lower(Person.email).in_(chunk))
+            if workspace_id:
+                q = q.filter(Person.workspace_id == workspace_id)
+            for person in q.all():
                 if person.email:
                     people_by_email[person.email.lower()] = person
 
         for chunk in _chunked(sorted(list(phones))):
             if not chunk:
                 continue
-            for person in db.query(Person).filter(Person.phone.in_(chunk)).all():
+            q = db.query(Person).filter(Person.phone.in_(chunk))
+            if workspace_id:
+                q = q.filter(Person.workspace_id == workspace_id)
+            for person in q.all():
                 normalized_phone = _normalize_phone(person.phone)
                 if normalized_phone:
                     people_by_phone[normalized_phone] = person
 
-        for person in db.query(Person).filter(or_(Person.email.isnot(None), Person.phone.isnot(None))).all():
+        people_name_q = db.query(Person).filter(or_(Person.email.isnot(None), Person.phone.isnot(None)))
+        if workspace_id:
+            people_name_q = people_name_q.filter(Person.workspace_id == workspace_id)
+        for person in people_name_q.all():
             name_key = f"{(person.first_name or '').strip().lower()}|{(person.last_name or '').strip().lower()}|{str(person.organization_id or '')}"
             if name_key not in people_by_name:
                 people_by_name[name_key] = person
 
         relationship_cache = {
             relationship.person_id: relationship
-            for relationship in db.query(Relationship).all()
+            for relationship in (
+                db.query(Relationship).filter(Relationship.workspace_id == workspace_id).all()
+                if workspace_id
+                else db.query(Relationship).all()
+            )
         }
         existing_edge_keys = {
             (str(edge.source_contact_id), str(edge.target_contact_id), edge.relationship_type)
-            for edge in db.query(RelationshipEdge).all()
+            for edge in (
+                db.query(RelationshipEdge).filter(RelationshipEdge.workspace_id == workspace_id).all()
+                if workspace_id
+                else db.query(RelationshipEdge).all()
+            )
         }
 
         def get_or_create_organization(name: str | None, row: dict[str, Any]) -> Organization | None:
@@ -896,6 +918,7 @@ class ImportService:
 
             organization = Organization(
                 id=uuid.uuid4(),
+                workspace_id=workspace_id,
                 name=(name or "").strip(),
                 website=str(_first_value(row, target_map.get("organization.website", [])) or "").strip() or None,
                 location=str(_first_value(row, target_map.get("organization.location", [])) or "").strip() or None,
@@ -939,6 +962,7 @@ class ImportService:
             if not relationship:
                 relationship = Relationship(
                     id=uuid.uuid4(),
+                    workspace_id=workspace_id,
                     person_id=person.id,
                     type=relationship_type,
                     lifecycle_stage=lifecycle_stage,
@@ -966,6 +990,7 @@ class ImportService:
 
             placeholder = Person(
                 id=uuid.uuid4(),
+                workspace_id=workspace_id,
                 first_name=first_name or "Unknown",
                 last_name=last_name,
                 email=normalized_email,
@@ -1014,6 +1039,7 @@ class ImportService:
             if not person:
                 person = Person(
                     id=uuid.uuid4(),
+                    workspace_id=workspace_id,
                     first_name=first_name or "Unknown",
                     last_name=last_name,
                     email=email,
@@ -1174,6 +1200,7 @@ class ImportService:
                 db.add(
                     RelationshipEdge(
                         id=uuid.uuid4(),
+                        workspace_id=workspace_id,
                         source_contact_id=source_person.id,
                         target_contact_id=target_person.id,
                         organization_id=organization.id if organization else None,
@@ -1215,6 +1242,7 @@ class ImportService:
         *,
         sheet_url: str,
         source_type: str,
+        workspace_id: uuid.UUID | None = None,
         sheet_name: str | None = None,
         sheet_names: list[str] | None = None,
         header_row: int | None = None,
@@ -1243,6 +1271,7 @@ class ImportService:
             header_row=header_row,
             include_all_sheets=include_all_sheets,
             mapping_override=mapping_override,
+            workspace_id=workspace_id,
         )
         result.warnings = [
             "Imported from Google Sheets URL. Private/authenticated sheets are not supported yet.",

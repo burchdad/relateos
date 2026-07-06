@@ -17,13 +17,12 @@ def _taxonomy_for_role(primary_role: str | None) -> tuple[str | None, str | None
 
 class ContactService:
     @staticmethod
-    def _attach_relationship_context(people: list[Person]) -> list[Person]:
+    def _attach_relationship_context(people: list[Person], workspace_id: uuid.UUID | None = None) -> list[Person]:
         for person in people:
-            relationships = sorted(
-                person.relationships or [],
-                key=lambda rel: (rel.priority_score or 0.0, rel.updated_at or rel.created_at),
-                reverse=True,
-            )
+            relationship_rows = person.relationships or []
+            if workspace_id:
+                relationship_rows = [rel for rel in relationship_rows if rel.workspace_id == workspace_id]
+            relationships = sorted(relationship_rows, key=lambda rel: (rel.priority_score or 0.0, rel.updated_at or rel.created_at), reverse=True)
             relationship = relationships[0] if relationships else None
             if not relationship:
                 continue
@@ -51,10 +50,11 @@ class ContactService:
         return people
 
     @staticmethod
-    def create(db: Session, payload: ContactCreate) -> Person:
+    def create(db: Session, payload: ContactCreate, workspace_id: uuid.UUID | None = None) -> Person:
         primary_role, role_family, market_segment = _taxonomy_for_role(payload.primary_role)
         person = Person(
             id=uuid.uuid4(),
+            workspace_id=workspace_id,
             first_name=payload.first_name,
             last_name=payload.last_name,
             email=payload.email,
@@ -73,18 +73,22 @@ class ContactService:
         db.add(person)
         db.commit()
         db.refresh(person)
-        return ContactService._attach_relationship_context([person])[0]
+        return ContactService._attach_relationship_context([person], workspace_id)[0]
 
     @staticmethod
-    def get_by_id(db: Session, contact_id: uuid.UUID) -> Person | None:
-        person = db.query(Person).filter(Person.id == contact_id).first()
+    def get_by_id(db: Session, contact_id: uuid.UUID, workspace_id: uuid.UUID | None = None) -> Person | None:
+        q = db.query(Person).filter(Person.id == contact_id)
+        if workspace_id:
+            q = q.filter(Person.workspace_id == workspace_id)
+        person = q.first()
         if not person:
             return None
-        return ContactService._attach_relationship_context([person])[0]
+        return ContactService._attach_relationship_context([person], workspace_id)[0]
 
     @staticmethod
     def list_all(
         db: Session,
+        workspace_id: uuid.UUID | None = None,
         role: str | None = None,
         organization_id: uuid.UUID | None = None,
         relationship_stage: str | None = None,
@@ -97,6 +101,8 @@ class ContactService:
         offset: int = 0,
     ) -> list[Person]:
         q = db.query(Person)
+        if workspace_id:
+            q = q.filter(Person.workspace_id == workspace_id)
         if role:
             q = q.filter(Person.primary_role == role)
         if organization_id:
@@ -119,11 +125,14 @@ class ContactService:
         if dormant_only:
             q = q.filter(Person.relationship_stage == "dormant")
         people = q.order_by(Person.created_at.desc()).offset(offset).limit(limit).all()
-        return ContactService._attach_relationship_context(people)
+        return ContactService._attach_relationship_context(people, workspace_id)
 
     @staticmethod
-    def update(db: Session, contact_id: uuid.UUID, payload: ContactUpdate) -> Person | None:
-        person = db.query(Person).filter(Person.id == contact_id).first()
+    def update(db: Session, contact_id: uuid.UUID, payload: ContactUpdate, workspace_id: uuid.UUID | None = None) -> Person | None:
+        q = db.query(Person).filter(Person.id == contact_id)
+        if workspace_id:
+            q = q.filter(Person.workspace_id == workspace_id)
+        person = q.first()
         if not person:
             return None
         updates = payload.model_dump(exclude_unset=True)
@@ -139,8 +148,11 @@ class ContactService:
         return person
 
     @staticmethod
-    def delete(db: Session, contact_id: uuid.UUID) -> bool:
-        person = db.query(Person).filter(Person.id == contact_id).first()
+    def delete(db: Session, contact_id: uuid.UUID, workspace_id: uuid.UUID | None = None) -> bool:
+        q = db.query(Person).filter(Person.id == contact_id)
+        if workspace_id:
+            q = q.filter(Person.workspace_id == workspace_id)
+        person = q.first()
         if not person:
             return False
         db.delete(person)
@@ -148,13 +160,17 @@ class ContactService:
         return True
 
     @staticmethod
-    def find_or_create_by_email(db: Session, email: str, name: str | None = None) -> Person:
-        existing = db.query(Person).filter(Person.email == email).first()
+    def find_or_create_by_email(db: Session, email: str, name: str | None = None, workspace_id: uuid.UUID | None = None) -> Person:
+        q = db.query(Person).filter(Person.email == email)
+        if workspace_id:
+            q = q.filter(Person.workspace_id == workspace_id)
+        existing = q.first()
         if existing:
             return existing
         parts = (name or "Unknown").split(" ", 1)
         person = Person(
             id=uuid.uuid4(),
+            workspace_id=workspace_id,
             first_name=parts[0],
             last_name=parts[1] if len(parts) > 1 else "",
             email=email,

@@ -113,9 +113,10 @@ def _extract_attendees_from_ics(ical_text: str | None) -> list[dict[str, str | N
 
 class MeetingService:
     @staticmethod
-    def create(db: Session, payload: MeetingCreate) -> Meeting:
+    def create(db: Session, payload: MeetingCreate, workspace_id: uuid.UUID | None = None) -> Meeting:
         meeting = Meeting(
             id=uuid.uuid4(),
+            workspace_id=workspace_id,
             title=payload.title,
             platform=payload.platform,
             meeting_url=payload.meeting_url,
@@ -132,21 +133,21 @@ class MeetingService:
         db: Session,
         provider: str | None,
         external_meeting_id: str | None,
+        workspace_id: uuid.UUID | None = None,
     ) -> Meeting | None:
         if not provider or not external_meeting_id:
             return None
-        return (
-            db.query(Meeting)
-            .filter(
-                Meeting.source_provider == provider,
-                Meeting.external_meeting_id == external_meeting_id,
-            )
-            .first()
-        )
+        q = db.query(Meeting).filter(Meeting.source_provider == provider, Meeting.external_meeting_id == external_meeting_id)
+        if workspace_id:
+            q = q.filter(Meeting.workspace_id == workspace_id)
+        return q.first()
 
     @staticmethod
-    def get_by_id(db: Session, meeting_id: uuid.UUID) -> Meeting | None:
-        return db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    def get_by_id(db: Session, meeting_id: uuid.UUID, workspace_id: uuid.UUID | None = None) -> Meeting | None:
+        q = db.query(Meeting).filter(Meeting.id == meeting_id)
+        if workspace_id:
+            q = q.filter(Meeting.workspace_id == workspace_id)
+        return q.first()
 
     @staticmethod
     def _upsert_meeting_edges(
@@ -169,6 +170,7 @@ class MeetingService:
                         target_id,
                         relationship_type="met_in_meeting",
                         strength=strength,
+                        workspace_id=meeting.workspace_id,
                         evidence={
                             "source": source,
                             "meeting_id": str(meeting.id),
@@ -183,12 +185,18 @@ class MeetingService:
         return edges_created
 
     @staticmethod
-    def list_all(db: Session, limit: int = 50) -> list[Meeting]:
-        return db.query(Meeting).order_by(Meeting.created_at.desc()).limit(limit).all()
+    def list_all(db: Session, limit: int = 50, workspace_id: uuid.UUID | None = None) -> list[Meeting]:
+        q = db.query(Meeting)
+        if workspace_id:
+            q = q.filter(Meeting.workspace_id == workspace_id)
+        return q.order_by(Meeting.created_at.desc()).limit(limit).all()
 
     @staticmethod
-    def update(db: Session, meeting_id: uuid.UUID, payload: MeetingUpdate) -> Meeting | None:
-        meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    def update(db: Session, meeting_id: uuid.UUID, payload: MeetingUpdate, workspace_id: uuid.UUID | None = None) -> Meeting | None:
+        q = db.query(Meeting).filter(Meeting.id == meeting_id)
+        if workspace_id:
+            q = q.filter(Meeting.workspace_id == workspace_id)
+        meeting = q.first()
         if not meeting:
             return None
         for field, value in payload.model_dump(exclude_unset=True).items():
@@ -198,8 +206,8 @@ class MeetingService:
         return meeting
 
     @staticmethod
-    def import_attendees(db: Session, meeting_id: uuid.UUID, payload: AttendeeImportRequest) -> dict:
-        meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    def import_attendees(db: Session, meeting_id: uuid.UUID, payload: AttendeeImportRequest, workspace_id: uuid.UUID | None = None) -> dict:
+        meeting = MeetingService.get_by_id(db, meeting_id, workspace_id=workspace_id)
         if not meeting:
             return {"error": "meeting not found"}
 
@@ -211,7 +219,7 @@ class MeetingService:
             contact_id = None
             if row.email and payload.auto_create_contacts:
                 from app.services.contact_service import ContactService
-                contact = ContactService.find_or_create_by_email(db, row.email, row.name)
+                contact = ContactService.find_or_create_by_email(db, row.email, row.name, workspace_id=workspace_id)
                 contact_id = contact.id
                 if contact.source is None:
                     contact.source = "meeting"
@@ -249,12 +257,14 @@ class MeetingService:
     def ingest_intelligence_report(
         db: Session,
         payload: MeetingIntelligenceReportRequest,
+        workspace_id: uuid.UUID | None = None,
     ) -> MeetingIntelligenceReportResponse:
         provider = _clean(payload.provider).lower() or "read_ai"
-        meeting = MeetingService._find_existing_report_meeting(db, provider, payload.external_meeting_id)
+        meeting = MeetingService._find_existing_report_meeting(db, provider, payload.external_meeting_id, workspace_id=workspace_id)
         if meeting is None:
             meeting = Meeting(
                 id=uuid.uuid4(),
+                workspace_id=workspace_id,
                 title=payload.title,
                 platform=payload.platform,
                 meeting_url=payload.meeting_url,
@@ -291,8 +301,11 @@ class MeetingService:
             if email and payload.auto_create_contacts:
                 from app.services.contact_service import ContactService
 
-                existing = db.query(Person).filter(Person.email == email).first()
-                contact = ContactService.find_or_create_by_email(db, email, name)
+                existing_q = db.query(Person).filter(Person.email == email)
+                if workspace_id:
+                    existing_q = existing_q.filter(Person.workspace_id == workspace_id)
+                existing = existing_q.first()
+                contact = ContactService.find_or_create_by_email(db, email, name, workspace_id=workspace_id)
                 contact_id = contact.id
                 if existing is None:
                     contacts_created += 1
@@ -367,12 +380,12 @@ class MeetingService:
         )
 
     @staticmethod
-    def generate_followups(db: Session, meeting_id: uuid.UUID) -> MeetingFollowUpResponse:
+    def generate_followups(db: Session, meeting_id: uuid.UUID, workspace_id: uuid.UUID | None = None) -> MeetingFollowUpResponse:
         """
         AI meeting follow-up generator. Uses GPT-4o when OPENAI_API_KEY is set,
         otherwise falls back to deterministic templates.
         """
-        meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+        meeting = MeetingService.get_by_id(db, meeting_id, workspace_id=workspace_id)
         if not meeting:
             raise ValueError("Meeting not found")
 
@@ -449,7 +462,7 @@ class MeetingService:
         )
 
     @staticmethod
-    def ingest_invite(db: Session, payload: InboundInviteRequest) -> InboundInviteResponse:
+    def ingest_invite(db: Session, payload: InboundInviteRequest, workspace_id: uuid.UUID | None = None) -> InboundInviteResponse:
         ical_title = _extract_ics_value(payload.ical_text, "SUMMARY")
         ical_start = _extract_ics_value(payload.ical_text, "DTSTART")
         ical_end = _extract_ics_value(payload.ical_text, "DTEND")
@@ -465,6 +478,7 @@ class MeetingService:
 
         meeting = Meeting(
             id=uuid.uuid4(),
+            workspace_id=workspace_id,
             title=title,
             platform=platform,
             meeting_url=meeting_url or None,
@@ -516,8 +530,11 @@ class MeetingService:
             if attendee_email and payload.auto_create_contacts:
                 from app.services.contact_service import ContactService
 
-                existing = db.query(Person).filter(Person.email == attendee_email).first()
-                contact = ContactService.find_or_create_by_email(db, attendee_email, attendee_name)
+                existing_q = db.query(Person).filter(Person.email == attendee_email)
+                if workspace_id:
+                    existing_q = existing_q.filter(Person.workspace_id == workspace_id)
+                existing = existing_q.first()
+                contact = ContactService.find_or_create_by_email(db, attendee_email, attendee_name, workspace_id=workspace_id)
                 contact_id = contact.id
                 if existing is None:
                     contacts_created += 1

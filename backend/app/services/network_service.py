@@ -49,6 +49,7 @@ class NetworkService:
         relationship_type: str,
         strength: float = 1.0,
         organization_id=None,
+        workspace_id=None,
         revenue_attributed: float = 0.0,
         deal_count: int = 0,
         evidence: dict | None = None,
@@ -62,6 +63,7 @@ class NetworkService:
                 RelationshipEdge.source_contact_id == source_contact_id,
                 RelationshipEdge.target_contact_id == target_contact_id,
                 RelationshipEdge.relationship_type == relationship_type,
+                RelationshipEdge.workspace_id == workspace_id,
             )
             .first()
         )
@@ -71,6 +73,7 @@ class NetworkService:
                 RelationshipEdge.source_contact_id == target_contact_id,
                 RelationshipEdge.target_contact_id == source_contact_id,
                 RelationshipEdge.relationship_type == relationship_type,
+                RelationshipEdge.workspace_id == workspace_id,
             )
             .first()
         )
@@ -78,6 +81,7 @@ class NetworkService:
         created = edge is None
         if edge is None:
             edge = RelationshipEdge(
+                workspace_id=workspace_id,
                 source_contact_id=source_contact_id,
                 target_contact_id=target_contact_id,
                 relationship_type=relationship_type,
@@ -103,9 +107,12 @@ class NetworkService:
         min_strength: float = 0.0,
         role: str | None = None,
         revenue_min: float = 0.0,
+        workspace_id=None,
     ) -> NetworkGraphResponse:
         # Build node set
         people_q = db.query(Person)
+        if workspace_id:
+            people_q = people_q.filter(Person.workspace_id == workspace_id)
         if organization_id:
             people_q = people_q.filter(Person.organization_id == organization_id)
         if role:
@@ -151,6 +158,8 @@ class NetworkService:
             RelationshipEdge.source_contact_id.in_(person_ids),
             RelationshipEdge.target_contact_id.in_(person_ids),
         )
+        if workspace_id:
+            edges_q = edges_q.filter(RelationshipEdge.workspace_id == workspace_id)
         if min_strength > 0:
             edges_q = edges_q.filter(RelationshipEdge.strength >= min_strength)
 
@@ -173,7 +182,7 @@ class NetworkService:
         return NetworkGraphResponse(nodes=nodes, edges=edges)
 
     @staticmethod
-    def get_scoreboard(db: Session) -> ScoreboardResponse:
+    def get_scoreboard(db: Session, workspace_id=None) -> ScoreboardResponse:
         now = datetime.now(timezone.utc)
         t30 = now - timedelta(days=30)
         t90 = now - timedelta(days=90)
@@ -206,7 +215,12 @@ class NetworkService:
                     continue
                 cid = str(participant.contact_id)
                 if cid not in partner_revenue:
-                    contact = db.query(Person).filter(Person.id == participant.contact_id).first()
+                    contact_q = db.query(Person).filter(Person.id == participant.contact_id)
+                    if workspace_id:
+                        contact_q = contact_q.filter(Person.workspace_id == workspace_id)
+                    contact = contact_q.first()
+                    if not contact:
+                        continue
                     partner_revenue[cid] = {
                         "contact_id": cid,
                         "name": f"{contact.first_name} {contact.last_name}" if contact else "Unknown",
@@ -246,6 +260,10 @@ class NetworkService:
         # Most active contacts (by lifetime value)
         active_people = (
             db.query(Person)
+            .filter(Person.workspace_id == workspace_id) if workspace_id else db.query(Person)
+        )
+        active_people = (
+            active_people
             .order_by(Person.lifetime_value.desc())
             .limit(10)
             .all()

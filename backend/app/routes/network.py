@@ -4,7 +4,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.core.auth import current_user
 from app.core.database import get_db
+from app.core.workspace import workspace_id_for_user
+from app.models import AppUser
 from app.schemas.network import NetworkGraphResponse, ScoreboardResponse
 from app.services.network_service import NetworkService
 
@@ -20,6 +23,7 @@ def network_graph(
     role: Optional[str] = Query(None),
     revenue_min: float = Query(0.0),
     db: Session = Depends(get_db),
+    user: AppUser = Depends(current_user),
 ):
     return NetworkService.get_graph(
         db,
@@ -29,9 +33,10 @@ def network_graph(
         min_strength=min_strength,
         role=role,
         revenue_min=revenue_min,
+        workspace_id=workspace_id_for_user(db, user),
     )
 
 
 @router.get("/scoreboard", response_model=ScoreboardResponse)
-def scoreboard(db: Session = Depends(get_db)):
-    return NetworkService.get_scoreboard(db)
+def scoreboard(db: Session = Depends(get_db), user: AppUser = Depends(current_user)):
+    return NetworkService.get_scoreboard(db, workspace_id=workspace_id_for_user(db, user))

@@ -110,6 +110,7 @@ class ZoomImportService:
                     },
                     auto_create_contacts=True,
                 ),
+                workspace_id=workspace_id,
             )
             imported_meetings += 1
             imported_attendees += response.attendees_added
@@ -208,6 +209,7 @@ class ZoomImportService:
                     },
                     auto_create_contacts=True,
                 ),
+                workspace_id=workspace_id,
             )
             imported_meetings += 1
             if not ZoomImportService._ai_summary_artifact_exists(db, response.meeting_id, detail):
@@ -273,6 +275,7 @@ class ZoomImportService:
                 raw_payload={"source": "zoom_recording_webhook", "recording": recording},
                 auto_create_contacts=True,
             ),
+            workspace_id=workspace_id,
         )
         imported_artifacts = ZoomImportService._import_recording_files(
             db,

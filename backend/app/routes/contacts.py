@@ -4,7 +4,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.core.auth import current_user
 from app.core.database import get_db
+from app.core.workspace import workspace_id_for_user
+from app.models import AppUser
 from app.schemas.contact import ContactCreate, ContactOut, ContactUpdate
 from app.services.contact_service import ContactService
 
@@ -23,9 +26,12 @@ def list_contacts(
     limit: int = Query(100, le=500),
     offset: int = Query(0),
     db: Session = Depends(get_db),
+    user: AppUser = Depends(current_user),
 ):
+    workspace_id = workspace_id_for_user(db, user)
     return ContactService.list_all(
         db,
+        workspace_id=workspace_id,
         role=role,
         organization_id=organization_id,
         relationship_stage=relationship_stage,
@@ -39,27 +45,27 @@ def list_contacts(
 
 
 @router.post("", response_model=ContactOut, status_code=201)
-def create_contact(payload: ContactCreate, db: Session = Depends(get_db)):
-    return ContactService.create(db, payload)
+def create_contact(payload: ContactCreate, db: Session = Depends(get_db), user: AppUser = Depends(current_user)):
+    return ContactService.create(db, payload, workspace_id=workspace_id_for_user(db, user))
 
 
 @router.get("/{contact_id}", response_model=ContactOut)
-def get_contact(contact_id: uuid.UUID, db: Session = Depends(get_db)):
-    contact = ContactService.get_by_id(db, contact_id)
+def get_contact(contact_id: uuid.UUID, db: Session = Depends(get_db), user: AppUser = Depends(current_user)):
+    contact = ContactService.get_by_id(db, contact_id, workspace_id=workspace_id_for_user(db, user))
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
     return contact
 
 
 @router.put("/{contact_id}", response_model=ContactOut)
-def update_contact(contact_id: uuid.UUID, payload: ContactUpdate, db: Session = Depends(get_db)):
-    contact = ContactService.update(db, contact_id, payload)
+def update_contact(contact_id: uuid.UUID, payload: ContactUpdate, db: Session = Depends(get_db), user: AppUser = Depends(current_user)):
+    contact = ContactService.update(db, contact_id, payload, workspace_id=workspace_id_for_user(db, user))
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
     return contact
 
 
 @router.delete("/{contact_id}", status_code=204)
-def delete_contact(contact_id: uuid.UUID, db: Session = Depends(get_db)):
-    if not ContactService.delete(db, contact_id):
+def delete_contact(contact_id: uuid.UUID, db: Session = Depends(get_db), user: AppUser = Depends(current_user)):
+    if not ContactService.delete(db, contact_id, workspace_id=workspace_id_for_user(db, user)):
         raise HTTPException(status_code=404, detail="Contact not found")
