@@ -35,6 +35,7 @@ def _workspace_id(db: Session, user: AppUser):
     if not db_user.workspace_id:
         workspace = Workspace(id=uuid.uuid4(), name=db_user.company_name or f"{db_user.name}'s Workspace", owner_user_id=db_user.id)
         db.add(workspace)
+        db.flush()
         db_user.workspace_id = workspace.id
         db.commit()
         db.refresh(db_user)
