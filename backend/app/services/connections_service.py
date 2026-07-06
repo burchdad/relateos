@@ -122,13 +122,14 @@ class ConnectionsService:
         fields = definition["fields"]
         configured_fields = []
         missing_fields = []
+        allow_env_fallback = workspace_id is None
 
         for field in fields:
             field_key = field["key"]
             if field_key == "community_url":
                 configured_fields.append(field_key)
                 continue
-            if ConnectionsService._field_configured(stored, definition.get("env", {}), field_key):
+            if ConnectionsService._field_configured(stored, definition.get("env", {}), field_key, allow_env_fallback):
                 configured_fields.append(field_key)
             elif field.get("required", True):
                 missing_fields.append(field_key)
@@ -491,9 +492,11 @@ class ConnectionsService:
         }
 
     @staticmethod
-    def _field_configured(stored: dict, env_map: dict, field_key: str) -> bool:
+    def _field_configured(stored: dict, env_map: dict, field_key: str, allow_env_fallback: bool = True) -> bool:
         if stored.get(field_key):
             return True
+        if not allow_env_fallback:
+            return False
         return any(os.getenv(env_key) for env_key in env_map.get(field_key, []))
 
     @staticmethod

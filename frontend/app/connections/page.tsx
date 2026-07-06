@@ -244,10 +244,21 @@ export default function ConnectionsPage() {
       <section className="mt-4 grid gap-4 lg:grid-cols-2">
         {(overview?.connectors || []).map(connector => (
           <article key={connector.key} className="rounded-lg border border-soft bg-panel p-5">
+            {(() => {
+              const oauthConnected =
+                (connector.key === "zoom" || connector.key === "google_calendar") &&
+                connector.configured_fields.includes("refresh_token");
+              return (
+                <>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-text">{connector.name}</h2>
                 <p className="mt-1 text-sm text-muted">{connector.purpose}</p>
+                {oauthConnected ? (
+                  <p className="mt-2 rounded-md border border-sage/40 bg-sage-pale px-3 py-2 text-xs font-semibold text-text">
+                    OAuth connected for this workspace.
+                  </p>
+                ) : null}
               </div>
               <span className={`rounded-full border px-2 py-1 text-[11px] uppercase tracking-wide ${STATUS_STYLES[connector.status]}`}>
                 {connector.status.replace(/_/g, " ")}
@@ -258,6 +269,9 @@ export default function ConnectionsPage() {
               {connector.fields.map(field => {
                 const configured = connector.configured_fields.includes(field.key);
                 if ((connector.key === "zoom" || connector.key === "google_calendar") && ["access_token", "refresh_token"].includes(field.key)) {
+                  return null;
+                }
+                if (connector.key === "zoom" && oauthConnected && ["account_id", "client_id", "client_secret"].includes(field.key)) {
                   return null;
                 }
                 return (
@@ -300,6 +314,9 @@ export default function ConnectionsPage() {
                 </button>
               </div>
             </div>
+                </>
+              );
+            })()}
           </article>
         ))}
       </section>
