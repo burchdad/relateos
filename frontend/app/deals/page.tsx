@@ -35,6 +35,7 @@ export default function DealsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [query, setQuery] = useState("");
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
+  const [quickLogOpen, setQuickLogOpen] = useState(false);
 
   const fetchDeals = useCallback(async () => {
     setLoading(true);
@@ -95,8 +96,15 @@ export default function DealsPage() {
     if (res.ok) {
       setNlInput("");
       setNlResult(null);
+      setQuickLogOpen(false);
       await fetchDeals();
     }
+  };
+
+  const closeQuickLog = () => {
+    setQuickLogOpen(false);
+    setNlInput("");
+    setNlResult(null);
   };
 
   return (
@@ -107,6 +115,13 @@ export default function DealsPage() {
           <h2 className="mt-1 text-2xl font-semibold text-text">Deals</h2>
           <p className="text-sm text-muted mt-1">Track deal flow, referrals, splits, pipeline value, and closed revenue.</p>
         </div>
+        <button
+          type="button"
+          onClick={() => setQuickLogOpen(true)}
+          className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110"
+        >
+          Log Deal
+        </button>
       </div>
 
       <div className="grid gap-3 md:grid-cols-5">
@@ -123,63 +138,6 @@ export default function DealsPage() {
           </div>
         ))}
       </div>
-
-      <section className="rounded-lg border border-accent/30 bg-panel p-5 space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-text">Quick Log</p>
-            <p className="mt-1 text-xs text-muted">Describe the deal once. RelateOS will parse the basics before you save.</p>
-          </div>
-          {nlResult ? (
-            <span className={`rounded-full border px-2 py-1 text-xs ${nlResult.confidence >= 0.8 ? "border-green-500/30 bg-green-500/10 text-green-300" : "border-yellow-500/30 bg-yellow-500/10 text-yellow-200"}`}>
-              {Math.round(nlResult.confidence * 100)}% confidence
-            </span>
-          ) : null}
-        </div>
-        <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-          <input
-            type="text"
-            value={nlInput}
-            onChange={e => setNlInput(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && handleNlParse()}
-            placeholder='Example: Closed 15K coaching deal with Darian, split 50/50, March 12'
-            className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
-          />
-          <button onClick={handleNlParse} disabled={nlParsing || !nlInput.trim()}
-            className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110 transition disabled:opacity-50">
-            {nlParsing ? "Parsing..." : "Parse Deal"}
-          </button>
-        </div>
-
-        {nlResult && (
-          <div className="rounded-lg border border-soft bg-base p-4 space-y-4">
-            <div className="grid gap-3 md:grid-cols-4">
-              {[
-                ["Title", nlResult.parsed.title],
-                ["Type", labelFor(String(nlResult.parsed.deal_type || ""))],
-                ["Status", labelFor(String(nlResult.parsed.status || ""))],
-                ["Amount", nlResult.parsed.amount ? money(Number(nlResult.parsed.amount)) : "-"],
-              ].map(([label, value]) => (
-                <div key={label as string} className="rounded-md border border-soft bg-panel p-3">
-                  <p className="text-xs uppercase tracking-wide text-muted">{label as string}</p>
-                  <p className="mt-1 truncate text-sm font-medium capitalize text-text">{String(value || "-")}</p>
-                </div>
-              ))}
-            </div>
-            {nlResult.missing_fields.length > 0 ? (
-              <p className="text-xs text-yellow-200">Missing: {nlResult.missing_fields.join(", ")}</p>
-            ) : null}
-            <div className="flex gap-3">
-              <button onClick={handleConfirmDeal} className="rounded-md bg-green-500/15 border border-green-500/30 px-4 py-2 text-sm font-semibold text-green-300 hover:bg-green-500/20 transition">
-                Confirm & Save
-              </button>
-              <button onClick={() => setNlResult(null)} className="px-4 py-2 text-sm text-muted hover:text-text transition">
-                Discard
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
 
       <section className="rounded-lg border border-soft bg-panel p-4">
         <div className="grid gap-3 lg:grid-cols-[1fr_220px_220px]">
@@ -275,6 +233,78 @@ export default function DealsPage() {
           )}
         </aside>
       </div>
+
+      {quickLogOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-8">
+          <section className="w-full max-w-3xl rounded-lg border border-soft bg-panel p-5 shadow-2xl">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-accent">Quick Log</p>
+                <h3 className="mt-1 text-xl font-semibold text-text">Log a Deal</h3>
+                <p className="mt-1 text-sm text-muted">Describe the deal once. RelateOS will parse the basics before you save.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {nlResult ? (
+                  <span className={`rounded-full border px-2 py-1 text-xs ${nlResult.confidence >= 0.8 ? "border-green-500/30 bg-green-500/10 text-green-300" : "border-yellow-500/30 bg-yellow-500/10 text-yellow-200"}`}>
+                    {Math.round(nlResult.confidence * 100)}% confidence
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={closeQuickLog}
+                  className="rounded-md border border-soft px-3 py-2 text-sm text-muted hover:bg-soft/40 hover:text-text"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto]">
+              <input
+                type="text"
+                value={nlInput}
+                onChange={e => setNlInput(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleNlParse()}
+                placeholder='Example: Closed 15K coaching deal with Darian, split 50/50, March 12'
+                className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
+              />
+              <button onClick={handleNlParse} disabled={nlParsing || !nlInput.trim()}
+                className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110 transition disabled:opacity-50">
+                {nlParsing ? "Parsing..." : "Parse Deal"}
+              </button>
+            </div>
+
+            {nlResult ? (
+              <div className="mt-4 rounded-lg border border-soft bg-base p-4 space-y-4">
+                <div className="grid gap-3 md:grid-cols-4">
+                  {[
+                    ["Title", nlResult.parsed.title],
+                    ["Type", labelFor(String(nlResult.parsed.deal_type || ""))],
+                    ["Status", labelFor(String(nlResult.parsed.status || ""))],
+                    ["Amount", nlResult.parsed.amount ? money(Number(nlResult.parsed.amount)) : "-"],
+                  ].map(([label, value]) => (
+                    <div key={label as string} className="rounded-md border border-soft bg-panel p-3">
+                      <p className="text-xs uppercase tracking-wide text-muted">{label as string}</p>
+                      <p className="mt-1 truncate text-sm font-medium capitalize text-text">{String(value || "-")}</p>
+                    </div>
+                  ))}
+                </div>
+                {nlResult.missing_fields.length > 0 ? (
+                  <p className="text-xs text-yellow-200">Missing: {nlResult.missing_fields.join(", ")}</p>
+                ) : null}
+                <div className="flex flex-wrap gap-3">
+                  <button onClick={handleConfirmDeal} className="rounded-md bg-green-500/15 border border-green-500/30 px-4 py-2 text-sm font-semibold text-green-300 hover:bg-green-500/20 transition">
+                    Confirm & Save
+                  </button>
+                  <button onClick={() => setNlResult(null)} className="px-4 py-2 text-sm text-muted hover:text-text transition">
+                    Discard
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
