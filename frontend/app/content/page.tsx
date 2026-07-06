@@ -60,32 +60,40 @@ const QUICK_ACTIONS: QuickAction[] = [
 const SOURCE_DIRECTORY: {
   type: ContentSourceType;
   label: string;
-  description: string;
-  status: "available" | "connect" | "planned";
+  status: "connected" | "not_connected" | "planned";
 }[] = [
   {
     type: "upload",
-    label: "Manual Upload / Link",
-    description: "Add URLs, PDFs, transcripts, recordings, and reusable content assets directly.",
-    status: "available",
+    label: "Manual",
+    status: "connected",
   },
   {
     type: "zoom",
-    label: "Zoom Meetings",
-    description: "Recording links, AI notes, transcripts, summaries, and meeting follow-up assets.",
-    status: "connect",
+    label: "Zoom",
+    status: "not_connected",
   },
   {
     type: "skool",
-    label: "Skool Community",
-    description: "Community posts, classroom resources, member content, and session links.",
-    status: "connect",
+    label: "Skool",
+    status: "not_connected",
   },
-  { type: "youtube", label: "YouTube", description: "Long-form videos, clips, webinars, and channel archives.", status: "planned" },
-  { type: "facebook", label: "Facebook", description: "Page posts, group posts, lives, and audience comments.", status: "planned" },
-  { type: "instagram", label: "Instagram", description: "Reels, carousels, stories, and DM-driving posts.", status: "planned" },
-  { type: "podcast", label: "Podcast", description: "Episodes, guest clips, show notes, and follow-up assets.", status: "planned" },
+  { type: "youtube", label: "YouTube", status: "planned" },
+  { type: "facebook", label: "Facebook", status: "planned" },
+  { type: "instagram", label: "Instagram", status: "planned" },
+  { type: "podcast", label: "Podcast", status: "planned" },
 ];
+
+const SOURCE_STATUS_STYLES = {
+  connected: "bg-sage text-text",
+  not_connected: "bg-red-500 text-red-500",
+  planned: "bg-accent text-accent",
+};
+
+const SOURCE_STATUS_LABELS = {
+  connected: "Connected",
+  not_connected: "Not connected",
+  planned: "Planned",
+};
 
 export default function ContentPage() {
   const API_URL = useMemo(resolveApiUrl, []);
@@ -366,36 +374,30 @@ export default function ContentPage() {
       ) : null}
 
       <section className="rounded-lg border border-soft bg-panel p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-text">Source Directory</h2>
-            <p className="mt-1 text-xs text-muted">Track content sources here. Manage account connections and credentials in Connections.</p>
+            <h2 className="text-base font-semibold text-text">Source Status</h2>
+            <p className="mt-1 text-xs text-muted">Connections live in the Connections tab; this row just shows what can feed the library.</p>
           </div>
           <Link href="/connections" className="rounded-md border border-soft px-3 py-2 text-xs font-medium text-text hover:bg-soft/40">
             Manage Connections
           </Link>
         </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-4 flex flex-wrap gap-2">
           {SOURCE_DIRECTORY.map(source => (
-            <div key={source.type} className="rounded-lg border border-soft bg-base p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-text">{source.label}</p>
-                  <p className="mt-1 text-xs text-muted">{source.description}</p>
-                </div>
-                <span className="rounded-full border border-soft bg-soft/30 px-2 py-1 text-[10px] uppercase tracking-wide text-muted">
-                  {source.status}
-                </span>
-              </div>
-              <div className="mt-3 flex items-center justify-between text-xs">
-                <button onClick={() => setSourceFilter(source.type)} className="text-accent hover:underline">
-                  View {contentStats.sourceCounts[source.type] || 0} items
-                </button>
-                {source.status === "connect" ? (
-                  <Link href="/connections" className="text-muted hover:text-text">Connect source</Link>
-                ) : null}
-              </div>
-            </div>
+            <button
+              key={source.type}
+              onClick={() => setSourceFilter(source.type)}
+              className="flex min-h-11 items-center gap-2 rounded-md border border-soft bg-base px-3 py-2 text-left text-sm text-text hover:bg-soft/30"
+              title={SOURCE_STATUS_LABELS[source.status]}
+            >
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${SOURCE_STATUS_STYLES[source.status]}`}
+                aria-hidden="true"
+              />
+              <span className="font-semibold">{source.label}</span>
+              <span className="text-xs text-muted">{contentStats.sourceCounts[source.type] || 0}</span>
+            </button>
           ))}
         </div>
       </section>
