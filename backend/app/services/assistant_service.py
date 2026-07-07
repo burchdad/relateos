@@ -172,7 +172,7 @@ class AssistantService:
             return self._create_task_from_text(db, message=message, context=context)
 
         if any(word in lowered for word in ["delete", "remove", "bulk", "send all", "email all", "sync "]):
-            proposal = self._proposal_for_sensitive_action(message)
+            proposal = self._proposal_for_sensitive_action(db, message=message, context=context)
             if proposal:
                 return proposal
 
@@ -184,12 +184,18 @@ class AssistantService:
                     "Zoom AI notes sync can import meeting summaries into this workspace.",
                     "confirm sync zoom ai notes",
                     action_type="sync_zoom_ai_notes",
+                    db=db,
+                    context=context,
+                    prompt=message,
                 )
             if "sync zoom" in lowered:
                 return self._propose_confirmation(
                     "Zoom recording sync can import recordings, attendees, transcripts, and related artifacts into this workspace.",
                     "confirm sync zoom recordings",
                     action_type="sync_zoom_recordings",
+                    db=db,
+                    context=context,
+                    prompt=message,
                 )
 
         if any(word in lowered for word in ["invite", "add teammate", "team member"]) and EMAIL_RE.search(message):
@@ -240,7 +246,25 @@ class AssistantService:
         )
         db.commit()
 
-    def _propose_confirmation(self, reply: str, confirm_command: str, *, action_type: str) -> dict:
+    def _propose_confirmation(
+        self,
+        reply: str,
+        confirm_command: str,
+        *,
+        action_type: str,
+        db: Session | None = None,
+        context: WorkspaceContext | None = None,
+        prompt: str | None = None,
+    ) -> dict:
+        if db is not None and context is not None:
+            self._log_action(
+                db,
+                context=context,
+                action_type=action_type,
+                status="needs_confirmation",
+                prompt=prompt,
+                metadata={"confirm_command": confirm_command},
+            )
         return {
             "reply": f"{reply} Confirm before I run it.",
             "actions": [
@@ -255,16 +279,16 @@ class AssistantService:
             "navigate_to": None,
         }
 
-    def _proposal_for_sensitive_action(self, message: str) -> dict | None:
+    def _proposal_for_sensitive_action(self, db: Session, *, message: str, context: WorkspaceContext) -> dict | None:
         lowered = message.lower()
         if "sync zoom ai" in lowered or "sync ai notes" in lowered or "ai companion" in lowered:
-            return self._propose_confirmation("Zoom AI notes sync can import summaries and action items.", "confirm sync zoom ai notes", action_type="sync_zoom_ai_notes")
+            return self._propose_confirmation("Zoom AI notes sync can import summaries and action items.", "confirm sync zoom ai notes", action_type="sync_zoom_ai_notes", db=db, context=context, prompt=message)
         if "sync zoom" in lowered:
-            return self._propose_confirmation("Zoom recording sync can import recording and attendee data.", "confirm sync zoom recordings", action_type="sync_zoom_recordings")
+            return self._propose_confirmation("Zoom recording sync can import recording and attendee data.", "confirm sync zoom recordings", action_type="sync_zoom_recordings", db=db, context=context, prompt=message)
         if "delete" in lowered or "remove" in lowered:
-            return self._propose_confirmation("That changes or removes data and needs a manual review path.", "open settings", action_type="destructive_review")
+            return self._propose_confirmation("That changes or removes data and needs a manual review path.", "open settings", action_type="destructive_review", db=db, context=context, prompt=message)
         if "send all" in lowered or "email all" in lowered or "bulk" in lowered:
-            return self._propose_confirmation("Bulk send actions need review before anything leaves the workspace.", "open tasks", action_type="bulk_send_review")
+            return self._propose_confirmation("Bulk send actions need review before anything leaves the workspace.", "open tasks", action_type="bulk_send_review", db=db, context=context, prompt=message)
         return None
 
     def _handle_confirmation(self, db: Session, *, message: str, context: WorkspaceContext) -> dict | None:
@@ -396,10 +420,20 @@ class AssistantService:
                 event_url=url_match.group(0),
                 day_of_week=day_of_week,
                 time_of_day=time_match.group(1),
+                add_to_calendar="calendar" in lowered,
             ),
             workspace_id=context.workspace_id,
         )
-        self._log_action(db, context=context, action_type="create_event", status="completed", prompt=message, target_type="event", target_id=event.id)
+        self._log_action(
+            db,
+            context=context,
+            action_type="create_event",
+            status=event.calendar_sync_status or "completed",
+            prompt=message,
+            target_type="event",
+            target_id=event.id,
+            metadata={"calendar_sync_status": event.calendar_sync_status, "calendar_sync_error": event.calendar_sync_error},
+        )
         return {
             "reply": f"Created event: {event.title}.",
             "actions": [{"type": "create_event", "label": "Open Events", "href": "/events", "metadata": {"event_id": str(event.id)}}],
@@ -416,6 +450,9 @@ class AssistantService:
                 f"I parsed this as '{deal_payload.title}' for ${deal_payload.amount:,.0f}, but it needs review.",
                 "open deals",
                 action_type="deal_review",
+                db=db,
+                context=context,
+                prompt=message,
             )
         deal = DealService.create(db, deal_payload, workspace_id=context.workspace_id)
         self._log_action(db, context=context, action_type="create_deal", status="completed", prompt=message, target_type="deal", target_id=deal.id, metadata={"amount": deal.amount, "status": deal.status})

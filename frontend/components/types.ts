@@ -203,6 +203,11 @@ export type EventItem = {
   event_url: string;
   day_of_week: number | null;
   time_of_day: string;
+  calendar_start_date?: string | null;
+  calendar_event_id?: string | null;
+  calendar_event_url?: string | null;
+  calendar_sync_status?: string | null;
+  calendar_sync_error?: string | null;
   owner_user_id: string | null;
   created_at: string;
 };

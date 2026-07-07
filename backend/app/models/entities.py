@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -302,6 +302,11 @@ class Event(Base):
     event_url: Mapped[str] = mapped_column(Text, nullable=False)
     day_of_week: Mapped[int | None] = mapped_column(Integer, nullable=True)
     time_of_day: Mapped[str] = mapped_column(String(50), nullable=False)
+    calendar_start_date: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    calendar_event_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    calendar_event_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    calendar_sync_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    calendar_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     owner_user_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

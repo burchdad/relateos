@@ -144,6 +144,7 @@ export default function EventsPage() {
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [calendarNotice, setCalendarNotice] = useState("");
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
@@ -297,6 +298,7 @@ export default function EventsPage() {
   const onCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setCreateError("");
+    setCalendarNotice("");
 
     if (!form.title.trim() || !form.description.trim() || !form.eventUrl.trim() || !form.timeOfDay.trim()) {
       setCreateError("Title, description, event URL, and time are required.");
@@ -312,6 +314,8 @@ export default function EventsPage() {
         event_url: form.eventUrl.trim(),
         day_of_week: form.eventType === "one-time" ? null : Number(form.dayOfWeek),
         time_of_day: form.timeOfDay.trim(),
+        calendar_start_date: form.calendarStartDate || null,
+        add_to_calendar: form.addToCalendar,
         owner_user_id: form.ownerUserId.trim() || null,
       };
 
@@ -321,9 +325,9 @@ export default function EventsPage() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error("Failed to create event");
-
-      if (form.addToCalendar) {
-        openCalendarEvent(form);
+      const created = (await res.json()) as EventItem;
+      if (form.addToCalendar && created.calendar_sync_status === "failed") {
+        setCalendarNotice(created.calendar_sync_error || "Event saved, but Google Calendar could not be updated.");
       }
       setForm(emptyForm);
       setShowForm(false);
@@ -523,9 +527,12 @@ export default function EventsPage() {
       </section>
 
       {error ? <p className="text-sm text-red-300">{error}</p> : null}
+      {calendarNotice ? (
+        <p className="rounded-lg border border-accent/40 bg-accent/10 px-4 py-3 text-sm text-text">{calendarNotice}</p>
+      ) : null}
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <section className="rounded-lg border border-soft bg-panel overflow-hidden">
-          <div className="grid grid-cols-[minmax(220px,1.4fr)_150px_170px_1fr] border-b border-soft bg-base/60 px-4 py-3 text-xs uppercase tracking-wide text-muted">
+        <section className="overflow-x-auto rounded-lg border border-soft bg-panel">
+          <div className="grid min-w-[720px] grid-cols-[minmax(220px,1.4fr)_150px_170px_1fr] border-b border-soft bg-base/60 px-4 py-3 text-xs uppercase tracking-wide text-muted">
             <span>Event</span>
             <span>Type</span>
             <span>Schedule</span>
@@ -539,7 +546,7 @@ export default function EventsPage() {
             <div className="max-h-[680px] overflow-auto divide-y divide-soft">
               {filteredEvents.map(item => (
                 <button key={item.id} onClick={() => setSelectedEvent(item)}
-                  className={`grid w-full grid-cols-[minmax(220px,1.4fr)_150px_170px_1fr] items-center gap-3 px-4 py-3 text-left text-sm hover:bg-soft/20 ${selectedEvent?.id === item.id ? "bg-accent/10" : ""}`}>
+                  className={`grid w-full min-w-[720px] grid-cols-[minmax(220px,1.4fr)_150px_170px_1fr] items-center gap-3 px-4 py-3 text-left text-sm hover:bg-soft/20 ${selectedEvent?.id === item.id ? "bg-accent/10" : ""}`}>
                   <span className="min-w-0">
                     <span className="block truncate font-medium text-text">{item.title}</span>
                     <span className="block truncate text-xs text-muted">{item.description}</span>
@@ -565,14 +572,33 @@ export default function EventsPage() {
                 <p className="text-muted">Schedule: <span className="text-text">{selectedEvent.day_of_week === null ? "One-time" : dayLabels[selectedEvent.day_of_week]} at {selectedEvent.time_of_day}</span></p>
                 <p className="text-muted">Owner: <span className="text-text">{selectedEvent.owner_user_id || "Unassigned"}</span></p>
                 <p className="text-muted">Created: <span className="text-text">{new Date(selectedEvent.created_at).toLocaleDateString()}</span></p>
+                <p className="text-muted">
+                  Calendar:{" "}
+                  <span className="text-text">
+                    {selectedEvent.calendar_sync_status === "synced"
+                      ? "Synced"
+                      : selectedEvent.calendar_sync_status === "failed"
+                      ? "Needs attention"
+                      : "Not synced"}
+                  </span>
+                </p>
               </div>
+              {selectedEvent.calendar_sync_status === "failed" && selectedEvent.calendar_sync_error ? (
+                <p className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-xs text-text">
+                  {selectedEvent.calendar_sync_error}
+                </p>
+              ) : null}
               <div>
                 <p className="text-xs uppercase tracking-wide text-muted">Description</p>
                 <p className="mt-2 rounded-lg border border-soft bg-base p-3 text-sm text-muted">{selectedEvent.description}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <a href={selectedEvent.event_url} target="_blank" rel="noreferrer" className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-text">Open Link</a>
-                <button onClick={() => openExistingCalendarEvent(selectedEvent)} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Add to Calendar</button>
+                {selectedEvent.calendar_event_url ? (
+                  <a href={selectedEvent.calendar_event_url} target="_blank" rel="noreferrer" className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Open Calendar</a>
+                ) : (
+                  <button onClick={() => openExistingCalendarEvent(selectedEvent)} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Add Manually</button>
+                )}
                 <button onClick={() => setShowInvitePanel(v => !v)} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Invite Contacts</button>
               </div>
               {showInvitePanel ? (

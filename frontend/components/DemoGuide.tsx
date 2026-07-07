@@ -154,7 +154,7 @@ export default function DemoGuide() {
       <button
         onClick={restart}
         aria-label="Run simple demo tour"
-        className="fixed bottom-4 right-4 z-40 rounded-full border border-soft/70 bg-panel/70 px-2.5 py-1.5 text-[11px] font-medium text-muted shadow-[0_6px_18px_rgba(28,58,42,0.08)] backdrop-blur hover:bg-panel hover:text-text sm:bottom-5 sm:right-5 sm:px-3"
+        className="fixed bottom-20 right-4 z-40 rounded-full border border-soft/70 bg-panel/70 px-2.5 py-1.5 text-[11px] font-medium text-muted shadow-[0_6px_18px_rgba(28,58,42,0.08)] backdrop-blur hover:bg-panel hover:text-text sm:bottom-5 sm:right-5 sm:px-3"
       >
         <span className="hidden sm:inline">Demo Tour</span>
         <span className="sm:hidden">Demo</span>

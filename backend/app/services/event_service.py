@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Event
 from app.schemas.event import EventCreate
+from app.services.google_calendar_service import GoogleCalendarService
 
 
 class EventService:
@@ -17,11 +18,24 @@ class EventService:
             event_url=payload.event_url.strip(),
             day_of_week=payload.day_of_week,
             time_of_day=payload.time_of_day.strip(),
+            calendar_start_date=payload.calendar_start_date,
             owner_user_id=payload.owner_user_id,
         )
         db.add(event)
         db.commit()
         db.refresh(event)
+        if payload.add_to_calendar and workspace_id:
+            try:
+                calendar_event = GoogleCalendarService.create_event_for_workspace(db, event=event, workspace_id=workspace_id)
+                event.calendar_event_id = calendar_event.get("id")
+                event.calendar_event_url = calendar_event.get("htmlLink")
+                event.calendar_sync_status = "synced"
+                event.calendar_sync_error = None
+            except Exception as exc:
+                event.calendar_sync_status = "failed"
+                event.calendar_sync_error = str(exc)
+            db.commit()
+            db.refresh(event)
         return event
 
     @staticmethod
