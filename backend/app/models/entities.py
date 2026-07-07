@@ -143,6 +143,8 @@ class FollowUpTask(Base):
 
     linked_relationship: Mapped["Relationship | None"] = relationship("Relationship", foreign_keys=[relationship_id])
     contact: Mapped["Person | None"] = relationship("Person", foreign_keys=[contact_id])
+    assigned_user: Mapped["AppUser | None"] = relationship("AppUser", foreign_keys=[assigned_to_user_id])
+    created_by_user: Mapped["AppUser | None"] = relationship("AppUser", foreign_keys=[created_by_user_id])
 
 
 class Opportunity(Base):

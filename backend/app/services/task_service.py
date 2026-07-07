@@ -32,7 +32,10 @@ def _serialize_task(task: FollowUpTask) -> dict:
         "priority": task.priority,
         "due_at": task.due_at,
         "assigned_to_user_id": task.assigned_to_user_id,
+        "assigned_to_name": task.assigned_user.name if task.assigned_user else None,
+        "assigned_to_email": task.assigned_user.email if task.assigned_user else None,
         "created_by_user_id": task.created_by_user_id,
+        "created_by_name": task.created_by_user.name if task.created_by_user else None,
         "completed_at": task.completed_at,
         "metadata_json": task.metadata_json or {},
         "created_at": task.created_at,
@@ -54,7 +57,12 @@ class TaskService:
     ) -> list[dict]:
         q = (
             db.query(FollowUpTask)
-            .options(joinedload(FollowUpTask.linked_relationship).joinedload(Relationship.person), joinedload(FollowUpTask.contact))
+            .options(
+                joinedload(FollowUpTask.linked_relationship).joinedload(Relationship.person),
+                joinedload(FollowUpTask.contact),
+                joinedload(FollowUpTask.assigned_user),
+                joinedload(FollowUpTask.created_by_user),
+            )
             .filter(FollowUpTask.workspace_id == workspace_id)
         )
         if status and status != "all":
@@ -112,7 +120,17 @@ class TaskService:
         )
         db.add(task)
         db.commit()
-        db.refresh(task)
+        task = (
+            db.query(FollowUpTask)
+            .options(
+                joinedload(FollowUpTask.linked_relationship).joinedload(Relationship.person),
+                joinedload(FollowUpTask.contact),
+                joinedload(FollowUpTask.assigned_user),
+                joinedload(FollowUpTask.created_by_user),
+            )
+            .filter(FollowUpTask.id == task.id)
+            .first()
+        )
         return _serialize_task(task)
 
     @staticmethod
@@ -158,7 +176,17 @@ class TaskService:
             task.completed_at = None
 
         db.commit()
-        db.refresh(task)
+        task = (
+            db.query(FollowUpTask)
+            .options(
+                joinedload(FollowUpTask.linked_relationship).joinedload(Relationship.person),
+                joinedload(FollowUpTask.contact),
+                joinedload(FollowUpTask.assigned_user),
+                joinedload(FollowUpTask.created_by_user),
+            )
+            .filter(FollowUpTask.id == task_id, FollowUpTask.workspace_id == workspace_id)
+            .first()
+        )
         return _serialize_task(task)
 
     @staticmethod

@@ -69,11 +69,33 @@ export type FollowUpTask = {
   priority: string;
   due_at: string | null;
   assigned_to_user_id: string | null;
+  assigned_to_name: string | null;
+  assigned_to_email: string | null;
   created_by_user_id: string | null;
+  created_by_name: string | null;
   completed_at: string | null;
   metadata_json: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+};
+
+export type TeamMember = {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  email: string;
+  name: string;
+  role: string;
+  status: string;
+  accepted_at: string | null;
+  created_at: string;
+};
+
+export type TeamOverview = {
+  members: TeamMember[];
+  invites: unknown[];
+  current_role: string;
+  permissions: string[];
 };
 
 export type ContentInsight = {

@@ -43,7 +43,10 @@ class FollowUpTaskOut(BaseModel):
     priority: str
     due_at: datetime | None
     assigned_to_user_id: UUID | None
+    assigned_to_name: str | None = None
+    assigned_to_email: str | None = None
     created_by_user_id: UUID | None
+    created_by_name: str | None = None
     completed_at: datetime | None
     metadata_json: dict
     created_at: datetime

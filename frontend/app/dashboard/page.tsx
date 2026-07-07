@@ -8,7 +8,7 @@ import DashboardList from "@/components/DashboardList";
 import DemoGuide from "@/components/DemoGuide";
 import { resolveApiUrl } from "@/components/api";
 import { ROLE_OPTIONS } from "@/components/roleTaxonomy";
-import { CampaignInsights, EventItem, FollowUpQueueItem, FollowUpTask, PriorityItem, ScoreExplanation } from "@/components/types";
+import { CampaignInsights, EventItem, FollowUpQueueItem, FollowUpTask, PriorityItem, ScoreExplanation, TeamMember, TeamOverview } from "@/components/types";
 
 type RelationshipFormState = {
   firstName: string;
@@ -29,11 +29,28 @@ const eventSchedule = (event: EventItem) => {
   return `${dayLabels[event.day_of_week]} at ${event.time_of_day}`;
 };
 
+const dateInputValue = (value: string | null) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+};
+
+const dueLabel = (value: string | null) => {
+  if (!value) return "No due date";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "No due date";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+};
+
 export default function DashboardPage() {
   const API_URL = useMemo(resolveApiUrl, []);
   const [items, setItems] = useState<PriorityItem[]>([]);
   const [followups, setFollowups] = useState<FollowUpQueueItem[]>([]);
   const [tasks, setTasks] = useState<FollowUpTask[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [taskStatusFilter, setTaskStatusFilter] = useState("open");
+  const [taskOwnerFilter, setTaskOwnerFilter] = useState("");
   const [taskBusyId, setTaskBusyId] = useState("");
   const [taskError, setTaskError] = useState("");
   const [explanations, setExplanations] = useState<Record<string, ScoreExplanation>>({});
@@ -88,7 +105,14 @@ export default function DashboardPage() {
       if (followupsRes.ok) {
         setFollowups((await followupsRes.json()) as FollowUpQueueItem[]);
       }
-      const tasksRes = await fetch(`${API_URL}/tasks?status=open&limit=25`, { cache: "no-store" });
+      const teamRes = await fetch(`${API_URL}/team`, { cache: "no-store" });
+      if (teamRes.ok) {
+        const payload = (await teamRes.json()) as TeamOverview;
+        setTeamMembers(payload.members.filter(member => member.status === "active"));
+      }
+      const taskParams = new URLSearchParams({ status: taskStatusFilter, limit: "25" });
+      if (taskOwnerFilter) taskParams.set("assigned_to_user_id", taskOwnerFilter);
+      const tasksRes = await fetch(`${API_URL}/tasks?${taskParams}`, { cache: "no-store" });
       if (tasksRes.ok) {
         setTasks((await tasksRes.json()) as FollowUpTask[]);
       }
@@ -99,7 +123,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [API_URL]);
+  }, [API_URL, taskOwnerFilter, taskStatusFilter]);
 
   const askAssistant = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
@@ -210,6 +234,24 @@ export default function DashboardPage() {
       await fetchPriorities();
     } catch (error) {
       setTaskError(error instanceof Error ? error.message : "Could not complete task");
+    } finally {
+      setTaskBusyId("");
+    }
+  };
+
+  const onUpdateTask = async (task: FollowUpTask, updates: Partial<Pick<FollowUpTask, "assigned_to_user_id" | "due_at" | "status" | "priority">>) => {
+    setTaskError("");
+    setTaskBusyId(task.id);
+    try {
+      const res = await fetch(`${API_URL}/tasks/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) throw new Error("Could not update task");
+      await fetchPriorities();
+    } catch (error) {
+      setTaskError(error instanceof Error ? error.message : "Could not update task");
     } finally {
       setTaskBusyId("");
     }
@@ -540,23 +582,47 @@ export default function DashboardPage() {
                 <h2 className="mt-1 text-base font-semibold text-text">Open Relationship Work</h2>
                 <p className="mt-1 text-xs text-muted">Assigned follow-ups, content sends, calls, and meeting next steps live here before they become automations.</p>
               </div>
-              <span className="rounded-full border border-soft bg-base px-3 py-1 text-xs text-muted">{tasks.length} open</span>
+              <span className="rounded-full border border-soft bg-base px-3 py-1 text-xs text-muted">{tasks.length} shown</span>
+            </div>
+            <div className="mb-3 grid gap-2 sm:grid-cols-[160px_220px_minmax(0,1fr)]">
+              <select
+                value={taskStatusFilter}
+                onChange={(event) => setTaskStatusFilter(event.target.value)}
+                className="rounded-md border border-soft bg-base px-3 py-2 text-xs text-text focus:border-accent/60 focus:outline-none"
+              >
+                <option value="open">Open</option>
+                <option value="completed">Completed</option>
+                <option value="all">All statuses</option>
+              </select>
+              <select
+                value={taskOwnerFilter}
+                onChange={(event) => setTaskOwnerFilter(event.target.value)}
+                className="rounded-md border border-soft bg-base px-3 py-2 text-xs text-text focus:border-accent/60 focus:outline-none"
+              >
+                <option value="">All owners</option>
+                {teamMembers.map(member => (
+                  <option key={member.user_id} value={member.user_id}>{member.name || member.email}</option>
+                ))}
+              </select>
+              <p className="self-center text-xs text-muted">Use this as the daily operating queue for the team.</p>
             </div>
             {taskError ? <p className="mb-3 text-sm text-red-300">{taskError}</p> : null}
             {tasks.length === 0 ? (
               <div className="rounded-md border border-soft bg-base p-3 text-sm text-muted">
-                No open tasks yet. Create one from a next-best touch below when something needs ownership.
+                No tasks match this view. Create one from a next-best touch below when something needs ownership.
               </div>
             ) : (
               <div className="grid gap-2">
                 {tasks.slice(0, 6).map((task) => (
-                  <article key={task.id} className="grid gap-3 rounded-md border border-soft/70 bg-base p-3 lg:grid-cols-[minmax(180px,0.75fr)_minmax(0,1fr)_auto]">
+                  <article key={task.id} className="grid gap-3 rounded-md border border-soft/70 bg-base p-3 lg:grid-cols-[minmax(180px,0.7fr)_minmax(0,1fr)_minmax(220px,0.65fr)_auto]">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-semibold text-text">{task.title}</p>
                         <span className="rounded-full border border-soft bg-white px-2 py-0.5 text-[11px] capitalize text-muted">{task.priority}</span>
+                        <span className="rounded-full border border-soft bg-white px-2 py-0.5 text-[11px] capitalize text-muted">{task.status}</span>
                       </div>
                       <p className="mt-1 text-xs text-muted">{task.contact_name || "No contact linked"}</p>
+                      <p className="mt-1 text-xs text-muted">Due: {dueLabel(task.due_at)}</p>
                     </div>
                     <div>
                       {task.description ? <p className="text-xs font-medium text-muted">{task.description}</p> : null}
@@ -564,20 +630,42 @@ export default function DashboardPage() {
                         <p className="mt-2 rounded-md border border-soft bg-white p-2 text-sm text-text">{task.suggested_message}</p>
                       ) : null}
                     </div>
+                    <div className="grid gap-2">
+                      <select
+                        value={task.assigned_to_user_id || ""}
+                        onChange={(event) => onUpdateTask(task, { assigned_to_user_id: event.target.value || null })}
+                        disabled={taskBusyId === task.id}
+                        className="rounded-md border border-soft bg-white px-3 py-2 text-xs text-text focus:border-accent/60 focus:outline-none disabled:opacity-50"
+                      >
+                        <option value="">Unassigned</option>
+                        {teamMembers.map(member => (
+                          <option key={member.user_id} value={member.user_id}>{member.name || member.email}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="date"
+                        value={dateInputValue(task.due_at)}
+                        onChange={(event) => onUpdateTask(task, { due_at: event.target.value ? new Date(`${event.target.value}T12:00:00`).toISOString() : null })}
+                        disabled={taskBusyId === task.id}
+                        className="rounded-md border border-soft bg-white px-3 py-2 text-xs text-text focus:border-accent/60 focus:outline-none disabled:opacity-50"
+                      />
+                    </div>
                     <div className="flex items-start gap-2 lg:justify-end">
                       {task.contact_id ? (
                         <Link href={`/contacts?contact_id=${encodeURIComponent(task.contact_id)}`} className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">
                           View
                         </Link>
                       ) : null}
-                      <button
-                        type="button"
-                        onClick={() => onCompleteTask(task)}
-                        disabled={taskBusyId === task.id}
-                        className="rounded-md bg-accent px-3 py-2 text-xs font-semibold text-text hover:brightness-110 disabled:opacity-50"
-                      >
-                        {taskBusyId === task.id ? "Closing..." : "Complete"}
-                      </button>
+                      {task.status !== "completed" ? (
+                        <button
+                          type="button"
+                          onClick={() => onCompleteTask(task)}
+                          disabled={taskBusyId === task.id}
+                          className="rounded-md bg-accent px-3 py-2 text-xs font-semibold text-text hover:brightness-110 disabled:opacity-50"
+                        >
+                          {taskBusyId === task.id ? "Closing..." : "Complete"}
+                        </button>
+                      ) : null}
                     </div>
                   </article>
                 ))}

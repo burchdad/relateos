@@ -75,6 +75,13 @@ const timelineDate = (value: string) => {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 };
 
+const taskDueLabel = (value: string | null) => {
+  if (!value) return "No due date";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "No due date";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+};
+
 export default function ContactsPage() {
   const API_URL = useMemo(resolveApiUrl, []);
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -839,6 +846,9 @@ export default function ContactsPage() {
                         <div>
                           <p className="text-sm font-semibold text-text">{task.title}</p>
                           {task.description ? <p className="mt-1 text-xs text-muted">{task.description}</p> : null}
+                          <p className="mt-1 text-[11px] text-muted">
+                            {task.assigned_to_name || task.assigned_to_email || "Unassigned"} · {taskDueLabel(task.due_at)}
+                          </p>
                         </div>
                         <button
                           type="button"
