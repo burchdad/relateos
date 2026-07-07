@@ -130,7 +130,7 @@ class EmailService:
         idempotency_key: str,
     ) -> bool:
         if not settings.resend_api_key:
-            logger.info("RESEND_API_KEY not set; team invite link for %s: %s", to_email, invite_url)
+            logger.warning("RESEND_API_KEY not set; team invite email was not sent for %s", to_email)
             return False
 
         payload = {
@@ -148,7 +148,15 @@ class EmailService:
         try:
             response = httpx.post("https://api.resend.com/emails", json=payload, headers=headers, timeout=10)
             response.raise_for_status()
+            logger.info("Team invite email queued for %s via Resend", to_email)
             return True
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "Team invite email rejected by Resend for %s: %s",
+                to_email,
+                exc.response.text,
+            )
+            return False
         except Exception as exc:
             logger.warning("Team invite email failed for %s: %s", to_email, exc)
             return False

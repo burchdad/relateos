@@ -119,12 +119,11 @@ class TeamService:
             expires_at=now + timedelta(days=INVITE_TTL_DAYS),
         )
         db.add(invite)
-        db.commit()
-        db.refresh(invite)
+        db.flush()
 
         workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
         invite_url = f"{settings.frontend_app_url.rstrip('/')}/accept-invite?token={quote(token)}"
-        EmailService.send_team_invite(
+        sent = EmailService.send_team_invite(
             to_email=normalized_email,
             invited_by_name=invited_by.name,
             workspace_name=workspace.name if workspace else "Teifke / Relationships",
@@ -132,6 +131,14 @@ class TeamService:
             invite_url=invite_url,
             idempotency_key=f"workspace-invite-{invite.id}",
         )
+        if not sent:
+            db.rollback()
+            raise ValueError(
+                "Invite email could not be sent. Check RESEND_API_KEY and AUTH_EMAIL_FROM on the backend service."
+            )
+
+        db.commit()
+        db.refresh(invite)
         return invite
 
     @staticmethod
