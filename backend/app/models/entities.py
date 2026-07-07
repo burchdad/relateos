@@ -141,7 +141,7 @@ class FollowUpTask(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    relationship: Mapped["Relationship | None"] = relationship("Relationship", foreign_keys=[relationship_id])
+    linked_relationship: Mapped["Relationship | None"] = relationship("Relationship", foreign_keys=[relationship_id])
     contact: Mapped["Person | None"] = relationship("Person", foreign_keys=[contact_id])
 
 

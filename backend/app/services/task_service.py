@@ -10,7 +10,7 @@ from app.schemas.interaction import InteractionCreate
 
 
 def _contact_name(task: FollowUpTask) -> str | None:
-    contact = task.contact or (task.relationship.person if task.relationship else None)
+    contact = task.contact or (task.linked_relationship.person if task.linked_relationship else None)
     if not contact:
         return None
     name = f"{contact.first_name or ''} {contact.last_name or ''}".strip()
@@ -54,7 +54,7 @@ class TaskService:
     ) -> list[dict]:
         q = (
             db.query(FollowUpTask)
-            .options(joinedload(FollowUpTask.relationship).joinedload(Relationship.person), joinedload(FollowUpTask.contact))
+            .options(joinedload(FollowUpTask.linked_relationship).joinedload(Relationship.person), joinedload(FollowUpTask.contact))
             .filter(FollowUpTask.workspace_id == workspace_id)
         )
         if status and status != "all":
