@@ -10,7 +10,9 @@ from app.core.permissions import WorkspaceContext, require_permission
 from app.core.workspace import workspace_id_for_user
 from app.models import AppUser
 from app.schemas.contact import ContactCreate, ContactOut, ContactUpdate
+from app.schemas.timeline import TimelineCreate, TimelineItem
 from app.services.contact_service import ContactService
+from app.services.timeline_service import TimelineService
 
 router = APIRouter(prefix="/contacts", tags=["contacts"])
 
@@ -47,6 +49,32 @@ def list_contacts(
 @router.post("", response_model=ContactOut, status_code=201)
 def create_contact(payload: ContactCreate, db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("contacts:write"))):
     return ContactService.create(db, payload, workspace_id=context.workspace_id)
+
+
+@router.get("/{contact_id}/timeline", response_model=list[TimelineItem])
+def contact_timeline(
+    contact_id: uuid.UUID,
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    context: WorkspaceContext = Depends(require_permission("contacts:read")),
+):
+    timeline = TimelineService.contact_timeline(db, contact_id, workspace_id=context.workspace_id, limit=limit)
+    if timeline is None:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    return timeline
+
+
+@router.post("/{contact_id}/timeline", response_model=TimelineItem, status_code=201)
+def log_contact_timeline(
+    contact_id: uuid.UUID,
+    payload: TimelineCreate,
+    db: Session = Depends(get_db),
+    context: WorkspaceContext = Depends(require_permission("contacts:write")),
+):
+    try:
+        return TimelineService.log_contact_note(db, contact_id, payload, workspace_id=context.workspace_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/{contact_id}", response_model=ContactOut)

@@ -167,6 +167,35 @@ def get_top_priorities(db: Session, limit: int = 10, workspace_id=None):
     return output
 
 
+def get_followup_queue(db: Session, limit: int = 10, workspace_id=None):
+    priorities = get_top_priorities(db, limit, workspace_id=workspace_id)
+    relationship_ids = [item["relationship_id"] for item in priorities]
+    relationships = {
+        rel.id: rel
+        for rel in db.query(Relationship).options(joinedload(Relationship.person)).filter(Relationship.id.in_(relationship_ids)).all()
+    }
+
+    output = []
+    for item in priorities:
+        relationship = relationships.get(item["relationship_id"])
+        output.append(
+            {
+                "relationship_id": item["relationship_id"],
+                "contact_id": relationship.person_id if relationship else None,
+                "name": item["name"],
+                "priority_score": float(item["priority_score"] or 0.0),
+                "urgency_level": item["urgency_level"],
+                "reason_tag": item["reason_tag"],
+                "why_now": item["why_now"],
+                "suggested_message": item["suggested_message"],
+                "last_contacted_at": item["last_contacted_at"],
+                "days_since_contact": _days_since_last_contact(relationship) if relationship else None,
+                "signal_reasons": item["signal_reasons"],
+            }
+        )
+    return output
+
+
 def get_score_explanation(db: Session, relationship_id, workspace_id=None):
     q = db.query(Relationship).options(joinedload(Relationship.person)).filter(Relationship.id == relationship_id)
     if workspace_id:

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { resolveApiUrl } from "@/components/api";
 import { ROLE_OPTIONS, formatRole } from "@/components/roleTaxonomy";
-import type { Contact } from "@/components/types";
+import type { Contact, TimelineItem } from "@/components/types";
 
 const STAGES = ["new", "aware", "engaged", "active", "partner", "dormant", "high_value"];
 const TAG_OPTIONS = [
@@ -69,6 +69,12 @@ const tagKeysFor = (tags: Record<string, unknown> | null | undefined) => {
 
 const tagLabelFor = (tag: string) => TAG_OPTIONS.find(option => option.value === tag)?.label || tag.replace(/_/g, " ");
 
+const timelineDate = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown date";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+};
+
 export default function ContactsPage() {
   const API_URL = useMemo(resolveApiUrl, []);
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -87,6 +93,11 @@ export default function ContactsPage() {
   const [showContentModal, setShowContentModal] = useState(false);
   const [contentEmailForm, setContentEmailForm] = useState(emptyContentEmailForm);
   const [intent, setIntent] = useState("");
+  const [timeline, setTimeline] = useState<TimelineItem[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [quickNote, setQuickNote] = useState("");
+  const [loggingNote, setLoggingNote] = useState(false);
+  const [timelineError, setTimelineError] = useState("");
 
   const fetchContacts = useCallback(async () => {
     setLoading(true);
@@ -97,9 +108,14 @@ export default function ContactsPage() {
       if (stageFilter) params.set("relationship_stage", stageFilter);
       const res = await fetch(`${API_URL}/contacts?${params}`, { cache: "no-store" });
       if (res.ok) {
-        const data = await res.json();
+        const data = (await res.json()) as Contact[];
         setContacts(data);
-        setSelectedContact((current) => current ? data.find((c: Contact) => c.id === current.id) || current : data[0] || null);
+        const requestedContactId =
+          typeof window !== "undefined" ? new URL(window.location.href).searchParams.get("contact_id") : null;
+        setSelectedContact((current) => {
+          if (requestedContactId) return data.find(contact => contact.id === requestedContactId) || data[0] || null;
+          return current ? data.find(contact => contact.id === current.id) || current : data[0] || null;
+        });
       }
     } finally {
       setLoading(false);
@@ -107,6 +123,31 @@ export default function ContactsPage() {
   }, [API_URL, roleFilter, search, stageFilter]);
 
   useEffect(() => { fetchContacts(); }, [fetchContacts]);
+
+  const fetchTimeline = useCallback(async (contactId: string) => {
+    setTimelineLoading(true);
+    setTimelineError("");
+    try {
+      const res = await fetch(`${API_URL}/contacts/${contactId}/timeline`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Could not load relationship memory");
+      setTimeline((await res.json()) as TimelineItem[]);
+    } catch (error) {
+      setTimeline([]);
+      setTimelineError(error instanceof Error ? error.message : "Could not load relationship memory");
+    } finally {
+      setTimelineLoading(false);
+    }
+  }, [API_URL]);
+
+  const selectedContactId = selectedContact?.id;
+
+  useEffect(() => {
+    if (!selectedContactId) {
+      setTimeline([]);
+      return;
+    }
+    fetchTimeline(selectedContactId);
+  }, [fetchTimeline, selectedContactId]);
 
   useEffect(() => {
     if (!selectedContact || editingContact) return;
@@ -212,6 +253,32 @@ export default function ContactsPage() {
       setEditError(error instanceof Error ? error.message : "Failed to update contact");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleLogQuickNote = async () => {
+    if (!selectedContact || !quickNote.trim()) return;
+    setLoggingNote(true);
+    setTimelineError("");
+    try {
+      const res = await fetch(`${API_URL}/contacts/${selectedContact.id}/timeline`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "note",
+          content: quickNote.trim(),
+          summary: quickNote.trim(),
+        }),
+      });
+      if (!res.ok) throw new Error("Could not save note");
+      const item = (await res.json()) as TimelineItem;
+      setTimeline(prev => [item, ...prev]);
+      setQuickNote("");
+      await fetchContacts();
+    } catch (error) {
+      setTimelineError(error instanceof Error ? error.message : "Could not save note");
+    } finally {
+      setLoggingNote(false);
     }
   };
 
@@ -724,6 +791,52 @@ export default function ContactsPage() {
               <div>
                 <p className="text-xs uppercase tracking-wide text-muted">Notes</p>
                 <p className="mt-2 rounded-lg border border-soft bg-base p-3 text-sm text-muted">{selectedContact.relationship_interests || selectedContact.notes_summary || "No notes captured yet."}</p>
+              </div>
+              <div className="rounded-lg border border-soft bg-base p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted">Relationship memory</p>
+                    <p className="mt-1 text-xs text-muted">Notes, meetings, signals, and engagement history.</p>
+                  </div>
+                  <span className="rounded-full border border-soft bg-panel px-2 py-1 text-[11px] text-muted">{timeline.length}</span>
+                </div>
+                <div className="mt-3 grid gap-2">
+                  <textarea
+                    value={quickNote}
+                    onChange={event => setQuickNote(event.target.value)}
+                    placeholder="Log a quick note, call, text, or follow-up outcome"
+                    className="h-20 resize-none rounded-md border border-soft bg-white px-3 py-2 text-sm text-text placeholder:text-muted focus:border-accent/60 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleLogQuickNote}
+                    disabled={loggingNote || !quickNote.trim()}
+                    className="justify-self-start rounded-md bg-accent px-3 py-2 text-xs font-semibold text-text disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {loggingNote ? "Saving..." : "Log Note"}
+                  </button>
+                </div>
+                {timelineError ? <p className="mt-2 text-xs text-red-300">{timelineError}</p> : null}
+                <div className="mt-4 max-h-80 space-y-2 overflow-y-auto pr-1">
+                  {timelineLoading ? <p className="text-sm text-muted">Loading memory...</p> : null}
+                  {!timelineLoading && timeline.length === 0 ? (
+                    <p className="rounded-md border border-soft bg-panel p-3 text-sm text-muted">
+                      No relationship activity logged yet. Add the first note to start building memory.
+                    </p>
+                  ) : null}
+                  {timeline.map(item => (
+                    <article key={`${item.source}-${item.id}`} className="rounded-md border border-soft bg-white p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-text">{item.title}</p>
+                          <p className="mt-0.5 text-[11px] uppercase tracking-wide text-muted">{item.source.replace(/_/g, " ")}</p>
+                        </div>
+                        <span className="shrink-0 text-xs text-muted">{timelineDate(item.occurred_at)}</span>
+                      </div>
+                      {item.body ? <p className="mt-2 whitespace-pre-line text-sm text-muted">{item.body}</p> : null}
+                    </article>
+                  ))}
+                </div>
               </div>
                 </>
               )}

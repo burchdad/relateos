@@ -31,6 +31,30 @@ export type ScoreExplanation = {
   contributions: SignalContribution[];
 };
 
+export type TimelineItem = {
+  id: string;
+  source: string;
+  type: string;
+  title: string;
+  body: string | null;
+  occurred_at: string;
+  metadata: Record<string, unknown>;
+};
+
+export type FollowUpQueueItem = {
+  relationship_id: string;
+  contact_id: string | null;
+  name: string;
+  priority_score: number;
+  urgency_level: string;
+  reason_tag: string;
+  why_now: string;
+  suggested_message: string | null;
+  last_contacted_at: string | null;
+  days_since_contact: number | null;
+  signal_reasons: string[];
+};
+
 export type ContentInsight = {
   id: string;
   content_id: string;

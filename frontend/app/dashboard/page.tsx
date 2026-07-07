@@ -8,7 +8,7 @@ import DashboardList from "@/components/DashboardList";
 import DemoGuide from "@/components/DemoGuide";
 import { resolveApiUrl } from "@/components/api";
 import { ROLE_OPTIONS } from "@/components/roleTaxonomy";
-import { CampaignInsights, EventItem, PriorityItem, ScoreExplanation } from "@/components/types";
+import { CampaignInsights, EventItem, FollowUpQueueItem, PriorityItem, ScoreExplanation } from "@/components/types";
 
 type RelationshipFormState = {
   firstName: string;
@@ -32,6 +32,7 @@ const eventSchedule = (event: EventItem) => {
 export default function DashboardPage() {
   const API_URL = useMemo(resolveApiUrl, []);
   const [items, setItems] = useState<PriorityItem[]>([]);
+  const [followups, setFollowups] = useState<FollowUpQueueItem[]>([]);
   const [explanations, setExplanations] = useState<Record<string, ScoreExplanation>>({});
   const [loadingExplanation, setLoadingExplanation] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
@@ -79,6 +80,10 @@ export default function DashboardPage() {
       if (insightsRes.ok) {
         const insightPayload = (await insightsRes.json()) as CampaignInsights;
         setCampaignInsights(insightPayload);
+      }
+      const followupsRes = await fetch(`${API_URL}/dashboard/followups?limit=10`, { cache: "no-store" });
+      if (followupsRes.ok) {
+        setFollowups((await followupsRes.json()) as FollowUpQueueItem[]);
       }
       return data;
     } catch (e) {
@@ -470,6 +475,57 @@ export default function DashboardPage() {
           ) : null}
           {assistantError ? <p className="mt-3 text-sm text-red-300">{assistantError}</p> : null}
         </section>
+
+        {!loading && followups.length > 0 ? (
+          <section className="mb-4 rounded-lg border border-soft/70 bg-white p-4">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-accent">Follow-up queue</p>
+                <h2 className="mt-1 text-base font-semibold text-text">Next Best Touches</h2>
+                <p className="mt-1 text-xs text-muted">A live queue built from relationship score, signals, recency, and meeting/content activity.</p>
+              </div>
+              <Link href="/contacts" className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">Open Contacts</Link>
+            </div>
+            <div className="grid gap-2">
+              {followups.slice(0, 5).map((item) => (
+                <article key={item.relationship_id} className="grid gap-3 rounded-md border border-soft/70 bg-base p-3 lg:grid-cols-[minmax(180px,0.8fr)_minmax(0,1fr)_auto]">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold text-text">{item.name}</p>
+                      <span className="rounded-full border border-soft bg-white px-2 py-0.5 text-[11px] text-muted">{item.urgency_level}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted">
+                      {item.days_since_contact == null ? "No contact logged yet" : `Last touch ${item.days_since_contact} days ago`}
+                    </p>
+                    <p className="mt-1 text-xs text-accent">{item.reason_tag}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted">{item.why_now}</p>
+                    {item.suggested_message ? (
+                      <p className="mt-2 rounded-md border border-soft bg-white p-2 text-sm text-text">{item.suggested_message}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex items-start gap-2 lg:justify-end">
+                    {item.contact_id ? (
+                      <Link href={`/contacts?contact_id=${encodeURIComponent(item.contact_id)}`} className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">
+                        View
+                      </Link>
+                    ) : null}
+                    {item.suggested_message ? (
+                      <button
+                        type="button"
+                        onClick={() => onSimulateSend(item.relationship_id, item.suggested_message || "")}
+                        className="rounded-md bg-accent px-3 py-2 text-xs font-semibold text-text hover:brightness-110"
+                      >
+                        Log Touch
+                      </button>
+                    ) : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {showCreateForm ? (
           <div className="fixed inset-0 z-50 bg-canvas/70 backdrop-blur-sm" role="presentation">

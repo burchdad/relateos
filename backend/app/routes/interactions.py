@@ -1,9 +1,10 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.permissions import WorkspaceContext, require_permission
 from app.schemas.interaction import InteractionCreate, InteractionOut
 from app.services.interaction_service import InteractionService
 from app.services.scoring_service import calculate_priority_score
@@ -14,8 +15,15 @@ router = APIRouter(tags=["interactions"])
 
 
 @router.post("/interactions", response_model=InteractionOut)
-def create_interaction(payload: InteractionCreate, db: Session = Depends(get_db)):
-    interaction = InteractionService.log_interaction(db, payload)
+def create_interaction(
+    payload: InteractionCreate,
+    db: Session = Depends(get_db),
+    context: WorkspaceContext = Depends(require_permission("contacts:write")),
+):
+    try:
+        interaction = InteractionService.log_interaction(db, payload, workspace_id=context.workspace_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     calculate_priority_score(db, payload.relationship_id)
 
     generate_summary_after_interaction.delay(str(payload.relationship_id))
@@ -25,5 +33,12 @@ def create_interaction(payload: InteractionCreate, db: Session = Depends(get_db)
 
 
 @router.get("/relationships/{relationship_id}/interactions", response_model=list[InteractionOut])
-def get_timeline(relationship_id: UUID, db: Session = Depends(get_db)):
-    return InteractionService.get_timeline(db, relationship_id)
+def get_timeline(
+    relationship_id: UUID,
+    db: Session = Depends(get_db),
+    context: WorkspaceContext = Depends(require_permission("contacts:read")),
+):
+    timeline = InteractionService.get_timeline(db, relationship_id, workspace_id=context.workspace_id)
+    if timeline is None:
+        raise HTTPException(status_code=404, detail="Relationship not found")
+    return timeline
