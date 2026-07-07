@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -31,6 +32,17 @@ class GoogleContactsService:
         if not access_token and refresh_token:
             access_token = ConnectionsService.refresh_oauth_token(db, "google_calendar", workspace_id)
         if not access_token:
+            ConnectionsService.merge_connector_values(
+                db,
+                "google_calendar",
+                {
+                    "last_sync_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+                    "last_sync_status": "needs_config",
+                    "last_error": "Reconnect Google Calendar and approve contacts access.",
+                    "records_imported": 0,
+                },
+                workspace_id,
+            )
             return {
                 "status": "needs_config",
                 "message": "Google is not connected for this workspace.",
@@ -54,6 +66,17 @@ class GoogleContactsService:
                     break
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text[:300] if exc.response is not None else str(exc)
+            ConnectionsService.merge_connector_values(
+                db,
+                "google_calendar",
+                {
+                    "last_sync_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+                    "last_sync_status": "partial",
+                    "last_error": detail,
+                    "records_imported": len(people),
+                },
+                workspace_id,
+            )
             return {
                 "status": "partial",
                 "message": "Google Contacts sync could not complete. Reconnect Google and approve People API contacts access.",
@@ -61,6 +84,17 @@ class GoogleContactsService:
                 "errors": [detail],
             }
         except Exception as exc:
+            ConnectionsService.merge_connector_values(
+                db,
+                "google_calendar",
+                {
+                    "last_sync_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+                    "last_sync_status": "partial",
+                    "last_error": str(exc),
+                    "records_imported": len(people),
+                },
+                workspace_id,
+            )
             return {
                 "status": "partial",
                 "message": "Google Contacts sync could not complete.",
@@ -99,6 +133,21 @@ class GoogleContactsService:
                 )
                 created += 1
         db.commit()
+        ConnectionsService.merge_connector_values(
+            db,
+            "google_calendar",
+            {
+                "last_sync_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+                "last_sync_status": "completed",
+                "last_error": "",
+                "records_imported": created + updated,
+                "contacts_found": len(people),
+                "contacts_created": created,
+                "contacts_updated": updated,
+                "contacts_skipped": skipped,
+            },
+            workspace_id,
+        )
 
         return {
             "status": "completed" if not errors else "partial",

@@ -15,6 +15,7 @@ from app.schemas.relationship import (
     RelationshipOut,
     RelationshipUpdateStage,
 )
+from app.services.audit_service import AuditService
 from app.services.ai_service import AIService
 from app.services.relationship_service import RelationshipService
 from app.services.scoring_service import calculate_priority_score
@@ -87,9 +88,18 @@ def update_stage(relationship_id: UUID, payload: RelationshipUpdateStage, db: Se
 
 @router.delete("/{relationship_id}")
 def delete_relationship(relationship_id: UUID, db: Session = Depends(get_db), user: AppUser = Depends(current_user)):
-    deleted = RelationshipService.delete_relationship(db, relationship_id, workspace_id=workspace_id_for_user(db, user))
+    workspace_id = workspace_id_for_user(db, user)
+    deleted = RelationshipService.delete_relationship(db, relationship_id, workspace_id=workspace_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Relationship not found")
+    AuditService.log(
+        db,
+        workspace_id=workspace_id,
+        user=user,
+        action_type="relationship_delete",
+        target_type="relationship",
+        target_id=relationship_id,
+    )
     return {"deleted_count": 1}
 
 
@@ -99,10 +109,19 @@ def bulk_delete_relationships(
     db: Session = Depends(get_db),
     user: AppUser = Depends(current_user),
 ):
+    workspace_id = workspace_id_for_user(db, user)
     deleted_count = RelationshipService.bulk_delete_relationships(
         db,
         relationship_ids=payload.relationship_ids,
         delete_all=payload.delete_all,
-        workspace_id=workspace_id_for_user(db, user),
+        workspace_id=workspace_id,
+    )
+    AuditService.log(
+        db,
+        workspace_id=workspace_id,
+        user=user,
+        action_type="relationship_bulk_delete",
+        target_type="relationship",
+        metadata={"deleted_count": deleted_count, "delete_all": payload.delete_all, "requested_ids": [str(item) for item in payload.relationship_ids]},
     )
     return RelationshipBulkDeleteResult(deleted_count=deleted_count)

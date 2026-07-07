@@ -16,6 +16,7 @@ from app.schemas.team import (
     TeamOverview,
     TeamRoleUpdate,
 )
+from app.services.audit_service import AuditService
 from app.services.team_service import TeamService
 
 
@@ -34,13 +35,23 @@ def create_invite(
     db: Session = Depends(get_db),
 ):
     try:
-        return TeamService.create_invite(
+        invite = TeamService.create_invite(
             db,
             workspace_id=context.workspace_id,
             invited_by=context.user,
             email=payload.email,
             role=payload.role,
         )
+        AuditService.log(
+            db,
+            workspace_id=context.workspace_id,
+            user=context.user,
+            action_type="team_invite",
+            target_type="workspace_invite",
+            target_id=invite.id,
+            metadata={"email": invite.invited_email, "role": invite.role},
+        )
+        return invite
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -78,6 +89,14 @@ def remove_member(
             membership_id=membership_id,
             actor_user_id=context.user.id,
         )
+        AuditService.log(
+            db,
+            workspace_id=context.workspace_id,
+            user=context.user,
+            action_type="team_member_remove",
+            target_type="workspace_membership",
+            target_id=membership_id,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -90,6 +109,14 @@ def revoke_invite(
 ):
     try:
         TeamService.revoke_invite(db, workspace_id=context.workspace_id, invite_id=invite_id)
+        AuditService.log(
+            db,
+            workspace_id=context.workspace_id,
+            user=context.user,
+            action_type="team_invite_revoke",
+            target_type="workspace_invite",
+            target_id=invite_id,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

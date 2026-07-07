@@ -13,11 +13,34 @@ const STATUS_STYLES: Record<ConnectorStatus["status"], string> = {
   needs_config: "border-amber-400/30 bg-amber-400/10 text-amber-200",
 };
 
+const HEALTH_STYLES: Record<string, string> = {
+  green: "bg-emerald-500",
+  yellow: "bg-amber-400",
+  red: "bg-red-500",
+};
+
 const CONNECTOR_ORDER = ["zoom", "google_calendar", "skool", "read_ai", "openai"];
 
 const apiError = async (res: Response, fallback: string) => {
   const payload = (await res.json().catch(() => null)) as { detail?: string; message?: string } | null;
   return new Error(payload?.detail || payload?.message || `${fallback} (${res.status})`);
+};
+
+const formatHealthTime = (value: string | null | undefined) => {
+  if (!value) return "Never synced";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Never synced";
+  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+};
+
+const connectorActionLabel = (connector: ConnectorStatus) => {
+  if (connector.key === "google_calendar" && connector.health?.last_error?.includes("Contacts")) {
+    return "Reconnect Google to enable contacts";
+  }
+  if (connector.status === "ready") return "Connected and ready";
+  if (connector.key === "zoom") return "Connect Zoom to import meetings";
+  if (connector.key === "google_calendar") return "Connect Google for calendar and contacts";
+  return "Add credentials to enable";
 };
 
 export default function ConnectionsPage() {
@@ -316,11 +339,15 @@ export default function ConnectionsPage() {
               const oauthConnected =
                 (connector.key === "zoom" || connector.key === "google_calendar") &&
                 connector.configured_fields.includes("refresh_token");
+              const healthLevel = connector.health?.level || (connector.status === "ready" ? "green" : connector.status === "partial" ? "yellow" : "red");
               return (
                 <>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold text-text">{connector.name}</h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`h-2.5 w-2.5 rounded-full ${HEALTH_STYLES[healthLevel] || HEALTH_STYLES.red}`} aria-hidden="true" />
+                  <h2 className="text-base font-semibold text-text">{connector.name}</h2>
+                </div>
                 <p className="mt-1 text-sm text-muted">{connector.purpose}</p>
                 {oauthConnected ? (
                   <p className="mt-2 rounded-md border border-sage/40 bg-sage-pale px-3 py-2 text-xs font-semibold text-text">
@@ -331,6 +358,22 @@ export default function ConnectionsPage() {
               <span className={`rounded-full border px-2 py-1 text-[11px] uppercase tracking-wide ${STATUS_STYLES[connector.status]}`}>
                 {connector.status.replace(/_/g, " ")}
               </span>
+            </div>
+
+            <div className="mt-4 grid gap-2 rounded-md border border-soft bg-base p-3 text-xs text-muted sm:grid-cols-3">
+              <div>
+                <p className="uppercase tracking-wide">Health</p>
+                <p className="mt-1 font-semibold capitalize text-text">{healthLevel}</p>
+              </div>
+              <div>
+                <p className="uppercase tracking-wide">Last sync</p>
+                <p className="mt-1 font-semibold text-text">{formatHealthTime(connector.health?.last_sync_at || connector.last_updated_at)}</p>
+              </div>
+              <div>
+                <p className="uppercase tracking-wide">Records imported</p>
+                <p className="mt-1 font-semibold text-text">{connector.health?.records_imported ?? "0"}</p>
+              </div>
+              <p className="sm:col-span-3">{connector.health?.last_error || connectorActionLabel(connector)}</p>
             </div>
 
             <div className="mt-4 grid gap-3">

@@ -18,6 +18,30 @@ class PriorityItem(BaseModel):
     signal_reasons: list[str]
 
 
+class MorningBriefItem(BaseModel):
+    relationship_id: UUID
+    contact_id: UUID | None = None
+    name: str
+    priority_score: float
+    urgency_level: str
+    reason_tag: str
+    why_now: str
+    recommended_action: str
+    suggested_message: str | None
+    last_contacted_at: datetime | None
+    signal_reasons: list[str]
+
+
+class MorningBrief(BaseModel):
+    generated_at: datetime
+    headline: str
+    focus_count: int
+    open_task_count: int
+    overdue_task_count: int
+    items: list[MorningBriefItem]
+    next_steps: list[str]
+
+
 class SignalContribution(BaseModel):
     signal_key: str
     label: str

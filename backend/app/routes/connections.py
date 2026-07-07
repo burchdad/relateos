@@ -23,6 +23,7 @@ from app.schemas.connections import (
     ConnectorUpdateResponse,
     GoogleContactsSyncResponse,
 )
+from app.services.audit_service import AuditService
 from app.services.connections_service import ConnectionsService
 from app.services.google_contacts_service import GoogleContactsService
 from app.services.zoom_import_service import ZoomImportService
@@ -56,7 +57,17 @@ def request_agent_sync(
     db: Session = Depends(get_db),
     context: WorkspaceContext = Depends(require_permission("automation:run")),
 ):
-    return AgentSyncResponse.model_validate(ConnectionsService.request_agent_sync(db, payload.mode, context.workspace_id))
+    result = ConnectionsService.request_agent_sync(db, payload.mode, context.workspace_id)
+    AuditService.log(
+        db,
+        workspace_id=context.workspace_id,
+        user=context.user,
+        action_type="connector_agent_sync",
+        status=result.get("status", "completed"),
+        target_type="connector",
+        metadata={"mode": payload.mode, "errors": result.get("errors", []), "blockers": result.get("blockers", [])},
+    )
+    return AgentSyncResponse.model_validate(result)
 
 
 @router.post("/zoom/sync", response_model=AgentSyncResponse)
@@ -71,8 +82,7 @@ def sync_zoom_recordings(db: Session = Depends(get_db), context: WorkspaceContex
         + int(imported.get("imported_attendee_count") or 0)
         + int(imported.get("imported_artifact_count") or 0)
     )
-    return AgentSyncResponse.model_validate(
-        {
+    result = {
             "job_id": str(uuid.uuid4()),
             "mode": "archive",
             "status": "partial" if errors else "completed",
@@ -90,7 +100,27 @@ def sync_zoom_recordings(db: Session = Depends(get_db), context: WorkspaceContex
             "requested_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
             **imported,
         }
+    ConnectionsService.merge_connector_values(
+        db,
+        "zoom",
+        {
+            "last_sync_at": result["requested_at"],
+            "last_sync_status": result["status"],
+            "last_error": errors[0] if errors else "",
+            "records_imported": imported_total,
+        },
+        workspace_id,
     )
+    AuditService.log(
+        db,
+        workspace_id=context.workspace_id,
+        user=context.user,
+        action_type="zoom_recording_sync",
+        status=result["status"],
+        target_type="connector",
+        metadata={"records_imported": imported_total, "recordings_found": recordings_found, "errors": errors},
+    )
+    return AgentSyncResponse.model_validate(result)
 
 
 @router.post("/zoom/ai-companion/sync", response_model=AgentSyncResponse)
@@ -100,8 +130,7 @@ def sync_zoom_ai_companion(db: Session = Depends(get_db), context: WorkspaceCont
     errors = imported.get("errors", [])
     ai_notes_found = int(imported.get("ai_notes_found_count") or 0)
     imported_total = int(imported.get("imported_meeting_count") or 0) + int(imported.get("imported_artifact_count") or 0)
-    return AgentSyncResponse.model_validate(
-        {
+    result = {
             "job_id": str(uuid.uuid4()),
             "mode": "archive",
             "status": "partial" if errors else "completed",
@@ -119,12 +148,48 @@ def sync_zoom_ai_companion(db: Session = Depends(get_db), context: WorkspaceCont
             "requested_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
             **imported,
         }
+    ConnectionsService.merge_connector_values(
+        db,
+        "zoom",
+        {
+            "last_sync_at": result["requested_at"],
+            "last_sync_status": result["status"],
+            "last_error": errors[0] if errors else "",
+            "records_imported": imported_total,
+            "ai_notes_found": ai_notes_found,
+        },
+        workspace_id,
     )
+    AuditService.log(
+        db,
+        workspace_id=context.workspace_id,
+        user=context.user,
+        action_type="zoom_ai_notes_sync",
+        status=result["status"],
+        target_type="connector",
+        metadata={"records_imported": imported_total, "ai_notes_found": ai_notes_found, "errors": errors},
+    )
+    return AgentSyncResponse.model_validate(result)
 
 
 @router.post("/google/contacts/sync", response_model=GoogleContactsSyncResponse)
 def sync_google_contacts(db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("imports:run"))):
-    return GoogleContactsSyncResponse.model_validate(GoogleContactsService.sync_contacts(db, workspace_id=context.workspace_id))
+    result = GoogleContactsService.sync_contacts(db, workspace_id=context.workspace_id)
+    AuditService.log(
+        db,
+        workspace_id=context.workspace_id,
+        user=context.user,
+        action_type="google_contacts_sync",
+        status=result.get("status", "completed"),
+        target_type="connector",
+        metadata={
+            "contacts_found": result.get("contacts_found", 0),
+            "contacts_created": result.get("contacts_created", 0),
+            "contacts_updated": result.get("contacts_updated", 0),
+            "errors": result.get("errors", []),
+        },
+    )
+    return GoogleContactsSyncResponse.model_validate(result)
 
 
 @router.get("/zoom/oauth/start", response_model=OAuthStartResponse)
@@ -221,6 +286,13 @@ def update_connector(
     db: Session = Depends(get_db),
     context: WorkspaceContext = Depends(require_permission("connections:manage")),
 ):
-    return ConnectorUpdateResponse.model_validate(
-        ConnectionsService.update_connector(db, connector_key, payload, context.workspace_id)
+    result = ConnectionsService.update_connector(db, connector_key, payload, context.workspace_id)
+    AuditService.log(
+        db,
+        workspace_id=context.workspace_id,
+        user=context.user,
+        action_type="connector_update",
+        target_type="connector",
+        metadata={"connector": connector_key, "updated_fields": sorted(payload.values.keys())},
     )
+    return ConnectorUpdateResponse.model_validate(result)

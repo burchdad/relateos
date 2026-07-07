@@ -55,6 +55,30 @@ export type FollowUpQueueItem = {
   signal_reasons: string[];
 };
 
+export type MorningBriefItem = {
+  relationship_id: string;
+  contact_id: string | null;
+  name: string;
+  priority_score: number;
+  urgency_level: string;
+  reason_tag: string;
+  why_now: string;
+  recommended_action: string;
+  suggested_message: string | null;
+  last_contacted_at: string | null;
+  signal_reasons: string[];
+};
+
+export type MorningBrief = {
+  generated_at: string;
+  headline: string;
+  focus_count: number;
+  open_task_count: number;
+  overdue_task_count: number;
+  items: MorningBriefItem[];
+  next_steps: string[];
+};
+
 export type FollowUpTask = {
   id: string;
   workspace_id: string;
@@ -593,6 +617,18 @@ export type ConnectorStatus = {
   configured_fields: string[];
   missing_fields: string[];
   last_updated_at: string | null;
+  health: {
+    level?: "green" | "yellow" | "red" | string;
+    last_sync_at?: string | null;
+    last_sync_status?: string | null;
+    last_error?: string | null;
+    records_imported?: number | string | null;
+    contacts_found?: number | string | null;
+    contacts_created?: number | string | null;
+    contacts_updated?: number | string | null;
+    contacts_skipped?: number | string | null;
+    ai_notes_found?: number | string | null;
+  };
 };
 
 export type ConnectionsOverview = {

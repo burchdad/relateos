@@ -8,7 +8,7 @@ import DashboardList from "@/components/DashboardList";
 import DemoGuide from "@/components/DemoGuide";
 import { resolveApiUrl } from "@/components/api";
 import { ROLE_OPTIONS } from "@/components/roleTaxonomy";
-import { CampaignInsights, EventItem, FollowUpQueueItem, FollowUpTask, PriorityItem, ScoreExplanation, TeamMember, TeamOverview } from "@/components/types";
+import { CampaignInsights, EventItem, FollowUpQueueItem, FollowUpTask, MorningBrief, PriorityItem, ScoreExplanation, TeamMember, TeamOverview } from "@/components/types";
 
 type RelationshipFormState = {
   firstName: string;
@@ -43,9 +43,17 @@ const dueLabel = (value: string | null) => {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 };
 
+const shortDateTime = (value: string | null | undefined) => {
+  if (!value) return "Not synced yet";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not synced yet";
+  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+};
+
 export default function DashboardPage() {
   const API_URL = useMemo(resolveApiUrl, []);
   const [items, setItems] = useState<PriorityItem[]>([]);
+  const [morningBrief, setMorningBrief] = useState<MorningBrief | null>(null);
   const [followups, setFollowups] = useState<FollowUpQueueItem[]>([]);
   const [tasks, setTasks] = useState<FollowUpTask[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
@@ -58,10 +66,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [campaignInsights, setCampaignInsights] = useState<CampaignInsights | null>(null);
-  const [assistantPrompt, setAssistantPrompt] = useState("Who should I focus on next, and what should I say?");
-  const [assistantAnswer, setAssistantAnswer] = useState("");
-  const [assistantLoading, setAssistantLoading] = useState(false);
-  const [assistantError, setAssistantError] = useState("");
   const [error, setError] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -91,6 +95,10 @@ export default function DashboardPage() {
       setItems(data);
       setExplanations({});
       setLoadingExplanation({});
+      const briefRes = await fetch(`${API_URL}/dashboard/morning-brief?limit=5`, { cache: "no-store" });
+      if (briefRes.ok) {
+        setMorningBrief((await briefRes.json()) as MorningBrief);
+      }
       const eventsRes = await fetch(`${API_URL}/events`, { cache: "no-store" });
       if (eventsRes.ok) {
         const eventRows = (await eventsRes.json()) as EventItem[];
@@ -124,44 +132,6 @@ export default function DashboardPage() {
       setLoading(false);
     }
   }, [API_URL, taskOwnerFilter, taskStatusFilter]);
-
-  const askAssistant = async (event?: FormEvent<HTMLFormElement>) => {
-    event?.preventDefault();
-    setAssistantError("");
-    setAssistantAnswer("");
-
-    const target = items[0];
-    if (!target) {
-      setAssistantError("Add a relationship first so Teifke AI has live context to work from.");
-      return;
-    }
-
-    setAssistantLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/ai/message/${target.relationship_id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          goal: assistantPrompt.trim() || "Recommend the next best relationship action.",
-          style_profile: {
-            tone: "direct",
-            length: "short",
-            energy: "medium",
-            emoji_usage: "none",
-          },
-        }),
-      });
-      if (!res.ok) {
-        throw new Error("Teifke AI could not generate a response.");
-      }
-      const payload = (await res.json()) as { content: string };
-      setAssistantAnswer(payload.content);
-    } catch (error) {
-      setAssistantError(error instanceof Error ? error.message : "Teifke AI could not generate a response.");
-    } finally {
-      setAssistantLoading(false);
-    }
-  };
 
   useEffect(() => {
     fetchPriorities();
@@ -502,77 +472,119 @@ export default function DashboardPage() {
     <>
       <section className="mx-auto min-h-screen max-w-[1380px] px-4 py-5 sm:px-6 lg:px-8 lg:py-8 xl:px-10">
         <header className="mb-5 rounded-lg border border-soft/70 bg-white p-4 sm:p-5">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-accent">RelateOS</p>
-        <h1 className="mt-1.5 text-2xl font-semibold tracking-tight sm:text-3xl">Today&apos;s Focus</h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted">
-          Who should you talk to today, and what should you say? Priorities are scored by relationship momentum, risk, value, and recency.
-        </p>
-        <p className="mt-1.5 text-xs text-muted">Your daily execution engine.</p>
-        <div className="mt-3">
-          <button
-            type="button"
-            onClick={() => {
-              setShowCreateForm((prev) => !prev);
-              setCreateError("");
-            }}
-            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-text hover:brightness-110"
-          >
-            Add Relationship + Context
-          </button>
-        </div>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.18em] text-accent">RelateOS</p>
+              <h1 className="mt-1.5 text-2xl font-semibold tracking-tight sm:text-3xl">Today&apos;s Command Center</h1>
+              <p className="mt-2 max-w-2xl text-sm text-muted">
+                Start here: the clearest people to contact, why now, the message angle, and the work already waiting on the team.
+              </p>
+              <p className="mt-1.5 text-xs text-muted">Brief generated {shortDateTime(morningBrief?.generated_at)}.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowCreateForm((prev) => !prev);
+                setCreateError("");
+              }}
+              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-text hover:brightness-110"
+            >
+              Add Relationship + Context
+            </button>
+          </div>
         </header>
 
-        <section className="mb-4 hidden rounded-lg border border-soft/70 bg-white p-4 md:block">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.18em] text-accent">Teifke AI</p>
-              <h2 className="mt-1 text-base font-semibold text-text">Assistant</h2>
-              <p className="mt-1 text-xs text-muted">
-                Ask for a next move. The assistant uses the top priority relationship as live context.
-              </p>
+        {!loading ? (
+          <section className="mb-4 rounded-lg border border-soft/70 bg-white p-4">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-accent">Morning brief</p>
+                <h2 className="mt-1 text-xl font-semibold text-text">{morningBrief?.headline || "Build today's relationship plan"}</h2>
+                <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                  <div className="rounded-md border border-soft bg-base p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-muted">Top people</p>
+                    <p className="mt-1 text-2xl font-semibold text-text">{morningBrief?.focus_count || 0}</p>
+                  </div>
+                  <div className="rounded-md border border-soft bg-base p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-muted">Open tasks</p>
+                    <p className="mt-1 text-2xl font-semibold text-text">{morningBrief?.open_task_count || 0}</p>
+                  </div>
+                  <div className="rounded-md border border-soft bg-base p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-muted">Overdue</p>
+                    <p className="mt-1 text-2xl font-semibold text-text">{morningBrief?.overdue_task_count || 0}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-md border border-soft bg-base p-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted">Next best setup</p>
+                <div className="mt-2 grid gap-2 text-xs text-muted">
+                  {(morningBrief?.next_steps || []).slice(0, 3).map((step) => (
+                    <p key={step}>{step}</p>
+                  ))}
+                </div>
+              </div>
             </div>
-            {items[0] ? (
-              <span className="rounded-full border border-soft bg-soft/60 px-2.5 py-1 text-[11px] text-muted">
-                Context: {items[0].name}
-              </span>
-            ) : null}
-          </div>
-          <form onSubmit={askAssistant} className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
-            <input
-              value={assistantPrompt}
-              onChange={(event) => setAssistantPrompt(event.target.value)}
-              placeholder="Ask Teifke AI what to do next"
-              className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text outline-none placeholder:text-muted focus:border-accent/60"
-            />
-            <button
-              type="submit"
-              disabled={assistantLoading}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {assistantLoading ? "Thinking..." : "Ask Teifke AI"}
-            </button>
-          </form>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {[
-              "Who should I contact first?",
-              "Write a short follow-up.",
-              "What is the risk today?",
-            ].map((prompt) => (
-              <button
-                key={prompt}
-                type="button"
-                onClick={() => setAssistantPrompt(prompt)}
-                className="rounded-full border border-soft px-2.5 py-1 text-[11px] text-muted hover:bg-soft/50 hover:text-text"
-              >
-                {prompt}
-              </button>
-            ))}
-          </div>
-          {assistantAnswer ? (
-            <p className="mt-3 rounded-md border border-soft/70 bg-base p-3 text-sm text-text">{assistantAnswer}</p>
-          ) : null}
-          {assistantError ? <p className="mt-3 text-sm text-red-300">{assistantError}</p> : null}
-        </section>
+
+            {morningBrief?.items.length ? (
+              <div className="mt-4 grid gap-2">
+                {morningBrief.items.map((item, index) => (
+                  <article key={item.relationship_id} className="grid gap-3 rounded-md border border-soft bg-base p-3 lg:grid-cols-[44px_minmax(180px,0.65fr)_minmax(0,1fr)_auto]">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-md border border-soft bg-white text-sm font-semibold text-accent">{index + 1}</div>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold text-text">{item.name}</p>
+                        <span className="rounded-full border border-soft bg-white px-2 py-0.5 text-[11px] text-muted">{item.urgency_level}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-accent">{item.recommended_action}</p>
+                      <p className="mt-1 text-xs text-muted">Score {item.priority_score.toFixed(1)} · {item.reason_tag}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted">{item.why_now}</p>
+                      {item.suggested_message ? (
+                        <p className="mt-2 rounded-md border border-soft bg-white p-2 text-sm text-text">{item.suggested_message}</p>
+                      ) : null}
+                    </div>
+                    <div className="flex items-start gap-2 lg:justify-end">
+                      {item.contact_id ? (
+                        <Link href={`/contacts?contact_id=${encodeURIComponent(item.contact_id)}`} className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">
+                          View
+                        </Link>
+                      ) : null}
+                      {item.suggested_message ? (
+                        <button
+                          type="button"
+                          onClick={() => onSimulateSend(item.relationship_id, item.suggested_message || "")}
+                          className="rounded-md bg-accent px-3 py-2 text-xs font-semibold text-text hover:brightness-110"
+                        >
+                          Log Touch
+                        </button>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-md border border-soft bg-base p-4">
+                <h3 className="text-base font-semibold text-text">Your command center is ready for real relationship data.</h3>
+                <p className="mt-1 text-sm text-muted">
+                  Import contacts, connect Google Contacts, or load a short demo set to see priorities, reasons, and suggested messages.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link href="/imports" className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-text hover:brightness-110">Import Contacts</Link>
+                  <Link href="/connections" className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Connect Sources</Link>
+                  <button
+                    type="button"
+                    onClick={seedDemoData}
+                    disabled={creating}
+                    className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40 disabled:opacity-60"
+                  >
+                    {creating ? "Loading demo..." : "Load Demo Data"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        ) : null}
 
         {!loading ? (
           <section className="mb-4 rounded-lg border border-soft/70 bg-white p-4">
@@ -608,8 +620,15 @@ export default function DashboardPage() {
             </div>
             {taskError ? <p className="mb-3 text-sm text-red-300">{taskError}</p> : null}
             {tasks.length === 0 ? (
-              <div className="rounded-md border border-soft bg-base p-3 text-sm text-muted">
-                No tasks match this view. Create one from a next-best touch below when something needs ownership.
+              <div className="rounded-md border border-soft bg-base p-4">
+                <p className="text-sm font-semibold text-text">No relationship work is waiting right now.</p>
+                <p className="mt-1 text-sm text-muted">
+                  Tasks appear when the assistant creates follow-ups, meeting notes produce action items, content is targeted to contacts, or someone assigns work from the command center.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link href="/tasks" className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">Open Tasks</Link>
+                  <Link href="/meetings" className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">Capture Meeting Notes</Link>
+                </div>
               </div>
             ) : (
               <div className="grid gap-2">
@@ -882,22 +901,6 @@ export default function DashboardPage() {
             <CampaignProofPanel insights={campaignInsights} compact />
           </section>
         ) : null}
-        {!loading && !error && items.length === 0 ? (
-          <div className="rounded-lg border border-soft/70 bg-white p-5 text-sm text-muted">
-            <p>Your dashboard gets smart after one contact with context. Add one now, or load sample relationships.</p>
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={seedDemoData}
-                disabled={creating}
-                className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {creating ? "Seeding demo..." : "Load 3 Demo Relationships"}
-              </button>
-            </div>
-          </div>
-        ) : null}
-
         {!loading && !error && items.length > 0 ? (
           <>
             {selectedIds.size > 0 ? (

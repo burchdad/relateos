@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import desc
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import AIInsight, Relationship, RelationshipSignal
+from app.models import AIInsight, FollowUpTask, Relationship, RelationshipSignal
 
 
 def _latest_insight_content(db: Session, relationship_id, insight_type: str):
@@ -194,6 +194,69 @@ def get_followup_queue(db: Session, limit: int = 10, workspace_id=None):
             }
         )
     return output
+
+
+def get_morning_brief(db: Session, workspace_id=None, limit: int = 5):
+    now = datetime.now(timezone.utc)
+    queue = get_followup_queue(db, limit, workspace_id=workspace_id)
+    task_q = db.query(FollowUpTask)
+    if workspace_id:
+        task_q = task_q.filter(FollowUpTask.workspace_id == workspace_id)
+    open_tasks = task_q.filter(FollowUpTask.status != "completed").all()
+
+    overdue_count = 0
+    for task in open_tasks:
+        if not task.due_at:
+            continue
+        due_at = task.due_at if task.due_at.tzinfo else task.due_at.replace(tzinfo=timezone.utc)
+        if due_at < now:
+            overdue_count += 1
+
+    items = []
+    for item in queue:
+        action = "Send a short follow-up"
+        if item["urgency_level"] == "Act Today":
+            action = "Contact today"
+        elif item["reason_tag"].lower().startswith("active deal"):
+            action = "Move the deal forward"
+        elif item["days_since_contact"] is not None and item["days_since_contact"] >= 21:
+            action = "Restart the conversation"
+
+        items.append(
+            {
+                **item,
+                "recommended_action": action,
+            }
+        )
+
+    if items:
+        headline = f"{items[0]['name']} is the top relationship move today."
+    elif open_tasks:
+        headline = "Start with open relationship tasks, then add more contact context."
+    else:
+        headline = "Add or import contacts to create today's relationship plan."
+
+    next_steps = [
+        "Import contacts or connect Google Contacts to build the relationship graph.",
+        "Add context to the highest-value contacts so Teifke AI can explain why now.",
+        "Create tasks from top follow-ups when an action needs an owner.",
+    ]
+    if items:
+        next_steps = [
+            "Work the top 5 people before opening the rest of the CRM.",
+            "Log each touch so tomorrow's score reflects what happened.",
+            "Turn important follow-ups into assigned tasks for the team.",
+        ]
+
+    return {
+        "generated_at": now,
+        "headline": headline,
+        "focus_count": len(items),
+        "open_task_count": len(open_tasks),
+        "overdue_task_count": overdue_count,
+        "items": items,
+        "next_steps": next_steps,
+    }
 
 
 def get_score_explanation(db: Session, relationship_id, workspace_id=None):

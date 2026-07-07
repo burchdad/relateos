@@ -349,7 +349,23 @@ export default function TasksPage() {
         </div>
         {loading ? <p className="p-4 text-sm text-muted">Loading tasks...</p> : null}
         {!loading && visibleTasks.length === 0 ? (
-          <div className="p-5 text-sm text-muted">No tasks match this view.</div>
+          <div className="p-5">
+            <p className="text-sm font-semibold text-text">No tasks match this view yet.</p>
+            <p className="mt-1 max-w-2xl text-sm text-muted">
+              Tasks are created from assistant actions, meeting action items, content follow-ups, and dashboard next-best touches. Once work exists, this becomes the team&apos;s ownership queue.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link href="/dashboard" className="rounded-md bg-accent px-3 py-2 text-xs font-semibold text-text hover:brightness-110">Open Command Center</Link>
+              <Link href="/meetings" className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">Capture Meeting Notes</Link>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(true)}
+                className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40"
+              >
+                Add Task
+              </button>
+            </div>
+          </div>
         ) : null}
         <div className="divide-y divide-soft">
           {visibleTasks.map(task => {

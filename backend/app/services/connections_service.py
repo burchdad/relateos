@@ -155,6 +155,8 @@ class ConnectionsService:
         else:
             status = "needs_config"
 
+        health = ConnectionsService._connector_health(str(key), stored, status)
+
         return {
             "key": str(key),
             "name": definition["name"],
@@ -164,6 +166,7 @@ class ConnectionsService:
             "configured_fields": configured_fields,
             "missing_fields": missing_fields,
             "last_updated_at": stored.get("updated_at"),
+            "health": health,
         }
 
     @staticmethod
@@ -187,6 +190,13 @@ class ConnectionsService:
             "connector": ConnectorStatus.model_validate(ConnectionsService.connector_status(db, key, workspace_id)),
             "message": f"{definition['name']} connector saved.",
         }
+
+    @staticmethod
+    def merge_connector_values(db: Session, connector_key: str, values: dict, workspace_id: uuid.UUID | None = None) -> None:
+        connector = ConnectionsService._connector_values(db, connector_key, workspace_id)
+        connector.update(values)
+        connector["updated_at"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        ConnectionsService._save_connector_values(db, connector_key, connector, workspace_id)
 
     @staticmethod
     def request_agent_sync(db: Session, mode: str, workspace_id: uuid.UUID | None = None) -> dict:
@@ -500,6 +510,28 @@ class ConnectionsService:
         if not allow_env_fallback:
             return False
         return any(os.getenv(env_key) for env_key in env_map.get(field_key, []))
+
+    @staticmethod
+    def _connector_health(connector_key: str, stored: dict, status: str) -> dict:
+        health = {
+            "level": "green" if status == "ready" else "yellow" if status == "partial" else "red",
+            "last_sync_at": stored.get("last_sync_at"),
+            "last_sync_status": stored.get("last_sync_status"),
+            "last_error": stored.get("last_error"),
+            "records_imported": stored.get("records_imported"),
+        }
+        if connector_key == "google_calendar":
+            scope = str(stored.get("scope") or "")
+            if status == "ready" and "contacts.readonly" not in scope:
+                health["level"] = "yellow"
+                health["last_error"] = "Reconnect Google to approve Contacts access before syncing contacts."
+            elif status != "ready":
+                health["last_error"] = "Connect Google to create calendar events and import contacts."
+        if connector_key == "zoom" and status != "ready":
+            health["last_error"] = "Connect Zoom to import recordings, transcripts, AI notes, and attendance."
+        if connector_key == "openai" and status != "ready":
+            health["last_error"] = "Add an OpenAI API key to enable AI summaries and follow-up drafts."
+        return {key: value for key, value in health.items() if value not in (None, "")}
 
     @staticmethod
     def _sync_status(blockers: list[str], errors: list[str]) -> str:

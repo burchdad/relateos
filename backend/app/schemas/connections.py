@@ -25,6 +25,7 @@ class ConnectorStatus(BaseModel):
     configured_fields: list[str]
     missing_fields: list[str]
     last_updated_at: datetime | None = None
+    health: dict = Field(default_factory=dict)
 
 
 class ConnectorUpdateRequest(BaseModel):

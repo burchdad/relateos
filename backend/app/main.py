@@ -39,12 +39,15 @@ from app.services.auth_service import AuthService
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CORS_ORIGIN_REGEX = (
-    r"https://.*\.vercel\.app"
-    r"|https://.*\.railway\.app"
-    r"|http://localhost(:\d+)?"
-    r"|http://127\.0\.0\.1(:\d+)?"
-)
+DEFAULT_DEV_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+RATE_LIMIT_BUCKETS: dict[str, list[float]] = {}
+RATE_LIMIT_RULES = [
+    ("/auth", 20, 60),
+    ("/ai", 60, 60),
+    ("/imports", 25, 60),
+    ("/team/invites", 20, 60),
+    ("/connections", 45, 60),
+]
 
 # Log the database URL being used (mask password for security)
 db_url = os.getenv("DATABASE_URL") or settings.database_url
@@ -296,14 +299,13 @@ def startup_tasks():
     logger.info("Schema validation passed for content_items experiment columns.")
 
 allowed_origins = _parse_cors_origins(settings.cors_origins)
+frontend_origin = _normalize_origin(settings.frontend_app_url)
 if not allowed_origins:
-    allowed_origins = ["*"]
+    allowed_origins = [origin for origin in [frontend_origin, *DEFAULT_DEV_ORIGINS] if origin]
 
 allow_credentials = "*" not in allowed_origins
 configured_origin_regex = settings.cors_origin_regex.strip()
-allow_origin_regex = "|".join(
-    part for part in [configured_origin_regex, DEFAULT_CORS_ORIGIN_REGEX] if part
-) or None
+allow_origin_regex = configured_origin_regex or None
 
 logger.info("Resolved CORS origins: %s", allowed_origins)
 if allow_origin_regex:
@@ -317,6 +319,40 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _cors_origin_allowed(origin: str) -> bool:
+    return bool(origin and ("*" in allowed_origins or origin in allowed_origins or (allow_origin_regex and re.match(allow_origin_regex, origin))))
+
+
+@app.middleware("http")
+async def _rate_limit_middleware(request: Request, call_next):
+    path = request.url.path
+    if request.method == "OPTIONS" or not path.startswith(settings.api_v1_prefix):
+        return await call_next(request)
+
+    relative_path = path.removeprefix(settings.api_v1_prefix)
+    matched_rule = next((rule for rule in RATE_LIMIT_RULES if relative_path.startswith(rule[0])), None)
+    if not matched_rule:
+        return await call_next(request)
+
+    rule_key, max_requests, window_seconds = matched_rule
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    client_ip = forwarded_for.split(",", 1)[0].strip() or (request.client.host if request.client else "unknown")
+    auth_hint = (request.headers.get("authorization") or "")[-16:]
+    bucket_key = f"{rule_key}:{client_ip}:{auth_hint}"
+    now = time.monotonic()
+    cutoff = now - window_seconds
+    hits = [hit for hit in RATE_LIMIT_BUCKETS.get(bucket_key, []) if hit >= cutoff]
+    if len(hits) >= max_requests:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Too many requests. Please wait a moment and try again."},
+            headers={"Retry-After": str(window_seconds)},
+        )
+    hits.append(now)
+    RATE_LIMIT_BUCKETS[bucket_key] = hits
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -351,20 +387,12 @@ async def _api_auth_middleware(request: Request, call_next):
 
     return await call_next(request)
 
-_CORS_REGEX = re.compile(
-    r"https://.*\.vercel\.app"
-    r"|https://.*\.railway\.app"
-    r"|http://localhost(:\d+)?"
-    r"|http://127\.0\.0\.1(:\d+)?"
-)
-
-
 @app.exception_handler(HTTPException)
 async def _http_exception_cors_handler(request: Request, exc: HTTPException) -> JSONResponse:
     """Re-implement FastAPI's default HTTPException handler so CORS headers are always included."""
     origin = request.headers.get("origin", "")
     headers: dict[str, str] = dict(exc.headers or {})
-    if origin and (origin in allowed_origins or _CORS_REGEX.match(origin)):
+    if _cors_origin_allowed(origin):
         headers["Access-Control-Allow-Origin"] = origin
         headers["Access-Control-Allow-Credentials"] = "true"
         headers.setdefault("Vary", "Origin")
@@ -380,7 +408,7 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
     """Ensure CORS headers are present even on unhandled 500 errors."""
     origin = request.headers.get("origin", "")
     headers: dict[str, str] = {}
-    if origin and (origin in allowed_origins or _CORS_REGEX.match(origin)):
+    if _cors_origin_allowed(origin):
         headers["Access-Control-Allow-Origin"] = origin
         headers["Access-Control-Allow-Credentials"] = "true"
         headers["Vary"] = "Origin"

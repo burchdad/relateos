@@ -640,7 +640,23 @@ export default function ContactsPage() {
           {loading ? (
             <p className="p-4 text-sm text-muted">Loading contacts...</p>
           ) : contacts.length === 0 ? (
-            <p className="p-4 text-sm text-muted">No contacts match this view.</p>
+            <div className="p-5">
+              <p className="text-sm font-semibold text-text">No contacts are in this view yet.</p>
+              <p className="mt-1 max-w-2xl text-sm text-muted">
+                Import a CSV, connect Google Contacts, or add the first relationship manually. Contacts stay scoped to this workspace, so one client account will not see another client&apos;s people.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Link href="/imports" className="rounded-md bg-accent px-3 py-2 text-xs font-semibold text-text hover:brightness-110">Import Contacts</Link>
+                <Link href="/connections" className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">Connect Google Contacts</Link>
+                <button
+                  type="button"
+                  onClick={() => setShowForm(true)}
+                  className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40"
+                >
+                  Add Contact
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="max-h-[680px] overflow-auto divide-y divide-soft">
               {contacts.map(contact => (
