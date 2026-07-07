@@ -289,7 +289,7 @@ class ConnectionsService:
                     "response_type": "code",
                     "client_id": settings.google_calendar_client_id,
                     "redirect_uri": redirect_uri,
-                    "scope": "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly",
+                    "scope": "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/userinfo.email",
                     "access_type": "offline",
                     "prompt": "consent",
                     "state": state,

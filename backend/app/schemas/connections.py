@@ -61,6 +61,16 @@ class AgentSyncResponse(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+class GoogleContactsSyncResponse(BaseModel):
+    status: Literal["completed", "partial", "needs_config"]
+    message: str
+    contacts_found: int = 0
+    contacts_created: int = 0
+    contacts_updated: int = 0
+    contacts_skipped: int = 0
+    errors: list[str] = Field(default_factory=list)
+
+
 class ConnectionsOverview(BaseModel):
     connectors: list[ConnectorStatus]
     pipeline: list[str]

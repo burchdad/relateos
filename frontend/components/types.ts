@@ -618,3 +618,13 @@ export type AgentSyncResponse = {
   errors: string[];
 };
 
+export type GoogleContactsSyncResponse = {
+  status: "completed" | "partial" | "needs_config";
+  message: string;
+  contacts_found: number;
+  contacts_created: number;
+  contacts_updated: number;
+  contacts_skipped: number;
+  errors: string[];
+};
+

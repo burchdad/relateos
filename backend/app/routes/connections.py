@@ -21,8 +21,10 @@ from app.schemas.connections import (
     OAuthStartResponse,
     ConnectorUpdateRequest,
     ConnectorUpdateResponse,
+    GoogleContactsSyncResponse,
 )
 from app.services.connections_service import ConnectionsService
+from app.services.google_contacts_service import GoogleContactsService
 from app.services.zoom_import_service import ZoomImportService
 
 
@@ -118,6 +120,13 @@ def sync_zoom_ai_companion(db: Session = Depends(get_db), context: WorkspaceCont
             **imported,
         }
     )
+
+
+@router.post("/google/contacts/sync", response_model=GoogleContactsSyncResponse)
+def sync_google_contacts(db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("imports:run"))):
+    return GoogleContactsSyncResponse.model_validate(GoogleContactsService.sync_contacts(db, workspace_id=context.workspace_id))
+
+
 @router.get("/zoom/oauth/start", response_model=OAuthStartResponse)
 def start_zoom_oauth(db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("connections:manage"))):
     try:

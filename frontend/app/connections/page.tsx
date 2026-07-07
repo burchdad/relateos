@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { resolveApiUrl } from "@/components/api";
-import { AgentSyncResponse, ConnectionsOverview, ConnectorStatus } from "@/components/types";
+import { AgentSyncResponse, ConnectionsOverview, ConnectorStatus, GoogleContactsSyncResponse } from "@/components/types";
 
 type DraftValues = Record<string, Record<string, string>>;
 
@@ -28,7 +28,9 @@ export default function ConnectionsPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [syncResult, setSyncResult] = useState<AgentSyncResponse | null>(null);
+  const [contactsSyncResult, setContactsSyncResult] = useState<GoogleContactsSyncResponse | null>(null);
   const [syncing, setSyncing] = useState<AgentSyncResponse["mode"] | null>(null);
+  const [syncingGoogleContacts, setSyncingGoogleContacts] = useState(false);
 
   const loadConnections = useCallback(async () => {
     setLoading(true);
@@ -135,6 +137,24 @@ export default function ConnectionsPage() {
       setMessage(error instanceof Error ? error.message : "Could not sync Zoom AI notes");
     } finally {
       setSyncing(null);
+    }
+  };
+
+  const runGoogleContactsSync = async () => {
+    setSyncingGoogleContacts(true);
+    setMessage("");
+    setContactsSyncResult(null);
+    try {
+      const res = await fetch(`${API_URL}/connections/google/contacts/sync`, { method: "POST" });
+      if (!res.ok) throw await apiError(res, "Could not sync Google contacts");
+      const data = (await res.json()) as GoogleContactsSyncResponse;
+      setContactsSyncResult(data);
+      setMessage(data.message);
+      await loadConnections();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not sync Google contacts");
+    } finally {
+      setSyncingGoogleContacts(false);
     }
   };
 
@@ -264,6 +284,27 @@ export default function ConnectionsPage() {
             ))}
           </div>
         ) : null}
+        {contactsSyncResult ? (
+          <div className="mt-3 grid gap-2 md:grid-cols-5">
+            {[
+              ["Status", contactsSyncResult.status],
+              ["Found", contactsSyncResult.contacts_found],
+              ["Created", contactsSyncResult.contacts_created],
+              ["Updated", contactsSyncResult.contacts_updated],
+              ["Skipped", contactsSyncResult.contacts_skipped],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-md border border-soft bg-base px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted">{label}</p>
+                <p className="mt-1 text-sm font-semibold text-text">{String(value).replace(/_/g, " ")}</p>
+              </div>
+            ))}
+            {contactsSyncResult.errors.map(error => (
+              <p key={error} className="rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-100 md:col-span-5">
+                {error}
+              </p>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       {loading ? <p className="mt-6 text-sm text-muted">Loading connections...</p> : null}
@@ -330,6 +371,15 @@ export default function ConnectionsPage() {
                     className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110"
                   >
                     {connector.status === "ready" ? `Reconnect ${connector.name}` : `Connect ${connector.name}`}
+                  </button>
+                ) : null}
+                {connector.key === "google_calendar" ? (
+                  <button
+                    onClick={runGoogleContactsSync}
+                    disabled={syncingGoogleContacts || connector.status !== "ready"}
+                    className="rounded-md border border-soft px-4 py-2 text-sm font-semibold text-text hover:bg-soft/40 disabled:opacity-50"
+                  >
+                    {syncingGoogleContacts ? "Syncing contacts..." : "Sync Google Contacts"}
                   </button>
                 ) : null}
                 <button
