@@ -242,6 +242,7 @@ class ContentItem(Base):
     __tablename__ = "content_items"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     source_type: Mapped[str] = mapped_column(
@@ -458,6 +459,7 @@ class Deal(Base):
     __tablename__ = "deals"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     deal_type: Mapped[str] = mapped_column(String(50), default="other", nullable=False)
@@ -507,6 +509,21 @@ class DealParticipant(Base):
 
     deal: Mapped["Deal"] = relationship("Deal", back_populates="participants")
     contact: Mapped["Person | None"] = relationship("Person", foreign_keys=[contact_id])
+
+
+class AssistantActionLog(Base):
+    __tablename__ = "assistant_action_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True, index=True)
+    action_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="completed", nullable=False)
+    prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    target_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class RelationshipEdge(Base):

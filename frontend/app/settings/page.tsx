@@ -65,6 +65,17 @@ type TeamOverview = {
   permissions: string[];
 };
 
+type AssistantActionLog = {
+  id: string;
+  action_type: string;
+  status: string;
+  prompt?: string | null;
+  target_type?: string | null;
+  target_id?: string | null;
+  metadata_json?: Record<string, unknown>;
+  created_at: string;
+};
+
 const focusOptions = ["Clients", "Investors", "Partners", "Events", "Community", "Content audience"];
 const goalOptions = ["Prioritize follow-up", "Invite people to events", "Send better content", "Track deals", "Build partner network", "Clean up contacts"];
 const teamRoles = ["admin", "member", "viewer"];
@@ -106,6 +117,7 @@ export default function SettingsPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
   const [teamBusy, setTeamBusy] = useState(false);
+  const [assistantActions, setAssistantActions] = useState<AssistantActionLog[]>([]);
   const [status, setStatus] = useState("");
   const [preferences, setPreferences] = useState({
     dailyFocusDigest: true,
@@ -150,6 +162,9 @@ export default function SettingsPage() {
           const teamRes = await fetch(`${API_URL}/team`, { cache: "no-store" });
           if (teamRes.ok) setTeam(await teamRes.json());
         }
+
+        const assistantRes = await fetch(`${API_URL}/ai/assistant/actions?limit=8`, { cache: "no-store" });
+        if (assistantRes.ok) setAssistantActions(await assistantRes.json());
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Could not load settings.");
       } finally {
@@ -921,6 +936,29 @@ export default function SettingsPage() {
               <p className="mt-1 text-sm text-muted">{copy}</p>
             </div>
           ))}
+        </div>
+
+        <div className="mt-4 rounded-lg border border-soft bg-base p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold text-text">Assistant Actions</p>
+              <p className="mt-1 text-sm text-muted">Recent commands completed inside this workspace.</p>
+            </div>
+            <span className="rounded-full border border-soft bg-white px-3 py-1 text-xs uppercase tracking-wide text-muted">
+              {assistantActions.length} recent
+            </span>
+          </div>
+          <div className="mt-3 overflow-hidden rounded-md border border-soft">
+            {assistantActions.length ? assistantActions.map(action => (
+              <div key={action.id} className="grid gap-2 border-b border-soft bg-white px-3 py-2 text-sm last:border-b-0 md:grid-cols-[180px_1fr_120px]">
+                <span className="font-semibold text-text">{action.action_type.replaceAll("_", " ")}</span>
+                <span className="truncate text-muted">{action.prompt || action.target_type || "Workspace action"}</span>
+                <span className="text-muted md:text-right">{new Date(action.created_at).toLocaleDateString()}</span>
+              </div>
+            )) : (
+              <p className="bg-white px-3 py-3 text-sm text-muted">No assistant actions logged yet.</p>
+            )}
+          </div>
         </div>
       </section>
     </main>

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.permissions import WorkspaceContext, require_permission
 from app.schemas.content import (
     ContentCampaignStats,
     ContentEngagementUpdateRequest,
@@ -38,8 +39,8 @@ def _serialize_content_item(db: Session, item) -> ContentItemOut:
 
 
 @router.post("", response_model=ContentItemOut, status_code=201)
-def create_content(payload: ContentCreate, db: Session = Depends(get_db)):
-    item = ContentService.create_content_item(db, payload)
+def create_content(payload: ContentCreate, db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("content:write"))):
+    item = ContentService.create_content_item(db, payload, workspace_id=context.workspace_id)
     # Best-effort bootstrap to keep content records immediately useful in the UI.
     try:
         ContentAIService().generate_content_summary(db, item.id)
@@ -49,14 +50,14 @@ def create_content(payload: ContentCreate, db: Session = Depends(get_db)):
 
 
 @router.get("", response_model=list[ContentItemOut])
-def list_content(db: Session = Depends(get_db)):
-    items = ContentService.get_all_content_items(db)
+def list_content(db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("content:read"))):
+    items = ContentService.get_all_content_items(db, workspace_id=context.workspace_id)
     return [_serialize_content_item(db, item) for item in items]
 
 
 @router.get("/campaigns/active", response_model=list[ContentCampaignStats])
-def active_campaigns(db: Session = Depends(get_db)):
-    rows = ContentService.active_campaigns(db)
+def active_campaigns(db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("content:read"))):
+    rows = ContentService.active_campaigns(db, workspace_id=context.workspace_id)
     return [ContentCampaignStats.model_validate(row) for row in rows]
 
 
@@ -71,24 +72,24 @@ def sync_skool_content(payload: SkoolAgentSyncRequest, db: Session = Depends(get
 
 
 @router.get("/{content_id}", response_model=ContentItemOut)
-def get_content(content_id: UUID, db: Session = Depends(get_db)):
-    item = ContentService.get_content_by_id(db, content_id)
+def get_content(content_id: UUID, db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("content:read"))):
+    item = ContentService.get_content_by_id(db, content_id, workspace_id=context.workspace_id)
     if not item:
         raise HTTPException(status_code=404, detail="Content item not found")
     return _serialize_content_item(db, item)
 
 
 @router.get("/{content_id}/stats", response_model=ContentCampaignStats)
-def content_stats(content_id: UUID, db: Session = Depends(get_db)):
-    payload = ContentService.content_campaign_stats(db, content_id)
+def content_stats(content_id: UUID, db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("content:read"))):
+    payload = ContentService.content_campaign_stats(db, content_id, workspace_id=context.workspace_id)
     if not payload:
         raise HTTPException(status_code=404, detail="Content item not found")
     return ContentCampaignStats.model_validate(payload)
 
 
 @router.post("/{content_id}/generate-summary", response_model=ContentSummaryResponse)
-def generate_summary(content_id: UUID, db: Session = Depends(get_db)):
-    item = ContentService.get_content_by_id(db, content_id)
+def generate_summary(content_id: UUID, db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("content:write"))):
+    item = ContentService.get_content_by_id(db, content_id, workspace_id=context.workspace_id)
     if not item:
         raise HTTPException(status_code=404, detail="Content item not found")
 
@@ -101,12 +102,12 @@ def generate_summary(content_id: UUID, db: Session = Depends(get_db)):
 
 
 @router.get("/{content_id}/targets", response_model=list[ContentTargetOut])
-def suggest_targets(content_id: UUID, db: Session = Depends(get_db)):
-    item = ContentService.get_content_by_id(db, content_id)
+def suggest_targets(content_id: UUID, db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("content:read"))):
+    item = ContentService.get_content_by_id(db, content_id, workspace_id=context.workspace_id)
     if not item:
         raise HTTPException(status_code=404, detail="Content item not found")
 
-    targets = TargetingService.suggest_relationship_targets(db, content_id)
+    targets = TargetingService.suggest_relationship_targets(db, content_id, workspace_id=context.workspace_id)
     output: list[ContentTargetOut] = []
     for target in targets:
         relationship = target.relationship
@@ -128,18 +129,18 @@ def suggest_targets(content_id: UUID, db: Session = Depends(get_db)):
 
 
 @router.get("/{content_id}/followups", response_model=FollowUpResponse)
-def get_followups(content_id: UUID, db: Session = Depends(get_db)):
-    item = ContentService.get_content_by_id(db, content_id)
+def get_followups(content_id: UUID, db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("content:read"))):
+    item = ContentService.get_content_by_id(db, content_id, workspace_id=context.workspace_id)
     if not item:
         raise HTTPException(status_code=404, detail="Content item not found")
 
-    payload = FollowUpSuggestionService.generate_content_followups(db, content_id)
+    payload = FollowUpSuggestionService.generate_content_followups(db, content_id, workspace_id=context.workspace_id)
     return FollowUpResponse.model_validate(payload)
 
 
 @router.post("/{content_id}/followups/execute", response_model=FollowUpExecuteResponse)
-def execute_followup(content_id: UUID, payload: FollowUpExecuteRequest, db: Session = Depends(get_db)):
-    item = ContentService.get_content_by_id(db, content_id)
+def execute_followup(content_id: UUID, payload: FollowUpExecuteRequest, db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("content:write"))):
+    item = ContentService.get_content_by_id(db, content_id, workspace_id=context.workspace_id)
     if not item:
         raise HTTPException(status_code=404, detail="Content item not found")
 
@@ -151,6 +152,7 @@ def execute_followup(content_id: UUID, payload: FollowUpExecuteRequest, db: Sess
             relationship_ids=payload.relationship_ids,
             dispatch_mode=payload.dispatch_mode,
             delay_window_minutes=payload.delay_window_minutes,
+            workspace_id=context.workspace_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -158,8 +160,8 @@ def execute_followup(content_id: UUID, payload: FollowUpExecuteRequest, db: Sess
 
 
 @router.post("/{content_id}/engagement", response_model=ContentTargetOut)
-def update_engagement(content_id: UUID, payload: ContentEngagementUpdateRequest, db: Session = Depends(get_db)):
-    item = ContentService.get_content_by_id(db, content_id)
+def update_engagement(content_id: UUID, payload: ContentEngagementUpdateRequest, db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("content:write"))):
+    item = ContentService.get_content_by_id(db, content_id, workspace_id=context.workspace_id)
     if not item:
         raise HTTPException(status_code=404, detail="Content item not found")
 
@@ -169,6 +171,7 @@ def update_engagement(content_id: UUID, payload: ContentEngagementUpdateRequest,
             content_id,
             relationship_id=payload.relationship_id,
             status=payload.status,
+            workspace_id=context.workspace_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

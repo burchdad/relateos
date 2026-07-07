@@ -1,5 +1,6 @@
 from app.models.entities import (
 	AIInsight,
+	AssistantActionLog,
 	AppUser,
 	ConnectorCredential,
 	PasswordResetToken,
@@ -31,6 +32,7 @@ __all__ = [
 	"Opportunity",
 	"OutboxMessage",
 	"AIInsight",
+	"AssistantActionLog",
 	"AppUser",
 	"ConnectorCredential",
 	"PasswordResetToken",

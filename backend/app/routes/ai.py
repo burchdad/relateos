@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.permissions import WorkspaceContext, require_permission
-from app.schemas.ai import AIResponse, AssistantRequest, AssistantResponse, MessageSuggestionRequest
+from app.models import AssistantActionLog
+from app.schemas.ai import AIResponse, AssistantActionLogOut, AssistantRequest, AssistantResponse, MessageSuggestionRequest
 from app.services.ai_service import AIService
 from app.services.assistant_service import AssistantService
 
@@ -43,3 +44,19 @@ def assistant(
     context: WorkspaceContext = Depends(require_permission("workspace:read")),
 ):
     return AssistantService().handle(db, payload=payload, context=context)
+
+
+@router.get("/assistant/actions", response_model=list[AssistantActionLogOut])
+def assistant_actions(
+    limit: int = 25,
+    db: Session = Depends(get_db),
+    context: WorkspaceContext = Depends(require_permission("workspace:read")),
+):
+    capped_limit = max(1, min(limit, 100))
+    return (
+        db.query(AssistantActionLog)
+        .filter(AssistantActionLog.workspace_id == context.workspace_id)
+        .order_by(AssistantActionLog.created_at.desc())
+        .limit(capped_limit)
+        .all()
+    )

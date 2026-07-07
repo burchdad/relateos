@@ -58,24 +58,27 @@ class FollowUpSuggestionService:
         )
 
     @staticmethod
-    def _load_targets(db: Session, content_id: UUID) -> list[ContentRelationshipTarget]:
+    def _load_targets(db: Session, content_id: UUID, workspace_id: UUID | None = None) -> list[ContentRelationshipTarget]:
         targets = (
             db.query(ContentRelationshipTarget)
+            .join(Relationship, Relationship.id == ContentRelationshipTarget.relationship_id)
             .filter(ContentRelationshipTarget.content_id == content_id)
             .order_by(ContentRelationshipTarget.created_at.desc())
-            .all()
         )
-        if targets:
-            return targets
-        return TargetingService.suggest_relationship_targets(db, content_id)
+        if workspace_id:
+            targets = targets.filter(Relationship.workspace_id == workspace_id)
+        loaded_targets = targets.all()
+        if loaded_targets:
+            return loaded_targets
+        return TargetingService.suggest_relationship_targets(db, content_id, workspace_id=workspace_id)
 
     @staticmethod
-    def generate_content_followups(db: Session, content_id: UUID) -> dict:
-        content = ContentService.get_content_by_id(db, content_id)
+    def generate_content_followups(db: Session, content_id: UUID, workspace_id: UUID | None = None) -> dict:
+        content = ContentService.get_content_by_id(db, content_id, workspace_id=workspace_id)
         if not content:
             raise ValueError("Content item not found")
 
-        targets = FollowUpSuggestionService._load_targets(db, content_id)
+        targets = FollowUpSuggestionService._load_targets(db, content_id, workspace_id=workspace_id)
         target_relationship_ids = [target.relationship_id for target in targets]
 
         relationships = (
@@ -85,6 +88,8 @@ class FollowUpSuggestionService:
             if target_relationship_ids
             else []
         )
+        if workspace_id and target_relationship_ids:
+            relationships = [relationship for relationship in relationships if relationship.workspace_id == workspace_id]
         relationship_by_id = {relationship.id: relationship for relationship in relationships}
 
         target_payload = []
@@ -138,8 +143,9 @@ class FollowUpSuggestionService:
         relationship_ids: list[UUID] | None = None,
         dispatch_mode: str = "immediate",
         delay_window_minutes: int = 0,
+        workspace_id: UUID | None = None,
     ) -> dict:
-        content = ContentService.get_content_by_id(db, content_id)
+        content = ContentService.get_content_by_id(db, content_id, workspace_id=workspace_id)
         if not content:
             raise ValueError("Content item not found")
 
@@ -147,7 +153,7 @@ class FollowUpSuggestionService:
         if not plan:
             raise ValueError("Follow-up step not found")
 
-        targets = FollowUpSuggestionService._load_targets(db, content_id)
+        targets = FollowUpSuggestionService._load_targets(db, content_id, workspace_id=workspace_id)
         if relationship_ids:
             allowed = set(relationship_ids)
             targets = [target for target in targets if target.relationship_id in allowed]
@@ -225,15 +231,20 @@ class FollowUpSuggestionService:
         return True
 
     @staticmethod
-    def update_engagement_status(db: Session, content_id: UUID, relationship_id: UUID, status: str) -> ContentRelationshipTarget:
+    def update_engagement_status(db: Session, content_id: UUID, relationship_id: UUID, status: str, workspace_id: UUID | None = None) -> ContentRelationshipTarget:
+        if workspace_id and not ContentService.get_content_by_id(db, content_id, workspace_id=workspace_id):
+            raise ValueError("Content target not found")
         target = (
             db.query(ContentRelationshipTarget)
+            .join(Relationship, Relationship.id == ContentRelationshipTarget.relationship_id)
             .filter(
                 ContentRelationshipTarget.content_id == content_id,
                 ContentRelationshipTarget.relationship_id == relationship_id,
             )
-            .first()
         )
+        if workspace_id:
+            target = target.filter(Relationship.workspace_id == workspace_id)
+        target = target.first()
         if not target:
             raise ValueError("Content target not found")
 

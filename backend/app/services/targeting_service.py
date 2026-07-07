@@ -56,17 +56,18 @@ class TargetingService:
         return score, " ".join(reasons)
 
     @staticmethod
-    def suggest_relationship_targets(db: Session, content_id: UUID) -> list[ContentRelationshipTarget]:
-        content = db.query(ContentItem).filter(ContentItem.id == content_id).first()
+    def suggest_relationship_targets(db: Session, content_id: UUID, workspace_id: UUID | None = None) -> list[ContentRelationshipTarget]:
+        content_q = db.query(ContentItem).filter(ContentItem.id == content_id)
+        if workspace_id:
+            content_q = content_q.filter(ContentItem.workspace_id == workspace_id)
+        content = content_q.first()
         if not content:
             raise ValueError("Content item not found")
 
-        relationships = (
-            db.query(Relationship)
-            .options(joinedload(Relationship.person), joinedload(Relationship.signals))
-            .order_by(Relationship.priority_score.desc())
-            .all()
-        )
+        relationship_q = db.query(Relationship).options(joinedload(Relationship.person), joinedload(Relationship.signals))
+        if workspace_id:
+            relationship_q = relationship_q.filter(Relationship.workspace_id == workspace_id)
+        relationships = relationship_q.order_by(Relationship.priority_score.desc()).all()
 
         scored: list[tuple[float, Relationship, str]] = []
         for relationship in relationships:

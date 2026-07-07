@@ -37,12 +37,13 @@ def _youtube_thumbnail(url: str) -> str | None:
 
 class ContentService:
     @staticmethod
-    def create_content_item(db: Session, payload: ContentCreate) -> ContentItem:
+    def create_content_item(db: Session, payload: ContentCreate, workspace_id: UUID | None = None) -> ContentItem:
         thumbnail_url = payload.thumbnail_url
         if payload.source_type == "youtube" and not thumbnail_url:
             thumbnail_url = _youtube_thumbnail(payload.source_url)
 
         item = ContentItem(
+            workspace_id=workspace_id,
             title=payload.title.strip(),
             description=payload.description.strip(),
             source_type=payload.source_type,
@@ -58,12 +59,18 @@ class ContentService:
         return item
 
     @staticmethod
-    def get_all_content_items(db: Session) -> list[ContentItem]:
-        return db.query(ContentItem).order_by(ContentItem.created_at.desc()).all()
+    def get_all_content_items(db: Session, workspace_id: UUID | None = None) -> list[ContentItem]:
+        q = db.query(ContentItem)
+        if workspace_id:
+            q = q.filter(ContentItem.workspace_id == workspace_id)
+        return q.order_by(ContentItem.created_at.desc()).all()
 
     @staticmethod
-    def get_content_by_id(db: Session, content_id: UUID) -> ContentItem | None:
-        return db.query(ContentItem).filter(ContentItem.id == content_id).first()
+    def get_content_by_id(db: Session, content_id: UUID, workspace_id: UUID | None = None) -> ContentItem | None:
+        q = db.query(ContentItem).filter(ContentItem.id == content_id)
+        if workspace_id:
+            q = q.filter(ContentItem.workspace_id == workspace_id)
+        return q.first()
 
     @staticmethod
     def latest_insight(db: Session, content_id: UUID) -> ContentInsight | None:
@@ -75,8 +82,8 @@ class ContentService:
         )
 
     @staticmethod
-    def content_campaign_stats(db: Session, content_id: UUID) -> dict | None:
-        item = ContentService.get_content_by_id(db, content_id)
+    def content_campaign_stats(db: Session, content_id: UUID, workspace_id: UUID | None = None) -> dict | None:
+        item = ContentService.get_content_by_id(db, content_id, workspace_id=workspace_id)
         if not item:
             return None
 
@@ -97,6 +104,6 @@ class ContentService:
         }
 
     @staticmethod
-    def active_campaigns(db: Session, limit: int = 8) -> list[dict]:
-        items = ContentService.get_all_content_items(db)[:limit]
-        return [payload for payload in (ContentService.content_campaign_stats(db, item.id) for item in items) if payload is not None]
+    def active_campaigns(db: Session, limit: int = 8, workspace_id: UUID | None = None) -> list[dict]:
+        items = ContentService.get_all_content_items(db, workspace_id=workspace_id)[:limit]
+        return [payload for payload in (ContentService.content_campaign_stats(db, item.id, workspace_id=workspace_id) for item in items) if payload is not None]

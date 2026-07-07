@@ -129,6 +129,17 @@ export default function FloatingAssistant() {
     recognition.start();
   };
 
+  const runAction = (action: AssistantAction) => {
+    const confirmCommand = typeof action.metadata?.confirm_command === "string" ? action.metadata.confirm_command : "";
+    if (action.status === "needs_confirmation" && confirmCommand) {
+      void submit(undefined, confirmCommand);
+      return;
+    }
+    if (action.href) {
+      router.push(action.href as never);
+    }
+  };
+
   return (
     <div className="fixed bottom-5 right-5 z-50 hidden md:block">
       {open ? (
@@ -164,12 +175,14 @@ export default function FloatingAssistant() {
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted">Actions</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {actions.map((action, index) => (
-                    action.href ? (
+                    action.href || action.status === "needs_confirmation" ? (
                       <button
                         type="button"
                         key={`${action.type}-${index}`}
-                        onClick={() => router.push((action.href || "/dashboard") as never)}
-                        className="rounded-md border border-soft px-3 py-1.5 text-xs text-text hover:bg-soft/40"
+                        onClick={() => runAction(action)}
+                        className={`rounded-md border px-3 py-1.5 text-xs text-text hover:bg-soft/40 ${
+                          action.status === "needs_confirmation" ? "border-accent/60 bg-accent/30 font-semibold" : "border-soft"
+                        }`}
                       >
                         {action.label}
                       </button>

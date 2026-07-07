@@ -7,16 +7,34 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.entities import Deal, DealParticipant
+from app.models.entities import Deal, DealParticipant, Organization, Person
 from app.schemas.deal import DealCreate, DealUpdate, NaturalLanguageDealResult
 from app.services.network_service import NetworkService
 
 
 class DealService:
     @staticmethod
-    def create(db: Session, payload: DealCreate) -> Deal:
+    def create(db: Session, payload: DealCreate, workspace_id: uuid.UUID | None = None) -> Deal:
+        if workspace_id:
+            contact_ids = [
+                payload.primary_contact_id,
+                payload.source_contact_id,
+                payload.referred_by_contact_id,
+                *[participant.contact_id for participant in payload.participants],
+            ]
+            contact_ids = [contact_id for contact_id in contact_ids if contact_id]
+            if contact_ids:
+                found_count = db.query(Person).filter(Person.workspace_id == workspace_id, Person.id.in_(contact_ids)).count()
+                if found_count != len(set(contact_ids)):
+                    raise ValueError("One or more deal contacts are outside this workspace.")
+            if payload.organization_id:
+                org = db.query(Organization).filter(Organization.id == payload.organization_id, Organization.workspace_id == workspace_id).first()
+                if not org:
+                    raise ValueError("Deal organization is outside this workspace.")
+
         deal = Deal(
             id=uuid.uuid4(),
+            workspace_id=workspace_id,
             title=payload.title,
             description=payload.description,
             deal_type=payload.deal_type,
@@ -46,14 +64,14 @@ class DealService:
             )
             db.add(participant)
 
-        DealService._update_network_edges(db, deal)
+        DealService._update_network_edges(db, deal, workspace_id=workspace_id)
 
         db.commit()
         db.refresh(deal)
         return deal
 
     @staticmethod
-    def _update_network_edges(db: Session, deal: Deal) -> None:
+    def _update_network_edges(db: Session, deal: Deal, workspace_id: uuid.UUID | None = None) -> None:
         participant_ids = [p.contact_id for p in deal.participants if p.contact_id]
         anchor_ids = [deal.primary_contact_id, deal.source_contact_id, deal.referred_by_contact_id]
         contact_ids = []
@@ -74,6 +92,7 @@ class DealService:
                         relationship_type="deal_collaboration",
                         strength=1.5,
                         organization_id=deal.organization_id,
+                        workspace_id=workspace_id,
                         revenue_attributed=float(deal.actual_value or deal.expected_value or deal.amount or 0.0),
                         deal_count=1,
                         evidence={
@@ -87,8 +106,11 @@ class DealService:
                     continue
 
     @staticmethod
-    def get_by_id(db: Session, deal_id: uuid.UUID) -> Deal | None:
-        return db.query(Deal).filter(Deal.id == deal_id).first()
+    def get_by_id(db: Session, deal_id: uuid.UUID, workspace_id: uuid.UUID | None = None) -> Deal | None:
+        q = db.query(Deal).filter(Deal.id == deal_id)
+        if workspace_id:
+            q = q.filter(Deal.workspace_id == workspace_id)
+        return q.first()
 
     @staticmethod
     def list_all(
@@ -97,8 +119,11 @@ class DealService:
         status: str | None = None,
         organization_id: uuid.UUID | None = None,
         limit: int = 100,
+        workspace_id: uuid.UUID | None = None,
     ) -> list[Deal]:
         q = db.query(Deal)
+        if workspace_id:
+            q = q.filter(Deal.workspace_id == workspace_id)
         if deal_type:
             q = q.filter(Deal.deal_type == deal_type)
         if status:
@@ -108,8 +133,11 @@ class DealService:
         return q.order_by(Deal.created_at.desc()).limit(limit).all()
 
     @staticmethod
-    def update(db: Session, deal_id: uuid.UUID, payload: DealUpdate) -> Deal | None:
-        deal = db.query(Deal).filter(Deal.id == deal_id).first()
+    def update(db: Session, deal_id: uuid.UUID, payload: DealUpdate, workspace_id: uuid.UUID | None = None) -> Deal | None:
+        q = db.query(Deal).filter(Deal.id == deal_id)
+        if workspace_id:
+            q = q.filter(Deal.workspace_id == workspace_id)
+        deal = q.first()
         if not deal:
             return None
         for field, value in payload.model_dump(exclude_unset=True).items():
