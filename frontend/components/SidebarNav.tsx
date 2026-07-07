@@ -23,6 +23,7 @@ const intelligenceNav: NavItem[] = [
   { href: "/organizations", label: "Partners", icon: "PT" },
   { href: "/network/graph", label: "Network Graph", icon: "NG" },
   { href: "/scoreboard", label: "Scoreboard", icon: "SB" },
+  { href: "/tasks", label: "Tasks", icon: "TK" },
   { href: "/meetings", label: "Meetings", icon: "MT" },
   { href: "/imports", label: "Imports", icon: "IM" },
   { href: "/funnels", label: "Content Funnels", icon: "CF" },
