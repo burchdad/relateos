@@ -32,7 +32,8 @@ type SpeechRecognitionLike = {
   stop: () => void;
   onresult: ((event: { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => void) | null;
   onend: (() => void) | null;
-  onerror: (() => void) | null;
+  abort?: () => void;
+  onerror: ((event?: { error?: string; message?: string }) => void) | null;
 };
 
 type MicPermissionState = "unknown" | "unsupported" | "prompt" | "granted" | "denied";
@@ -69,6 +70,15 @@ export default function FloatingAssistant() {
     window.addEventListener("relateos-open-assistant", openAssistant);
     return () => window.removeEventListener("relateos-open-assistant", openAssistant);
   }, []);
+
+  useEffect(() => {
+    if (open) return;
+    recognitionRef.current?.abort?.();
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    setListening(false);
+    setTranscriptPreview("");
+  }, [open]);
 
   useEffect(() => {
     if (!speechSupported) {
@@ -183,6 +193,9 @@ export default function FloatingAssistant() {
     if (listening) {
       return;
     }
+    recognitionRef.current?.abort?.();
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
     const allowed = await requestMicPermission();
     if (!allowed) return;
 
@@ -216,14 +229,26 @@ export default function FloatingAssistant() {
     };
     recognition.onend = () => {
       setListening(false);
+      recognitionRef.current = null;
       const transcript = (finalTranscriptRef.current || liveTranscriptRef.current).trim();
       if (autoSubmitVoiceRef.current && transcript) {
         void submit(undefined, transcript);
       }
     };
-    recognition.onerror = () => {
+    recognition.onerror = event => {
       setListening(false);
-      setError("Voice input stopped. Try typing the command instead.");
+      recognitionRef.current = null;
+      const reason = event?.error || "";
+      if (reason === "no-speech") {
+        setError("I did not catch anything. Tap Mic again or type the command.");
+      } else if (reason === "not-allowed" || reason === "service-not-allowed") {
+        setMicPermission("denied");
+        setError("Microphone access is blocked for this browser.");
+      } else if (reason === "aborted") {
+        setError("");
+      } else {
+        setError("Voice input stopped. Try typing the command instead.");
+      }
     };
     recognitionRef.current = recognition;
     setListening(true);
@@ -242,7 +267,9 @@ export default function FloatingAssistant() {
 
   const interrupt = () => {
     requestAbortRef.current?.abort();
+    recognitionRef.current?.abort?.();
     recognitionRef.current?.stop();
+    recognitionRef.current = null;
     setListening(false);
     setLoading(false);
   };

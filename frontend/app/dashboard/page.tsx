@@ -522,7 +522,7 @@ export default function DashboardPage() {
         </div>
         </header>
 
-        <section className="mb-4 rounded-lg border border-soft/70 bg-white p-4">
+        <section className="mb-4 hidden rounded-lg border border-soft/70 bg-white p-4 md:block">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.18em] text-accent">Teifke AI</p>

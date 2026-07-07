@@ -398,10 +398,10 @@ export default function EventsPage() {
           <p className="text-sm text-muted mt-1">Manage recurring webinars, investor calls, coaching sessions, and follow-up events.</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setShowInvitePanel(v => !v)} className="rounded-lg border border-soft px-4 py-2 text-sm text-text hover:bg-soft/40">
+          <button onClick={() => setShowInvitePanel(true)} className="rounded-lg border border-soft px-4 py-2 text-sm text-text hover:bg-soft/40">
             Invite Contacts
           </button>
-          <button onClick={() => setShowForm(v => !v)} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110">
+          <button onClick={() => setShowForm(true)} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110">
             Create Event
           </button>
         </div>
@@ -422,9 +422,24 @@ export default function EventsPage() {
         ))}
       </div>
 
-      {showForm && (
-        <section className="rounded-lg border border-accent/30 bg-panel p-5">
-          <h2 className="text-base font-semibold text-text">Create Event</h2>
+      {showForm ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="create-event-title">
+          <button
+            type="button"
+            aria-label="Close create event"
+            onClick={() => setShowForm(false)}
+            className="absolute inset-0 bg-text/55"
+          />
+          <section className="relative max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border border-accent/30 bg-panel p-5 shadow-card sm:max-w-2xl sm:rounded-lg">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-accent">Live session</p>
+              <h2 id="create-event-title" className="mt-1 text-base font-semibold text-text">Create Event</h2>
+            </div>
+            <button type="button" onClick={() => setShowForm(false)} className="rounded-md border border-soft px-2 py-1 text-xs text-text hover:bg-soft/40">
+              Close
+            </button>
+          </div>
           <form onSubmit={onCreate} className="mt-4 grid gap-3 md:grid-cols-2">
             <input
               value={form.title}
@@ -505,8 +520,9 @@ export default function EventsPage() {
               </button>
             </div>
           </form>
-        </section>
-      )}
+          </section>
+        </div>
+      ) : null}
 
       <section className="rounded-lg border border-soft bg-panel p-4">
         <div className="grid gap-3 md:grid-cols-[1fr_220px]">
@@ -599,59 +615,81 @@ export default function EventsPage() {
                 ) : (
                   <button onClick={() => openExistingCalendarEvent(selectedEvent)} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Add Manually</button>
                 )}
-                <button onClick={() => setShowInvitePanel(v => !v)} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Invite Contacts</button>
+                <button onClick={() => setShowInvitePanel(true)} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Invite Contacts</button>
               </div>
-              {showInvitePanel ? (
-                <section className="space-y-3 rounded-lg border border-soft bg-base p-3">
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-muted">Invite contacts</p>
-                      <p className="mt-1 text-xs text-muted">
-                        Selected: {selectedInviteContacts.length} / Visible selected: {visibleSelectedCount}
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <button onClick={selectVisibleContacts} className="rounded-md border border-soft px-2 py-1.5 text-xs text-text hover:bg-soft/40">
-                        Select visible
-                      </button>
-                      <button onClick={removeVisibleContacts} className="rounded-md border border-soft px-2 py-1.5 text-xs text-text hover:bg-soft/40">
-                        Remove visible
-                      </button>
-                      <button onClick={restartInviteSelection} className="rounded-md border border-soft px-2 py-1.5 text-xs text-muted hover:bg-soft/40 hover:text-text">
-                        Restart
-                      </button>
-                    </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted">Select an event to review details.</p>
+          )}
+        </aside>
+      </div>
+
+      {showInvitePanel ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="invite-contacts-title">
+          <button
+            type="button"
+            aria-label="Close invite contacts"
+            onClick={() => setShowInvitePanel(false)}
+            className="absolute inset-0 bg-text/55"
+          />
+          <section className="relative max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border border-soft bg-panel p-4 shadow-card sm:max-w-xl sm:rounded-lg sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted">Invite contacts</p>
+                <h2 id="invite-contacts-title" className="mt-1 text-lg font-semibold text-text">
+                  {selectedEvent ? selectedEvent.title : "Select an event"}
+                </h2>
+                <p className="mt-1 text-xs text-muted">
+                  Selected: {selectedInviteContacts.length} / Visible selected: {visibleSelectedCount}
+                </p>
+              </div>
+              <button type="button" onClick={() => setShowInvitePanel(false)} className="rounded-md border border-soft px-2 py-1 text-xs text-text hover:bg-soft/40">
+                Close
+              </button>
+            </div>
+            {selectedEvent ? (
+              <div className="mt-4 space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <button onClick={selectVisibleContacts} className="rounded-md border border-soft px-2 py-2 text-xs text-text hover:bg-soft/40">
+                    Select visible
+                  </button>
+                  <button onClick={removeVisibleContacts} className="rounded-md border border-soft px-2 py-2 text-xs text-text hover:bg-soft/40">
+                    Remove visible
+                  </button>
+                  <button onClick={restartInviteSelection} className="rounded-md border border-soft px-2 py-2 text-xs text-muted hover:bg-soft/40 hover:text-text">
+                    Restart
+                  </button>
+                </div>
+                <input
+                  value={inviteSearch}
+                  onChange={e => setInviteSearch(e.target.value)}
+                  placeholder="Search invitees"
+                  className="w-full rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:border-accent/60 focus:outline-none"
+                />
+                <div className="space-y-2">
+                  <p className="text-[11px] uppercase tracking-wide text-muted">Role groups</p>
+                  <div className="flex max-h-24 flex-wrap gap-2 overflow-auto">
+                    {availableInviteRoleGroups.map(group => {
+                      const selected = selectedInviteRoleGroups.has(group);
+                      return (
+                        <button
+                          key={group}
+                          type="button"
+                          onClick={() => toggleInviteRoleGroup(group)}
+                          className={`rounded-full border px-2 py-1 text-xs transition ${
+                            selected ? "border-accent/60 bg-accent/15 text-text" : "border-soft text-muted hover:bg-soft/40 hover:text-text"
+                          }`}
+                        >
+                          {group}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <input
-                    value={inviteSearch}
-                    onChange={e => setInviteSearch(e.target.value)}
-                    placeholder="Search invitees"
-                    className="w-full rounded-md border border-soft bg-panel px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
-                  />
-                  <div className="space-y-2">
-                    <p className="text-[11px] uppercase tracking-wide text-muted">Role groups</p>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-[11px] uppercase tracking-wide text-muted">Tags</p>
+                  {availableInviteTags.length > 0 ? (
                     <div className="flex max-h-24 flex-wrap gap-2 overflow-auto">
-                      {availableInviteRoleGroups.map(group => {
-                        const selected = selectedInviteRoleGroups.has(group);
-                        return (
-                          <button
-                            key={group}
-                            type="button"
-                            onClick={() => toggleInviteRoleGroup(group)}
-                            className={`rounded-full border px-2 py-1 text-xs transition ${
-                              selected ? "border-accent/60 bg-accent/15 text-text" : "border-soft text-muted hover:bg-soft/40 hover:text-text"
-                            }`}
-                          >
-                            {group}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-[11px] uppercase tracking-wide text-muted">Tags</p>
-                    {availableInviteTags.length > 0 ? (
-                      <div className="flex max-h-24 flex-wrap gap-2 overflow-auto">
                       {availableInviteTags.map(tag => {
                         const selected = selectedInviteTags.has(tag);
                         return (
@@ -667,52 +705,53 @@ export default function EventsPage() {
                           </button>
                         );
                       })}
-                      </div>
-                    ) : (
-                      <p className="rounded-md border border-soft px-3 py-2 text-xs text-muted">No contact tags available yet.</p>
-                    )}
-                  </div>
-                  <div className="max-h-72 overflow-auto rounded-md border border-soft">
-                    {contactsLoading ? (
-                      <p className="p-3 text-sm text-muted">Loading contacts...</p>
-                    ) : inviteCandidates.length === 0 ? (
-                      <p className="p-3 text-sm text-muted">No contacts match this invite filter.</p>
-                    ) : inviteCandidates.map(contact => {
-                      const selected = selectedContactIds.has(contact.id);
-                      return (
-                        <button
-                          key={contact.id}
-                          type="button"
-                          onClick={() => toggleContact(contact.id)}
-                          className={`flex w-full items-center justify-between gap-3 border-b border-soft px-3 py-2 text-left last:border-b-0 hover:bg-soft/20 ${selected ? "bg-accent/10" : ""}`}
-                        >
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium text-text">{compactName(contact)}</span>
-                            <span className="block truncate text-xs text-muted">{contact.email || "No email"}</span>
-                            <span className="mt-1 inline-flex rounded-full border border-soft px-2 py-0.5 text-[10px] text-muted">{roleGroupFor(contact)}</span>
-                          </span>
-                          <span className={`h-4 w-4 shrink-0 rounded border ${selected ? "border-accent bg-accent" : "border-soft bg-panel"}`} />
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <a
-                    href={inviteMailto || undefined}
-                    aria-disabled={!inviteMailto}
-                    className={`block rounded-md px-3 py-2 text-center text-sm font-semibold ${
-                      inviteMailto ? "bg-accent text-text hover:brightness-110" : "pointer-events-none border border-soft text-muted"
-                    }`}
-                  >
-                    Email Invites
-                  </a>
-                </section>
-              ) : null}
-            </div>
-          ) : (
-            <p className="text-sm text-muted">Select an event to review details.</p>
-          )}
-        </aside>
-      </div>
+                    </div>
+                  ) : (
+                    <p className="rounded-md border border-soft px-3 py-2 text-xs text-muted">No contact tags available yet.</p>
+                  )}
+                </div>
+                <div className="max-h-72 overflow-auto rounded-md border border-soft">
+                  {contactsLoading ? (
+                    <p className="p-3 text-sm text-muted">Loading contacts...</p>
+                  ) : inviteCandidates.length === 0 ? (
+                    <p className="p-3 text-sm text-muted">No contacts match this invite filter.</p>
+                  ) : inviteCandidates.map(contact => {
+                    const selected = selectedContactIds.has(contact.id);
+                    return (
+                      <button
+                        key={contact.id}
+                        type="button"
+                        onClick={() => toggleContact(contact.id)}
+                        className={`flex w-full items-center justify-between gap-3 border-b border-soft px-3 py-2 text-left last:border-b-0 hover:bg-soft/20 ${selected ? "bg-accent/10" : ""}`}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium text-text">{compactName(contact)}</span>
+                          <span className="block truncate text-xs text-muted">{contact.email || "No email"}</span>
+                          <span className="mt-1 inline-flex rounded-full border border-soft px-2 py-0.5 text-[10px] text-muted">{roleGroupFor(contact)}</span>
+                        </span>
+                        <span className={`h-4 w-4 shrink-0 rounded border ${selected ? "border-accent bg-accent" : "border-soft bg-panel"}`} />
+                      </button>
+                    );
+                  })}
+                </div>
+                <a
+                  href={inviteMailto || undefined}
+                  aria-disabled={!inviteMailto}
+                  className={`block rounded-md px-3 py-2 text-center text-sm font-semibold ${
+                    inviteMailto ? "bg-accent text-text hover:brightness-110" : "pointer-events-none border border-soft text-muted"
+                  }`}
+                >
+                  Email Invites
+                </a>
+              </div>
+            ) : (
+              <p className="mt-4 rounded-md border border-soft bg-base px-3 py-3 text-sm text-muted">
+                Select an event first, then invite contacts.
+              </p>
+            )}
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
