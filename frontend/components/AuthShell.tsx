@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import SidebarNav from "@/components/SidebarNav";
+import FloatingAssistant from "@/components/FloatingAssistant";
 import { resolveApiUrl } from "@/components/api";
 import { AUTH_CHANGED_EVENT, TOKEN_KEY, clearAuthToken } from "@/components/authClient";
 
@@ -114,6 +115,7 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen md:grid md:grid-cols-[260px_1fr]">
       <SidebarNav user={user} />
       <main className="min-w-0">{children}</main>
+      <FloatingAssistant />
     </div>
   );
 }

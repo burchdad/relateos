@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class StyleProfilePayload(BaseModel):
@@ -15,3 +15,27 @@ class MessageSuggestionRequest(BaseModel):
 
 class AIResponse(BaseModel):
     content: str
+
+
+class AssistantChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class AssistantRequest(BaseModel):
+    message: str
+    history: list[AssistantChatMessage] = Field(default_factory=list)
+
+
+class AssistantAction(BaseModel):
+    type: str
+    label: str
+    status: str = "completed"
+    href: str | None = None
+    metadata: dict = Field(default_factory=dict)
+
+
+class AssistantResponse(BaseModel):
+    reply: str
+    actions: list[AssistantAction] = Field(default_factory=list)
+    navigate_to: str | None = None

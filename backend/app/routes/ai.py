@@ -4,8 +4,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.ai import AIResponse, MessageSuggestionRequest
+from app.core.permissions import WorkspaceContext, require_permission
+from app.schemas.ai import AIResponse, AssistantRequest, AssistantResponse, MessageSuggestionRequest
 from app.services.ai_service import AIService
+from app.services.assistant_service import AssistantService
 
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -32,3 +34,12 @@ def message(relationship_id: UUID, payload: MessageSuggestionRequest, db: Sessio
 def insights(relationship_id: UUID, db: Session = Depends(get_db)):
     content = AIService().generate_insights(db, relationship_id)
     return AIResponse(content=content)
+
+
+@router.post("/assistant", response_model=AssistantResponse)
+def assistant(
+    payload: AssistantRequest,
+    db: Session = Depends(get_db),
+    context: WorkspaceContext = Depends(require_permission("workspace:read")),
+):
+    return AssistantService().handle(db, payload=payload, context=context)
