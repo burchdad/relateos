@@ -14,7 +14,8 @@ from urllib.parse import quote
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.entities import AppUser, PasswordResetToken, RegistrationVerification, Workspace
+from app.core.permissions import ROLE_PERMISSIONS, ensure_membership_for_user, workspace_context
+from app.models.entities import AppUser, PasswordResetToken, RegistrationVerification, Workspace, WorkspaceInvite, WorkspaceMembership
 from app.schemas.auth import ProfileSetupRequest
 from app.services.email_service import EmailService
 
@@ -124,6 +125,17 @@ class AuthService:
         user.workspace_id = workspace.id
         db.add(workspace)
         db.add(user)
+        db.flush()
+        db.add(
+            WorkspaceMembership(
+                id=uuid.uuid4(),
+                workspace_id=workspace.id,
+                user_id=user.id,
+                role="owner",
+                status="active",
+                accepted_at=datetime.now(timezone.utc),
+            )
+        )
         db.commit()
         db.refresh(user)
         return user
@@ -180,6 +192,7 @@ class AuthService:
         email: str,
         code: str | None,
         challenge_token: str | None,
+        invitation_token: str | None = None,
     ) -> AppUser:
         normalized_email = AuthService.normalize_email(email)
         cleaned_code = re.sub(r"\D+", "", code or "")
@@ -216,17 +229,62 @@ class AuthService:
             db.commit()
             raise ValueError("An account with that email already exists.")
 
+        invited_workspace_id = None
+        invited_role = None
+        invite = None
+        if invitation_token:
+            invite = (
+                db.query(WorkspaceInvite)
+                .filter(WorkspaceInvite.token_hash == _token_hash(invitation_token))
+                .first()
+            )
+            if not invite or invite.status != "pending":
+                raise ValueError("Invite link is invalid.")
+            invite_expires_at = invite.expires_at
+            if invite_expires_at.tzinfo is None:
+                invite_expires_at = invite_expires_at.replace(tzinfo=timezone.utc)
+            if invite_expires_at < now:
+                invite.status = "expired"
+                db.commit()
+                raise ValueError("Invite link has expired.")
+            if invite.invited_email != normalized_email:
+                raise ValueError("Use the email address this invite was sent to.")
+            invited_workspace_id = invite.workspace_id
+            invited_role = invite.role
+
         user = AppUser(
             id=uuid.uuid4(),
             name=verification.name,
             email=normalized_email,
             password_hash=verification.password_hash,
         )
-        workspace = Workspace(id=uuid.uuid4(), name=f"{user.name}'s Workspace", owner_user_id=user.id)
-        user.workspace_id = workspace.id
+        workspace = None
+        if invited_workspace_id:
+            user.workspace_id = invited_workspace_id
+        else:
+            workspace = Workspace(id=uuid.uuid4(), name=f"{user.name}'s Workspace", owner_user_id=user.id)
+            user.workspace_id = workspace.id
         verification.used_at = now
-        db.add(workspace)
+        if workspace:
+            db.add(workspace)
         db.add(user)
+        db.flush()
+        db.add(
+            WorkspaceMembership(
+                id=uuid.uuid4(),
+                workspace_id=user.workspace_id,
+                user_id=user.id,
+                role=invited_role or "owner",
+                status="active",
+                invited_by_user_id=invite.invited_by_user_id if invite else None,
+                invited_email=invite.invited_email if invite else None,
+                accepted_at=now,
+            )
+        )
+        if invite:
+            invite.status = "accepted"
+            invite.accepted_by_user_id = user.id
+            invite.accepted_at = now
         db.commit()
         db.refresh(user)
         return user
@@ -246,14 +304,40 @@ class AuthService:
             workspace = Workspace(id=uuid.uuid4(), name=payload.company_name.strip(), owner_user_id=user.id)
             user.workspace_id = workspace.id
             db.add(workspace)
+            db.flush()
+            ensure_membership_for_user(db, user, workspace.id)
         else:
             workspace = db.query(Workspace).filter(Workspace.id == user.workspace_id).first()
             if workspace:
                 workspace.name = payload.company_name.strip()
                 workspace.owner_user_id = workspace.owner_user_id or user.id
+            ensure_membership_for_user(db, user, user.workspace_id)
         db.commit()
         db.refresh(user)
         return user
+
+    @staticmethod
+    def user_out(db: Session, user: AppUser) -> dict:
+        context = workspace_context(db, user)
+        permissions = ROLE_PERMISSIONS.get(context.role, set())
+        return {
+            "id": user.id,
+            "workspace_id": context.workspace_id,
+            "email": user.email,
+            "name": user.name,
+            "company_name": user.company_name,
+            "role_title": user.role_title,
+            "relationship_focus": user.relationship_focus,
+            "primary_goal": user.primary_goal,
+            "timezone": user.timezone,
+            "wants_calendar_connection": user.wants_calendar_connection,
+            "wants_contact_import": user.wants_contact_import,
+            "onboarding_complete": user.onboarding_complete,
+            "two_factor_enabled": user.two_factor_enabled,
+            "workspace_role": context.role,
+            "permissions": sorted(permissions),
+            "created_at": user.created_at,
+        }
 
     @staticmethod
     def request_password_reset(db: Session, *, email: str) -> None:

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import current_user
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.permissions import WorkspaceContext, require_permission
 from app.models import AppUser, Workspace
 from app.schemas.connections import (
     AgentSyncRequest,
@@ -51,14 +52,14 @@ def get_connections(db: Session = Depends(get_db), user: AppUser = Depends(curre
 def request_agent_sync(
     payload: AgentSyncRequest,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(current_user),
+    context: WorkspaceContext = Depends(require_permission("automation:run")),
 ):
-    return AgentSyncResponse.model_validate(ConnectionsService.request_agent_sync(db, payload.mode, _workspace_id(db, user)))
+    return AgentSyncResponse.model_validate(ConnectionsService.request_agent_sync(db, payload.mode, context.workspace_id))
 
 
 @router.post("/zoom/sync", response_model=AgentSyncResponse)
-def sync_zoom_recordings(db: Session = Depends(get_db), user: AppUser = Depends(current_user)):
-    workspace_id = _workspace_id(db, user)
+def sync_zoom_recordings(db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("automation:run"))):
+    workspace_id = context.workspace_id
     imported = ZoomImportService.import_recent_recordings(db, workspace_id=workspace_id)
     errors = imported.get("errors", [])
     recordings_found = int(imported.get("recordings_found_count") or 0)
@@ -68,11 +69,31 @@ def sync_zoom_recordings(db: Session = Depends(get_db), user: AppUser = Depends(
         + int(imported.get("imported_attendee_count") or 0)
         + int(imported.get("imported_artifact_count") or 0)
     )
+    return AgentSyncResponse.model_validate(
+        {
+            "job_id": str(uuid.uuid4()),
+            "mode": "archive",
+            "status": "partial" if errors else "completed",
+            "message": (
+                "Zoom sync completed, but no Zoom cloud recordings were found in the last year."
+                if not errors and recordings_found == 0
+                else "Zoom sync completed. No new Zoom records were imported because the available recordings already exist."
+                if not errors and imported_total == 0
+                else "Zoom sync completed. Recordings, attendees, and available transcript/chat artifacts were imported."
+                if not errors
+                else "Zoom sync partially completed. Review Zoom scopes, recording access, or transcript availability."
+            ),
+            "pipeline": ConnectionsService.overview(db, workspace_id)["pipeline"],
+            "blockers": [],
+            "requested_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            **imported,
+        }
+    )
 
 
 @router.post("/zoom/ai-companion/sync", response_model=AgentSyncResponse)
-def sync_zoom_ai_companion(db: Session = Depends(get_db), user: AppUser = Depends(current_user)):
-    workspace_id = _workspace_id(db, user)
+def sync_zoom_ai_companion(db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("automation:run"))):
+    workspace_id = context.workspace_id
     imported = ZoomImportService.import_ai_companion_summaries(db, workspace_id=workspace_id)
     errors = imported.get("errors", [])
     ai_notes_found = int(imported.get("ai_notes_found_count") or 0)
@@ -97,32 +118,10 @@ def sync_zoom_ai_companion(db: Session = Depends(get_db), user: AppUser = Depend
             **imported,
         }
     )
-    return AgentSyncResponse.model_validate(
-        {
-            "job_id": str(uuid.uuid4()),
-            "mode": "archive",
-            "status": "partial" if errors else "completed",
-            "message": (
-                "Zoom sync completed, but no Zoom cloud recordings were found in the last year."
-                if not errors and recordings_found == 0
-                else "Zoom sync completed. No new Zoom records were imported because the available recordings already exist."
-                if not errors and imported_total == 0
-                else "Zoom sync completed. Recordings, attendees, and available transcript/chat artifacts were imported."
-                if not errors
-                else "Zoom sync partially completed. Review Zoom scopes, recording access, or transcript availability."
-            ),
-            "pipeline": ConnectionsService.overview(db, workspace_id)["pipeline"],
-            "blockers": [],
-            "requested_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
-            **imported,
-        }
-    )
-
-
 @router.get("/zoom/oauth/start", response_model=OAuthStartResponse)
-def start_zoom_oauth(db: Session = Depends(get_db), user: AppUser = Depends(current_user)):
+def start_zoom_oauth(db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("connections:manage"))):
     try:
-        return OAuthStartResponse(auth_url=ConnectionsService.oauth_start_url("zoom", _workspace_id(db, user)))
+        return OAuthStartResponse(auth_url=ConnectionsService.oauth_start_url("zoom", context.workspace_id))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -138,9 +137,9 @@ def zoom_oauth_callback(
 
 
 @router.get("/google-calendar/oauth/start", response_model=OAuthStartResponse)
-def start_google_calendar_oauth(db: Session = Depends(get_db), user: AppUser = Depends(current_user)):
+def start_google_calendar_oauth(db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("connections:manage"))):
     try:
-        return OAuthStartResponse(auth_url=ConnectionsService.oauth_start_url("google_calendar", _workspace_id(db, user)))
+        return OAuthStartResponse(auth_url=ConnectionsService.oauth_start_url("google_calendar", context.workspace_id))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -211,8 +210,8 @@ def update_connector(
     connector_key: ConnectorKey,
     payload: ConnectorUpdateRequest,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(current_user),
+    context: WorkspaceContext = Depends(require_permission("connections:manage")),
 ):
     return ConnectorUpdateResponse.model_validate(
-        ConnectionsService.update_connector(db, connector_key, payload, _workspace_id(db, user))
+        ConnectionsService.update_connector(db, connector_key, payload, context.workspace_id)
     )

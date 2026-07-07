@@ -17,6 +17,8 @@ from app.models.entities import (
 	SystemSetting,
 	UserStyleProfile,
 	Workspace,
+	WorkspaceInvite,
+	WorkspaceMembership,
 )
 
 __all__ = [
@@ -33,6 +35,8 @@ __all__ = [
 	"RelationshipSignal",
 	"UserStyleProfile",
 	"Workspace",
+	"WorkspaceInvite",
+	"WorkspaceMembership",
 	"ContentItem",
 	"ContentInsight",
 	"Event",

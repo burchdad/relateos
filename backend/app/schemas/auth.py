@@ -18,6 +18,8 @@ class UserOut(BaseModel):
     wants_contact_import: bool = False
     onboarding_complete: bool = False
     two_factor_enabled: bool = False
+    workspace_role: str = "owner"
+    permissions: list[str] = Field(default_factory=list)
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -29,6 +31,7 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     email_verification_code: str | None = Field(default=None, max_length=12)
     email_verification_challenge_token: str | None = Field(default=None, max_length=255)
+    invitation_token: str | None = Field(default=None, max_length=255)
 
 
 class LoginRequest(BaseModel):

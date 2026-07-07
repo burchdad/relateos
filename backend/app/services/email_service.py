@@ -47,6 +47,27 @@ class EmailService:
         """
 
     @staticmethod
+    def _team_invite_html(invited_by_name: str, workspace_name: str, role: str, invite_url: str) -> str:
+        safe_inviter = escape(invited_by_name or "A teammate")
+        safe_workspace = escape(workspace_name or "Teifke / Relationships")
+        safe_role = escape(role.title())
+        safe_url = escape(invite_url, quote=True)
+        return f"""
+        <div style="font-family: Arial, sans-serif; color: #1C3A2A; line-height: 1.5;">
+          <h1 style="font-size: 22px;">Join {safe_workspace}</h1>
+          <p>{safe_inviter} invited you to collaborate in Teifke / Relationships as <strong>{safe_role}</strong>.</p>
+          <p>
+            <a href="{safe_url}" style="display: inline-block; background: #E3B864; color: #1C3A2A; padding: 12px 16px; border-radius: 6px; text-decoration: none; font-weight: 700;">
+              Accept invite
+            </a>
+          </p>
+          <p>If the button does not work, copy and paste this link into your browser:</p>
+          <p><a href="{safe_url}">{safe_url}</a></p>
+          <p>If you were not expecting this invite, you can ignore this email.</p>
+        </div>
+        """
+
+    @staticmethod
     def send_registration_code(*, to_email: str, name: str, code: str, idempotency_key: str) -> bool:
         if not settings.resend_api_key:
             logger.info("RESEND_API_KEY not set; registration verification code for %s: %s", to_email, code)
@@ -96,4 +117,38 @@ class EmailService:
             return True
         except Exception as exc:
             logger.warning("Password reset email failed for %s: %s", to_email, exc)
+            return False
+
+    @staticmethod
+    def send_team_invite(
+        *,
+        to_email: str,
+        invited_by_name: str,
+        workspace_name: str,
+        role: str,
+        invite_url: str,
+        idempotency_key: str,
+    ) -> bool:
+        if not settings.resend_api_key:
+            logger.info("RESEND_API_KEY not set; team invite link for %s: %s", to_email, invite_url)
+            return False
+
+        payload = {
+            "from": settings.auth_email_from,
+            "to": [to_email],
+            "subject": f"Join {workspace_name} in Teifke / Relationships",
+            "html": EmailService._team_invite_html(invited_by_name, workspace_name, role, invite_url),
+        }
+        headers = {
+            "Authorization": f"Bearer {settings.resend_api_key}",
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotency_key,
+        }
+
+        try:
+            response = httpx.post("https://api.resend.com/emails", json=payload, headers=headers, timeout=10)
+            response.raise_for_status()
+            return True
+        except Exception as exc:
+            logger.warning("Team invite email failed for %s: %s", to_email, exc)
             return False

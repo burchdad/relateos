@@ -32,6 +32,7 @@ from app.routes.recording_artifacts import router as recording_artifacts_router
 from app.routes.relateos import router as relateos_router
 from app.routes.relationships import router as relationships_router
 from app.routes.style_profiles import router as style_profiles_router
+from app.routes.team import router as team_router
 from app.services.auth_service import AuthService
 
 logger = logging.getLogger(__name__)
@@ -116,6 +117,10 @@ def _validate_schema_requirements() -> None:
         raise RuntimeError("Missing required table: workspaces")
     if not inspector.has_table("connector_credentials"):
         raise RuntimeError("Missing required table: connector_credentials")
+    if not inspector.has_table("workspace_memberships"):
+        raise RuntimeError("Missing required table: workspace_memberships")
+    if not inspector.has_table("workspace_invites"):
+        raise RuntimeError("Missing required table: workspace_invites")
 
     existing_columns = {column["name"] for column in inspector.get_columns("content_items")}
     missing_columns = [
@@ -156,6 +161,7 @@ def _ensure_workspace_connector_schema() -> None:
         return
 
     with engine.begin() as connection:
+        connection.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto"))
         connection.execute(
             text(
                 """
@@ -214,6 +220,64 @@ def _ensure_workspace_connector_schema() -> None:
                 """
             )
         )
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS workspace_memberships (
+                    id UUID PRIMARY KEY,
+                    workspace_id UUID NOT NULL REFERENCES workspaces(id),
+                    user_id UUID NOT NULL REFERENCES app_users(id),
+                    role VARCHAR(40) NOT NULL DEFAULT 'member',
+                    status VARCHAR(40) NOT NULL DEFAULT 'active',
+                    invited_by_user_id UUID NULL REFERENCES app_users(id),
+                    invited_email VARCHAR(255) NULL,
+                    accepted_at TIMESTAMPTZ NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    CONSTRAINT uq_workspace_memberships_workspace_user UNIQUE (workspace_id, user_id)
+                )
+                """
+            )
+        )
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_workspace_memberships_workspace_id ON workspace_memberships (workspace_id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_workspace_memberships_user_id ON workspace_memberships (user_id)"))
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS workspace_invites (
+                    id UUID PRIMARY KEY,
+                    workspace_id UUID NOT NULL REFERENCES workspaces(id),
+                    invited_email VARCHAR(255) NOT NULL,
+                    role VARCHAR(40) NOT NULL DEFAULT 'member',
+                    token_hash VARCHAR(128) NOT NULL UNIQUE,
+                    status VARCHAR(40) NOT NULL DEFAULT 'pending',
+                    invited_by_user_id UUID NULL REFERENCES app_users(id),
+                    accepted_by_user_id UUID NULL REFERENCES app_users(id),
+                    expires_at TIMESTAMPTZ NOT NULL,
+                    accepted_at TIMESTAMPTZ NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_workspace_invites_workspace_id ON workspace_invites (workspace_id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_workspace_invites_invited_email ON workspace_invites (invited_email)"))
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_workspace_invites_token_hash ON workspace_invites (token_hash)"))
+        connection.execute(
+            text(
+                """
+                INSERT INTO workspace_memberships (id, workspace_id, user_id, role, status, accepted_at, created_at, updated_at)
+                SELECT gen_random_uuid(), u.workspace_id, u.id,
+                       CASE WHEN w.owner_user_id = u.id THEN 'owner' ELSE 'admin' END,
+                       'active', now(), now(), now()
+                FROM app_users u
+                LEFT JOIN workspaces w ON w.id = u.workspace_id
+                WHERE u.workspace_id IS NOT NULL
+                ON CONFLICT ON CONSTRAINT uq_workspace_memberships_workspace_user DO NOTHING
+                """
+            )
+        )
 
 
 @app.on_event("startup")
@@ -260,6 +324,7 @@ async def _api_auth_middleware(request: Request, call_next):
     zoom_webhook_path = f"{settings.api_v1_prefix}/connections/zoom/webhook"
     zoom_oauth_callback_path = f"{settings.api_v1_prefix}/connections/zoom/oauth/callback"
     google_oauth_callback_path = f"{settings.api_v1_prefix}/connections/google-calendar/oauth/callback"
+    team_invite_preview_path = f"{settings.api_v1_prefix}/team/invites/preview"
     if (
         request.method == "OPTIONS"
         or not path.startswith(settings.api_v1_prefix)
@@ -267,6 +332,7 @@ async def _api_auth_middleware(request: Request, call_next):
         or path == zoom_webhook_path
         or path == zoom_oauth_callback_path
         or path == google_oauth_callback_path
+        or path == team_invite_preview_path
     ):
         return await call_next(request)
 
@@ -333,6 +399,7 @@ app.include_router(dashboard_router, prefix=settings.api_v1_prefix)
 app.include_router(events_router, prefix=settings.api_v1_prefix)
 app.include_router(relateos_router, prefix=settings.api_v1_prefix)
 app.include_router(style_profiles_router, prefix=settings.api_v1_prefix)
+app.include_router(team_router, prefix=settings.api_v1_prefix)
 # Network Intelligence routes
 app.include_router(contacts_router, prefix=settings.api_v1_prefix)
 app.include_router(organizations_router, prefix=settings.api_v1_prefix)

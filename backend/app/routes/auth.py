@@ -23,8 +23,8 @@ from app.services.auth_service import AuthService
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _auth_response(user) -> AuthResponse:
-    return AuthResponse(token=AuthService.issue_token(user), user=UserOut.model_validate(user))
+def _auth_response(db: Session, user) -> AuthResponse:
+    return AuthResponse(token=AuthService.issue_token(user), user=UserOut.model_validate(AuthService.user_out(db, user)))
 
 
 @router.post("/register", response_model=RegisterResponse)
@@ -36,8 +36,9 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
                 email=payload.email,
                 code=payload.email_verification_code,
                 challenge_token=payload.email_verification_challenge_token,
+                invitation_token=payload.invitation_token,
             )
-            auth = _auth_response(user)
+            auth = _auth_response(db, user)
             return RegisterResponse(token=auth.token, user=auth.user)
         challenge = AuthService.start_registration_verification(
             db,
@@ -65,14 +66,14 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Two-factor challenge expired. Sign in again.")
             if not AuthService.verify_two_factor_code(user, payload.two_factor_code):
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authenticator code")
-            auth = _auth_response(user)
+            auth = _auth_response(db, user)
             return LoginResponse(token=auth.token, user=auth.user)
         return LoginResponse(
             requires_2fa=True,
             two_factor_challenge_token=AuthService.issue_2fa_challenge(user),
             message="Enter your authenticator app code.",
         )
-    auth = _auth_response(user)
+    auth = _auth_response(db, user)
     return LoginResponse(token=auth.token, user=auth.user)
 
 
@@ -98,7 +99,7 @@ def me(authorization: str | None = Header(default=None), db: Session = Depends(g
     user = AuthService.bearer_user(db, authorization)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    return user
+    return AuthService.user_out(db, user)
 
 
 @router.put("/profile", response_model=UserOut)
@@ -110,7 +111,8 @@ def update_profile(
     user = AuthService.bearer_user(db, authorization)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    return AuthService.update_profile(db, user, payload)
+    updated = AuthService.update_profile(db, user, payload)
+    return AuthService.user_out(db, updated)
 
 
 @router.get("/2fa/status", response_model=TwoFactorStatusResponse)

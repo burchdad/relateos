@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import current_user
 from app.core.database import get_db
+from app.core.permissions import WorkspaceContext, require_permission
 from app.core.workspace import workspace_id_for_user
 from app.models import AppUser
 from app.schemas.content_asset import (
@@ -130,7 +131,7 @@ async def upload_import(
     include_all_sheets: bool = Form(False),
     mapping_override_json: str | None = Form(None),
     db: Session = Depends(get_db),
-    user: AppUser = Depends(current_user),
+    context: WorkspaceContext = Depends(require_permission("imports:run")),
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="File name is required")
@@ -155,7 +156,7 @@ async def upload_import(
             header_row=header_row,
             include_all_sheets=include_all_sheets,
             mapping_override=mapping_override,
-            workspace_id=workspace_id_for_user(db, user),
+            workspace_id=context.workspace_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -166,7 +167,7 @@ async def upload_import(
 
 
 @router.post("/imports/url", response_model=ImportUploadResponse)
-def import_from_url(payload: ImportUrlRequest, db: Session = Depends(get_db), user: AppUser = Depends(current_user)):
+def import_from_url(payload: ImportUrlRequest, db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("imports:run"))):
     try:
         return ImportService.import_contacts_from_url(
             db,
@@ -177,7 +178,7 @@ def import_from_url(payload: ImportUrlRequest, db: Session = Depends(get_db), us
             header_row=payload.header_row,
             include_all_sheets=payload.include_all_sheets,
             mapping_override=payload.mapping_override,
-            workspace_id=workspace_id_for_user(db, user),
+            workspace_id=context.workspace_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

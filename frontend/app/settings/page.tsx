@@ -20,6 +20,8 @@ type UserProfile = {
   wants_calendar_connection?: boolean;
   wants_contact_import?: boolean;
   onboarding_complete?: boolean;
+  workspace_role?: string;
+  permissions?: string[];
 };
 
 type StyleProfile = {
@@ -35,8 +37,37 @@ type TwoFactorSetup = {
   otpauth_url: string;
 };
 
+type TeamMember = {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  email: string;
+  name: string;
+  role: string;
+  status: string;
+  accepted_at?: string | null;
+  created_at: string;
+};
+
+type TeamInvite = {
+  id: string;
+  invited_email: string;
+  role: string;
+  status: string;
+  expires_at: string;
+  created_at: string;
+};
+
+type TeamOverview = {
+  members: TeamMember[];
+  invites: TeamInvite[];
+  current_role: string;
+  permissions: string[];
+};
+
 const focusOptions = ["Clients", "Investors", "Partners", "Events", "Community", "Content audience"];
 const goalOptions = ["Prioritize follow-up", "Invite people to events", "Send better content", "Track deals", "Build partner network", "Clean up contacts"];
+const teamRoles = ["admin", "member", "viewer"];
 
 const defaultProfile: UserProfile = {
   id: "",
@@ -71,6 +102,10 @@ export default function SettingsPage() {
   const [twoFactorQrUrl, setTwoFactorQrUrl] = useState("");
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [twoFactorBusy, setTwoFactorBusy] = useState(false);
+  const [team, setTeam] = useState<TeamOverview | null>(null);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("member");
+  const [teamBusy, setTeamBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [preferences, setPreferences] = useState({
     dailyFocusDigest: true,
@@ -110,6 +145,11 @@ export default function SettingsPage() {
           const payload = (await twoFactorRes.json()) as { enabled: boolean };
           setTwoFactorEnabled(payload.enabled);
         }
+
+        if ((user.permissions || []).includes("*") || (user.permissions || []).includes("members:read")) {
+          const teamRes = await fetch(`${API_URL}/team`, { cache: "no-store" });
+          if (teamRes.ok) setTeam(await teamRes.json());
+        }
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Could not load settings.");
       } finally {
@@ -119,6 +159,17 @@ export default function SettingsPage() {
 
     void loadSettings();
   }, [API_URL]);
+
+  const can = (permission: string) => {
+    const permissions = profile.permissions || team?.permissions || [];
+    return permissions.includes("*") || permissions.includes(permission);
+  };
+
+  const loadTeam = async () => {
+    const res = await fetch(`${API_URL}/team`, { cache: "no-store" });
+    if (!res.ok) return;
+    setTeam(await res.json());
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -181,6 +232,88 @@ export default function SettingsPage() {
       setStatus(error instanceof Error ? error.message : "Could not save profile.");
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const inviteTeamMember = async () => {
+    setTeamBusy(true);
+    setStatus("");
+    try {
+      const res = await fetch(`${API_URL}/team/invites`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(payload?.detail || "Could not send invite.");
+      }
+      setInviteEmail("");
+      setInviteRole("member");
+      await loadTeam();
+      setStatus("Team invite sent.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not send invite.");
+    } finally {
+      setTeamBusy(false);
+    }
+  };
+
+  const updateTeamRole = async (membershipId: string, role: string) => {
+    setTeamBusy(true);
+    setStatus("");
+    try {
+      const res = await fetch(`${API_URL}/team/members/${membershipId}/role`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(payload?.detail || "Could not update role.");
+      }
+      setTeam(await res.json());
+      setStatus("Team role updated.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not update role.");
+    } finally {
+      setTeamBusy(false);
+    }
+  };
+
+  const removeTeamMember = async (membershipId: string) => {
+    setTeamBusy(true);
+    setStatus("");
+    try {
+      const res = await fetch(`${API_URL}/team/members/${membershipId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(payload?.detail || "Could not remove member.");
+      }
+      await loadTeam();
+      setStatus("Team member removed.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not remove member.");
+    } finally {
+      setTeamBusy(false);
+    }
+  };
+
+  const revokeTeamInvite = async (inviteId: string) => {
+    setTeamBusy(true);
+    setStatus("");
+    try {
+      const res = await fetch(`${API_URL}/team/invites/${inviteId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(payload?.detail || "Could not revoke invite.");
+      }
+      await loadTeam();
+      setStatus("Invite revoked.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not revoke invite.");
+    } finally {
+      setTeamBusy(false);
     }
   };
 
@@ -305,6 +438,120 @@ export default function SettingsPage() {
 
       {status ? (
         <p className="mt-4 rounded-lg border border-soft bg-panel px-4 py-3 text-sm text-text">{status}</p>
+      ) : null}
+
+      {can("members:read") ? (
+        <section className="mt-4 rounded-lg border border-soft bg-panel p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-text">Team Access</h2>
+              <p className="mt-1 text-sm text-muted">Invite teammates and control what they can do inside this workspace.</p>
+            </div>
+            <span className="rounded-full border border-soft bg-base px-3 py-1 text-xs uppercase tracking-wide text-muted">
+              {profile.workspace_role || team?.current_role || "member"}
+            </span>
+          </div>
+
+          {can("members:invite") ? (
+            <div className="mt-4 grid gap-3 rounded-lg border border-soft bg-base p-4 md:grid-cols-[1fr_180px_auto]">
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={event => setInviteEmail(event.target.value)}
+                placeholder="teammate@email.com"
+                className="rounded-md border border-soft bg-white px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-accent/60"
+              />
+              <select
+                value={inviteRole}
+                onChange={event => setInviteRole(event.target.value)}
+                className="rounded-md border border-soft bg-white px-3 py-2 text-sm outline-none focus:border-accent/60"
+              >
+                {teamRoles.map(role => <option key={role} value={role}>{role}</option>)}
+              </select>
+              <button
+                type="button"
+                onClick={inviteTeamMember}
+                disabled={teamBusy || !inviteEmail.trim()}
+                className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-105 disabled:opacity-50"
+              >
+                Send Invite
+              </button>
+            </div>
+          ) : null}
+
+          <div className="mt-4 overflow-hidden rounded-lg border border-soft">
+            <div className="grid grid-cols-[1.4fr_120px_120px_auto] gap-3 border-b border-soft bg-base px-4 py-2 text-xs uppercase tracking-wide text-muted">
+              <span>Member</span>
+              <span>Role</span>
+              <span>Status</span>
+              <span className="text-right">Actions</span>
+            </div>
+            {(team?.members || []).map(member => (
+              <div key={member.id} className="grid grid-cols-[1.4fr_120px_120px_auto] items-center gap-3 border-b border-soft bg-white px-4 py-3 text-sm last:border-b-0">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-text">{member.name}</p>
+                  <p className="truncate text-xs text-muted">{member.email}</p>
+                </div>
+                {can("members:manage") && member.role !== "owner" ? (
+                  <select
+                    value={member.role}
+                    onChange={event => updateTeamRole(member.id, event.target.value)}
+                    disabled={teamBusy}
+                    className="rounded-md border border-soft bg-base px-2 py-1.5 text-xs text-text"
+                  >
+                    {teamRoles.map(role => <option key={role} value={role}>{role}</option>)}
+                  </select>
+                ) : (
+                  <span className="text-sm text-text">{member.role}</span>
+                )}
+                <span className="rounded-full border border-soft bg-sage-pale px-2 py-1 text-xs text-forest">{member.status}</span>
+                <div className="text-right">
+                  {can("members:manage") && member.role !== "owner" && member.user_id !== profile.id ? (
+                    <button
+                      type="button"
+                      onClick={() => removeTeamMember(member.id)}
+                      disabled={teamBusy}
+                      className="rounded-md border border-soft bg-base px-3 py-1.5 text-xs font-medium text-text hover:bg-soft/30 disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  ) : (
+                    <span className="text-xs text-muted">-</span>
+                  )}
+                </div>
+              </div>
+            ))}
+            {team && team.members.length === 0 ? (
+              <p className="bg-white px-4 py-4 text-sm text-muted">No team members loaded yet.</p>
+            ) : null}
+          </div>
+
+          {team?.invites?.length ? (
+            <div className="mt-4 rounded-lg border border-soft bg-base p-4">
+              <p className="text-sm font-semibold text-text">Pending invites</p>
+              <div className="mt-3 grid gap-2">
+                {team.invites.map(invite => (
+                  <div key={invite.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-soft bg-white px-3 py-2 text-sm">
+                    <span>
+                      <span className="font-semibold text-text">{invite.invited_email}</span>
+                      <span className="ml-2 text-xs text-muted">{invite.role}</span>
+                    </span>
+                    {can("members:manage") ? (
+                      <button
+                        type="button"
+                        onClick={() => revokeTeamInvite(invite.id)}
+                        disabled={teamBusy}
+                        className="rounded-md border border-soft bg-base px-3 py-1.5 text-xs font-medium text-text hover:bg-soft/30 disabled:opacity-50"
+                      >
+                        Revoke
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </section>
       ) : null}
 
       <section className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">

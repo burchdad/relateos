@@ -70,12 +70,17 @@ type SidebarNavProps = {
   user?: {
     email: string;
     name: string;
+    workspace_role?: string;
+    permissions?: string[];
   } | null;
 };
 
 export default function SidebarNav({ user }: SidebarNavProps) {
   const pathname = usePathname();
-  const mobileItems = [...coreNav, ...intelligenceNav, ...systemNav];
+  const permissions = new Set(user?.permissions || []);
+  const canManageConnections = permissions.has("*") || permissions.has("connections:manage");
+  const visibleSystemNav = canManageConnections ? systemNav : systemNav.filter(item => item.href === "/settings");
+  const mobileItems = [...coreNav, ...intelligenceNav, ...visibleSystemNav];
 
   return (
     <aside className="sticky top-0 z-30 border-b border-text bg-text px-3 py-3 text-cream-light shadow-card md:static md:min-h-screen md:border-b-0 md:border-r md:border-text md:px-4 md:py-6">
@@ -107,10 +112,13 @@ export default function SidebarNav({ user }: SidebarNavProps) {
       <nav className="hidden gap-5 md:sticky md:top-5 md:grid" aria-label="Primary navigation">
         <NavSection title="Core Navigation" items={coreNav} pathname={pathname} />
         <NavSection title="Intelligence Layer" items={intelligenceNav} pathname={pathname} />
-        <NavSection title="System" items={systemNav} pathname={pathname} />
+        <NavSection title="System" items={visibleSystemNav} pathname={pathname} />
         <section className="rounded-lg border border-sage-pale/20 bg-sage/10 p-3">
           <p className="truncate text-xs font-semibold text-cream-light">{user?.name || "Signed in"}</p>
           <p className="mt-1 truncate text-[11px] text-sage-pale/75">{user?.email}</p>
+          <p className="mt-2 inline-flex rounded-full border border-sage-pale/25 px-2 py-1 text-[10px] uppercase tracking-wide text-sage-pale/80">
+            {user?.workspace_role || "member"}
+          </p>
           <button
             type="button"
             onClick={clearAuthToken}

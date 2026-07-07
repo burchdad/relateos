@@ -12,6 +12,8 @@ type User = {
   email: string;
   name: string;
   onboarding_complete: boolean;
+  workspace_role?: string;
+  permissions?: string[];
 };
 
 const shouldAttachAuth = (input: RequestInfo | URL, apiUrl: string) => {
@@ -28,7 +30,8 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
   const isLoginPage = pathname === "/login";
   const isOnboardingPage = pathname === "/onboarding";
   const isResetPasswordPage = pathname === "/reset-password";
-  const isPublicAuthPage = isLoginPage || isResetPasswordPage;
+  const isAcceptInvitePage = pathname === "/accept-invite";
+  const isPublicAuthPage = isLoginPage || isResetPasswordPage || isAcceptInvitePage;
 
   useEffect(() => {
     const originalFetch = window.fetch.bind(window);
