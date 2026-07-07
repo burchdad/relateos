@@ -33,6 +33,9 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "imports:run",
         "meetings:read",
         "meetings:write",
+        "tasks:read",
+        "tasks:write",
+        "tasks:delete",
         "automation:run",
     },
     "member": {
@@ -50,6 +53,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "imports:run",
         "meetings:read",
         "meetings:write",
+        "tasks:read",
+        "tasks:write",
     },
     "viewer": {
         "workspace:read",
@@ -58,6 +63,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "content:read",
         "deals:read",
         "meetings:read",
+        "tasks:read",
     },
 }
 

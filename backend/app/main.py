@@ -32,6 +32,7 @@ from app.routes.recording_artifacts import router as recording_artifacts_router
 from app.routes.relateos import router as relateos_router
 from app.routes.relationships import router as relationships_router
 from app.routes.style_profiles import router as style_profiles_router
+from app.routes.tasks import router as tasks_router
 from app.routes.team import router as team_router
 from app.services.auth_service import AuthService
 
@@ -399,6 +400,7 @@ app.include_router(dashboard_router, prefix=settings.api_v1_prefix)
 app.include_router(events_router, prefix=settings.api_v1_prefix)
 app.include_router(relateos_router, prefix=settings.api_v1_prefix)
 app.include_router(style_profiles_router, prefix=settings.api_v1_prefix)
+app.include_router(tasks_router, prefix=settings.api_v1_prefix)
 app.include_router(team_router, prefix=settings.api_v1_prefix)
 # Network Intelligence routes
 app.include_router(contacts_router, prefix=settings.api_v1_prefix)

@@ -55,6 +55,27 @@ export type FollowUpQueueItem = {
   signal_reasons: string[];
 };
 
+export type FollowUpTask = {
+  id: string;
+  workspace_id: string;
+  relationship_id: string | null;
+  contact_id: string | null;
+  contact_name: string | null;
+  title: string;
+  description: string | null;
+  suggested_message: string | null;
+  task_type: string;
+  status: string;
+  priority: string;
+  due_at: string | null;
+  assigned_to_user_id: string | null;
+  created_by_user_id: string | null;
+  completed_at: string | null;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ContentInsight = {
   id: string;
   content_id: string;

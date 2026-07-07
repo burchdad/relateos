@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { resolveApiUrl } from "@/components/api";
 import { ROLE_OPTIONS, formatRole } from "@/components/roleTaxonomy";
-import type { Contact, TimelineItem } from "@/components/types";
+import type { Contact, FollowUpTask, TimelineItem } from "@/components/types";
 
 const STAGES = ["new", "aware", "engaged", "active", "partner", "dormant", "high_value"];
 const TAG_OPTIONS = [
@@ -98,6 +98,8 @@ export default function ContactsPage() {
   const [quickNote, setQuickNote] = useState("");
   const [loggingNote, setLoggingNote] = useState(false);
   const [timelineError, setTimelineError] = useState("");
+  const [contactTasks, setContactTasks] = useState<FollowUpTask[]>([]);
+  const [taskBusyId, setTaskBusyId] = useState("");
 
   const fetchContacts = useCallback(async () => {
     setLoading(true);
@@ -139,15 +141,26 @@ export default function ContactsPage() {
     }
   }, [API_URL]);
 
+  const fetchContactTasks = useCallback(async (contactId: string) => {
+    try {
+      const res = await fetch(`${API_URL}/tasks?status=open&contact_id=${encodeURIComponent(contactId)}&limit=10`, { cache: "no-store" });
+      setContactTasks(res.ok ? ((await res.json()) as FollowUpTask[]) : []);
+    } catch {
+      setContactTasks([]);
+    }
+  }, [API_URL]);
+
   const selectedContactId = selectedContact?.id;
 
   useEffect(() => {
     if (!selectedContactId) {
       setTimeline([]);
+      setContactTasks([]);
       return;
     }
     fetchTimeline(selectedContactId);
-  }, [fetchTimeline, selectedContactId]);
+    fetchContactTasks(selectedContactId);
+  }, [fetchContactTasks, fetchTimeline, selectedContactId]);
 
   useEffect(() => {
     if (!selectedContact || editingContact) return;
@@ -279,6 +292,22 @@ export default function ContactsPage() {
       setTimelineError(error instanceof Error ? error.message : "Could not save note");
     } finally {
       setLoggingNote(false);
+    }
+  };
+
+  const handleCompleteTask = async (taskId: string) => {
+    setTaskBusyId(taskId);
+    try {
+      const res = await fetch(`${API_URL}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "completed" }),
+      });
+      if (res.ok && selectedContact) {
+        await Promise.all([fetchContactTasks(selectedContact.id), fetchTimeline(selectedContact.id), fetchContacts()]);
+      }
+    } finally {
+      setTaskBusyId("");
     }
   };
 
@@ -791,6 +820,39 @@ export default function ContactsPage() {
               <div>
                 <p className="text-xs uppercase tracking-wide text-muted">Notes</p>
                 <p className="mt-2 rounded-lg border border-soft bg-base p-3 text-sm text-muted">{selectedContact.relationship_interests || selectedContact.notes_summary || "No notes captured yet."}</p>
+              </div>
+              <div className="rounded-lg border border-soft bg-base p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted">Open tasks</p>
+                    <p className="mt-1 text-xs text-muted">Follow-ups and next steps assigned to this contact.</p>
+                  </div>
+                  <span className="rounded-full border border-soft bg-panel px-2 py-1 text-[11px] text-muted">{contactTasks.length}</span>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {contactTasks.length === 0 ? (
+                    <p className="rounded-md border border-soft bg-panel p-3 text-sm text-muted">No open tasks for this contact.</p>
+                  ) : null}
+                  {contactTasks.map(task => (
+                    <article key={task.id} className="rounded-md border border-soft bg-white p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-text">{task.title}</p>
+                          {task.description ? <p className="mt-1 text-xs text-muted">{task.description}</p> : null}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleCompleteTask(task.id)}
+                          disabled={taskBusyId === task.id}
+                          className="shrink-0 rounded-md bg-accent px-2.5 py-1.5 text-[11px] font-semibold text-text disabled:opacity-50"
+                        >
+                          {taskBusyId === task.id ? "Closing..." : "Done"}
+                        </button>
+                      </div>
+                      {task.suggested_message ? <p className="mt-2 rounded-md border border-soft bg-base p-2 text-xs text-text">{task.suggested_message}</p> : null}
+                    </article>
+                  ))}
+                </div>
               </div>
               <div className="rounded-lg border border-soft bg-base p-3">
                 <div className="flex items-center justify-between gap-2">

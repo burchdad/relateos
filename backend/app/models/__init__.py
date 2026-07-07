@@ -8,6 +8,7 @@ from app.models.entities import (
 	ContentItem,
 	ContentRelationshipTarget,
 	Event,
+	FollowUpTask,
 	Interaction,
 	Opportunity,
 	Person,
@@ -40,6 +41,7 @@ __all__ = [
 	"ContentItem",
 	"ContentInsight",
 	"Event",
+	"FollowUpTask",
 	"ContentRelationshipTarget",
 	"SystemSetting",
 ]

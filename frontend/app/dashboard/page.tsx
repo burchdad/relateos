@@ -8,7 +8,7 @@ import DashboardList from "@/components/DashboardList";
 import DemoGuide from "@/components/DemoGuide";
 import { resolveApiUrl } from "@/components/api";
 import { ROLE_OPTIONS } from "@/components/roleTaxonomy";
-import { CampaignInsights, EventItem, FollowUpQueueItem, PriorityItem, ScoreExplanation } from "@/components/types";
+import { CampaignInsights, EventItem, FollowUpQueueItem, FollowUpTask, PriorityItem, ScoreExplanation } from "@/components/types";
 
 type RelationshipFormState = {
   firstName: string;
@@ -33,6 +33,9 @@ export default function DashboardPage() {
   const API_URL = useMemo(resolveApiUrl, []);
   const [items, setItems] = useState<PriorityItem[]>([]);
   const [followups, setFollowups] = useState<FollowUpQueueItem[]>([]);
+  const [tasks, setTasks] = useState<FollowUpTask[]>([]);
+  const [taskBusyId, setTaskBusyId] = useState("");
+  const [taskError, setTaskError] = useState("");
   const [explanations, setExplanations] = useState<Record<string, ScoreExplanation>>({});
   const [loadingExplanation, setLoadingExplanation] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
@@ -84,6 +87,10 @@ export default function DashboardPage() {
       const followupsRes = await fetch(`${API_URL}/dashboard/followups?limit=10`, { cache: "no-store" });
       if (followupsRes.ok) {
         setFollowups((await followupsRes.json()) as FollowUpQueueItem[]);
+      }
+      const tasksRes = await fetch(`${API_URL}/tasks?status=open&limit=25`, { cache: "no-store" });
+      if (tasksRes.ok) {
+        setTasks((await tasksRes.json()) as FollowUpTask[]);
       }
       return data;
     } catch (e) {
@@ -157,6 +164,55 @@ export default function DashboardPage() {
       })
     });
     await fetchPriorities();
+  };
+
+  const onCreateTaskFromFollowup = async (item: FollowUpQueueItem) => {
+    setTaskError("");
+    setTaskBusyId(item.relationship_id);
+    try {
+      const res = await fetch(`${API_URL}/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          relationship_id: item.relationship_id,
+          contact_id: item.contact_id,
+          title: `Follow up with ${item.name}`,
+          description: item.why_now,
+          suggested_message: item.suggested_message,
+          priority: item.urgency_level === "Act Today" ? "high" : "normal",
+          task_type: "follow_up",
+          metadata_json: {
+            source: "dashboard_followup_queue",
+            reason_tag: item.reason_tag,
+            signal_reasons: item.signal_reasons,
+          },
+        }),
+      });
+      if (!res.ok) throw new Error("Could not create task");
+      await fetchPriorities();
+    } catch (error) {
+      setTaskError(error instanceof Error ? error.message : "Could not create task");
+    } finally {
+      setTaskBusyId("");
+    }
+  };
+
+  const onCompleteTask = async (task: FollowUpTask) => {
+    setTaskError("");
+    setTaskBusyId(task.id);
+    try {
+      const res = await fetch(`${API_URL}/tasks/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "completed" }),
+      });
+      if (!res.ok) throw new Error("Could not complete task");
+      await fetchPriorities();
+    } catch (error) {
+      setTaskError(error instanceof Error ? error.message : "Could not complete task");
+    } finally {
+      setTaskBusyId("");
+    }
   };
 
   const onLoadExplanation = async (relationshipId: string) => {
@@ -476,6 +532,60 @@ export default function DashboardPage() {
           {assistantError ? <p className="mt-3 text-sm text-red-300">{assistantError}</p> : null}
         </section>
 
+        {!loading ? (
+          <section className="mb-4 rounded-lg border border-soft/70 bg-white p-4">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-accent">Task inbox</p>
+                <h2 className="mt-1 text-base font-semibold text-text">Open Relationship Work</h2>
+                <p className="mt-1 text-xs text-muted">Assigned follow-ups, content sends, calls, and meeting next steps live here before they become automations.</p>
+              </div>
+              <span className="rounded-full border border-soft bg-base px-3 py-1 text-xs text-muted">{tasks.length} open</span>
+            </div>
+            {taskError ? <p className="mb-3 text-sm text-red-300">{taskError}</p> : null}
+            {tasks.length === 0 ? (
+              <div className="rounded-md border border-soft bg-base p-3 text-sm text-muted">
+                No open tasks yet. Create one from a next-best touch below when something needs ownership.
+              </div>
+            ) : (
+              <div className="grid gap-2">
+                {tasks.slice(0, 6).map((task) => (
+                  <article key={task.id} className="grid gap-3 rounded-md border border-soft/70 bg-base p-3 lg:grid-cols-[minmax(180px,0.75fr)_minmax(0,1fr)_auto]">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold text-text">{task.title}</p>
+                        <span className="rounded-full border border-soft bg-white px-2 py-0.5 text-[11px] capitalize text-muted">{task.priority}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted">{task.contact_name || "No contact linked"}</p>
+                    </div>
+                    <div>
+                      {task.description ? <p className="text-xs font-medium text-muted">{task.description}</p> : null}
+                      {task.suggested_message ? (
+                        <p className="mt-2 rounded-md border border-soft bg-white p-2 text-sm text-text">{task.suggested_message}</p>
+                      ) : null}
+                    </div>
+                    <div className="flex items-start gap-2 lg:justify-end">
+                      {task.contact_id ? (
+                        <Link href={`/contacts?contact_id=${encodeURIComponent(task.contact_id)}`} className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">
+                          View
+                        </Link>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => onCompleteTask(task)}
+                        disabled={taskBusyId === task.id}
+                        className="rounded-md bg-accent px-3 py-2 text-xs font-semibold text-text hover:brightness-110 disabled:opacity-50"
+                      >
+                        {taskBusyId === task.id ? "Closing..." : "Complete"}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
+
         {!loading && followups.length > 0 ? (
           <section className="mb-4 rounded-lg border border-soft/70 bg-white p-4">
             <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
@@ -511,6 +621,14 @@ export default function DashboardPage() {
                         View
                       </Link>
                     ) : null}
+                    <button
+                      type="button"
+                      onClick={() => onCreateTaskFromFollowup(item)}
+                      disabled={taskBusyId === item.relationship_id}
+                      className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40 disabled:opacity-50"
+                    >
+                      {taskBusyId === item.relationship_id ? "Creating..." : "Create Task"}
+                    </button>
                     {item.suggested_message ? (
                       <button
                         type="button"
