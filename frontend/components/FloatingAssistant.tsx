@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { resolveApiUrl } from "@/components/api";
@@ -35,6 +35,8 @@ type SpeechRecognitionLike = {
   onerror: (() => void) | null;
 };
 
+type MicPermissionState = "unknown" | "unsupported" | "prompt" | "granted" | "denied";
+
 const starterMessages: ChatMessage[] = [
   {
     role: "assistant",
@@ -57,9 +59,46 @@ export default function FloatingAssistant() {
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
   const [transcriptPreview, setTranscriptPreview] = useState("");
+  const [micPermission, setMicPermission] = useState<MicPermissionState>("unknown");
   const [error, setError] = useState("");
 
   const speechSupported = typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+
+  useEffect(() => {
+    const openAssistant = () => setOpen(true);
+    window.addEventListener("relateos-open-assistant", openAssistant);
+    return () => window.removeEventListener("relateos-open-assistant", openAssistant);
+  }, []);
+
+  useEffect(() => {
+    if (!speechSupported) {
+      setMicPermission("unsupported");
+      return;
+    }
+    if (!navigator.permissions?.query) {
+      setMicPermission("prompt");
+      return;
+    }
+
+    let permissionStatus: PermissionStatus | null = null;
+    const syncPermission = () => {
+      if (!permissionStatus) return;
+      setMicPermission(permissionStatus.state === "granted" ? "granted" : permissionStatus.state === "denied" ? "denied" : "prompt");
+    };
+
+    navigator.permissions
+      .query({ name: "microphone" as PermissionName })
+      .then(status => {
+        permissionStatus = status;
+        syncPermission();
+        permissionStatus.onchange = syncPermission;
+      })
+      .catch(() => setMicPermission("prompt"));
+
+    return () => {
+      if (permissionStatus) permissionStatus.onchange = null;
+    };
+  }, [speechSupported]);
 
   const submit = async (event?: FormEvent<HTMLFormElement>, directInput?: string) => {
     event?.preventDefault();
@@ -110,7 +149,33 @@ export default function FloatingAssistant() {
     }
   };
 
-  const startVoice = (autoSubmit = true) => {
+  const requestMicPermission = async () => {
+    if (!speechSupported) {
+      setMicPermission("unsupported");
+      setError("Voice input is not supported in this browser.");
+      return false;
+    }
+    if (micPermission === "granted") return true;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setMicPermission("unsupported");
+      setError("This browser cannot request microphone access.");
+      return false;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop());
+      setMicPermission("granted");
+      setError("");
+      return true;
+    } catch {
+      setMicPermission("denied");
+      setError("Microphone access was blocked. Allow microphone permissions in the browser to use voice commands.");
+      return false;
+    }
+  };
+
+  const startVoice = async (autoSubmit = true) => {
     if (!speechSupported || typeof window === "undefined") {
       setError("Voice input is not supported in this browser.");
       return;
@@ -118,6 +183,8 @@ export default function FloatingAssistant() {
     if (listening) {
       return;
     }
+    const allowed = await requestMicPermission();
+    if (!allowed) return;
 
     const SpeechCtor = (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike }).SpeechRecognition
       || (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition;
@@ -160,7 +227,12 @@ export default function FloatingAssistant() {
     };
     recognitionRef.current = recognition;
     setListening(true);
-    recognition.start();
+    try {
+      recognition.start();
+    } catch {
+      setListening(false);
+      setError("Voice input could not start. Try again or type the command.");
+    }
   };
 
   const stopVoice = () => {
@@ -186,10 +258,26 @@ export default function FloatingAssistant() {
     }
   };
 
+  const micStatusCopy =
+    micPermission === "denied"
+      ? "Microphone blocked"
+      : micPermission === "unsupported"
+        ? "Voice unavailable"
+        : micPermission === "prompt"
+          ? "Mic permission needed"
+          : "Hold to talk";
+
   return (
-    <div className="fixed bottom-5 right-5 z-50 hidden md:block">
+    <div className={open ? "fixed inset-0 z-50 md:inset-auto md:bottom-5 md:right-5" : "fixed bottom-5 right-5 z-50"}>
       {open ? (
-        <section className="w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-soft bg-panel shadow-card">
+        <>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="absolute inset-0 bg-text/55 md:hidden"
+            aria-label="Close Teifke AI assistant"
+          />
+          <section className="absolute inset-x-0 bottom-0 max-h-[88vh] overflow-hidden rounded-t-2xl border border-soft bg-panel shadow-card md:static md:w-[min(420px,calc(100vw-2rem))] md:rounded-lg">
           <header className="flex items-center justify-between border-b border-soft px-4 py-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.18em] text-accent">Teifke AI</p>
@@ -203,7 +291,7 @@ export default function FloatingAssistant() {
               Close
             </button>
           </header>
-          <div className="max-h-[420px] space-y-3 overflow-y-auto px-4 py-3">
+          <div className="max-h-[calc(88vh-154px)] space-y-3 overflow-y-auto px-4 py-3 md:max-h-[420px]">
             {messages.map((message, index) => (
               <div
                 key={`${message.role}-${index}`}
@@ -248,6 +336,9 @@ export default function FloatingAssistant() {
                 <p className="mt-1">{transcriptPreview || "Speak now..."}</p>
               </div>
             ) : null}
+            {!listening && micPermission !== "granted" ? (
+              <p className="text-xs text-muted">{micStatusCopy}</p>
+            ) : null}
             {error ? <p className="text-xs text-red-700">{error}</p> : null}
           </div>
           <form onSubmit={submit} className="border-t border-soft p-3">
@@ -262,17 +353,17 @@ export default function FloatingAssistant() {
                 type="button"
                 onPointerDown={event => {
                   event.preventDefault();
-                  startVoice(true);
+                  void startVoice(true);
                 }}
                 onPointerUp={stopVoice}
                 onPointerCancel={stopVoice}
                 onKeyDown={event => {
-                  if (event.key === "Enter" || event.key === " ") startVoice(true);
+                  if (event.key === "Enter" || event.key === " ") void startVoice(true);
                 }}
                 onKeyUp={event => {
                   if (event.key === "Enter" || event.key === " ") stopVoice();
                 }}
-                className={`h-10 w-10 rounded-md border border-soft text-sm font-semibold ${listening ? "bg-accent text-text" : "bg-white text-text hover:bg-soft/40"}`}
+                className={`h-10 min-w-12 rounded-md border border-soft px-2 text-xs font-semibold ${listening ? "bg-accent text-text" : "bg-white text-text hover:bg-soft/40"}`}
                 aria-label={listening ? "Stop voice input" : "Start voice input"}
               >
                 {listening ? "Stop" : "Mic"}
@@ -295,12 +386,13 @@ export default function FloatingAssistant() {
               </button>
             </div>
           </form>
-        </section>
+          </section>
+        </>
       ) : (
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="flex h-14 w-14 items-center justify-center rounded-full border border-accent/50 bg-text text-lg font-semibold text-accent shadow-card hover:brightness-110"
+          className="hidden h-14 w-14 items-center justify-center rounded-full border border-accent/50 bg-text text-lg font-semibold text-accent shadow-card hover:brightness-110 md:flex"
           aria-label="Open Teifke AI assistant"
         >
           AI

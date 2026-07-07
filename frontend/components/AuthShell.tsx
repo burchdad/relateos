@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 
 import SidebarNav from "@/components/SidebarNav";
 import FloatingAssistant from "@/components/FloatingAssistant";
+import MobileNav from "@/components/MobileNav";
 import { resolveApiUrl } from "@/components/api";
 import { AUTH_CHANGED_EVENT, TOKEN_KEY, clearAuthToken } from "@/components/authClient";
 
@@ -33,6 +34,12 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
   const isResetPasswordPage = pathname === "/reset-password";
   const isAcceptInvitePage = pathname === "/accept-invite";
   const isPublicAuthPage = isLoginPage || isResetPasswordPage || isAcceptInvitePage;
+
+  const handleLogout = () => {
+    clearAuthToken();
+    setUser(null);
+    router.replace("/login");
+  };
 
   useEffect(() => {
     const originalFetch = window.fetch.bind(window);
@@ -113,8 +120,11 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen md:grid md:grid-cols-[260px_1fr]">
-      <SidebarNav user={user} />
-      <main className="min-w-0">{children}</main>
+      <div className="hidden md:block">
+        <SidebarNav user={user} />
+      </div>
+      <MobileNav user={user} onLogout={handleLogout} />
+      <main className="min-w-0 pb-24 pt-16 md:pb-0 md:pt-0">{children}</main>
       <FloatingAssistant />
     </div>
   );
