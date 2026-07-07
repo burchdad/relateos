@@ -97,13 +97,16 @@ class AssistantService:
 
     def _handle_deterministic(self, db: Session, *, message: str, context: WorkspaceContext) -> dict | None:
         lowered = message.lower()
+        if any(word in lowered for word in ["import", "upload", "spreadsheet", "csv", "excel"]) and any(word in lowered for word in ["contact", "data", "file", "sheet"]):
+            return self._navigation_response(db, context=context, page_key="imports", href="/imports", prompt=message)
+
+        if any(word in lowered for word in ["2fa", "two factor", "security", "profile", "preference", "team", "members", "assistant actions", "audit"]):
+            if any(word in lowered for word in ["open", "show", "go to", "take me to", "settings", "security", "team", "audit"]):
+                return self._navigation_response(db, context=context, page_key="settings", href="/settings", prompt=message)
+
         for key, href in PAGE_ROUTES.items():
             if re.search(rf"\b(open|go to|show|take me to)\s+(the\s+)?{re.escape(key)}\b", lowered):
-                return {
-                    "reply": f"Opening {key}.",
-                    "actions": [{"type": "navigate", "label": f"Open {key}", "href": href, "metadata": {}}],
-                    "navigate_to": href,
-                }
+                return self._navigation_response(db, context=context, page_key=key, href=href, prompt=message)
 
         if ("add" in lowered or "create" in lowered) and any(word in lowered for word in ["contact", "lead", "person", "client"]):
             if not context.has("contacts:write"):
@@ -151,6 +154,7 @@ class AssistantService:
             if not contacts:
                 return {"reply": f"I could not find a contact matching '{term}'.", "actions": [], "navigate_to": None}
             lines = ", ".join(_name_from_contact(contact) for contact in contacts[:3])
+            self._log_action(db, context=context, action_type="search_contacts", status="completed", prompt=message, metadata={"search": term, "count": len(contacts)})
             return {
                 "reply": f"I found {len(contacts)} matching contact{'s' if len(contacts) != 1 else ''}: {lines}.",
                 "actions": [
@@ -201,6 +205,14 @@ class AssistantService:
             return self._create_content_from_text(db, message=message, context=context)
 
         return None
+
+    def _navigation_response(self, db: Session, *, context: WorkspaceContext, page_key: str, href: str, prompt: str) -> dict:
+        self._log_action(db, context=context, action_type="navigate", status="completed", prompt=prompt, target_type="page", metadata={"page": page_key, "href": href})
+        return {
+            "reply": f"Opening {page_key}.",
+            "actions": [{"type": "navigate", "label": f"Open {page_key}", "href": href, "metadata": {}}],
+            "navigate_to": href,
+        }
 
     def _log_action(
         self,
@@ -280,11 +292,11 @@ class AssistantService:
                 "navigate_to": "/connections",
             }
         if "open settings" in lowered:
-            return {"reply": "Opening settings.", "actions": [{"type": "navigate", "label": "Open settings", "href": "/settings", "metadata": {}}], "navigate_to": "/settings"}
+            return self._navigation_response(db, context=context, page_key="settings", href="/settings", prompt=message)
         if "open tasks" in lowered:
-            return {"reply": "Opening tasks.", "actions": [{"type": "navigate", "label": "Open tasks", "href": "/tasks", "metadata": {}}], "navigate_to": "/tasks"}
+            return self._navigation_response(db, context=context, page_key="tasks", href="/tasks", prompt=message)
         if "open deals" in lowered:
-            return {"reply": "Opening deals.", "actions": [{"type": "navigate", "label": "Open deals", "href": "/deals", "metadata": {}}], "navigate_to": "/deals"}
+            return self._navigation_response(db, context=context, page_key="deals", href="/deals", prompt=message)
         return None
 
     def _create_task_from_text(self, db: Session, *, message: str, context: WorkspaceContext) -> dict:
@@ -452,6 +464,7 @@ class AssistantService:
         overview = ConnectionsService.overview(db, context.workspace_id)
         ready = [connector["name"] for connector in overview.get("connectors", []) if connector.get("status") == "ready"]
         missing = [connector["name"] for connector in overview.get("connectors", []) if connector.get("status") != "ready"]
+        self._log_action(db, context=context, action_type="connector_status", status="completed", metadata={"ready": ready, "missing": missing})
         reply = f"Ready connectors: {len(ready)}. Needs config: {', '.join(missing) if missing else 'none'}."
         return {
             "reply": reply,
@@ -495,11 +508,7 @@ class AssistantService:
             page = str(plan.get("page") or "").strip().lower()
             href = PAGE_ROUTES.get(page)
             if href:
-                return {
-                    "reply": plan.get("reply") or f"Opening {page}.",
-                    "actions": [{"type": "navigate", "label": f"Open {page}", "href": href, "metadata": {}}],
-                    "navigate_to": href,
-                }
+                return self._navigation_response(db, context=context, page_key=page, href=href, prompt=original_message)
         if intent == "create_task":
             return self._create_task_from_text(db, message=plan.get("title") or original_message, context=context)
         if intent == "create_contact" and context.has("contacts:write"):

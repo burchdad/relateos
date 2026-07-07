@@ -30,7 +30,7 @@ type SpeechRecognitionLike = {
   lang: string;
   start: () => void;
   stop: () => void;
-  onresult: ((event: { results: ArrayLike<{ 0: { transcript: string } }> }) => void) | null;
+  onresult: ((event: { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => void) | null;
   onend: (() => void) | null;
   onerror: (() => void) | null;
 };
@@ -46,12 +46,17 @@ export default function FloatingAssistant() {
   const API_URL = useMemo(resolveApiUrl, []);
   const router = useRouter();
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const requestAbortRef = useRef<AbortController | null>(null);
+  const finalTranscriptRef = useRef("");
+  const liveTranscriptRef = useRef("");
+  const autoSubmitVoiceRef = useRef(true);
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>(starterMessages);
   const [actions, setActions] = useState<AssistantAction[]>([]);
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
+  const [transcriptPreview, setTranscriptPreview] = useState("");
   const [error, setError] = useState("");
 
   const speechSupported = typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
@@ -59,16 +64,23 @@ export default function FloatingAssistant() {
   const submit = async (event?: FormEvent<HTMLFormElement>, directInput?: string) => {
     event?.preventDefault();
     const text = (directInput || input).trim();
-    if (!text || loading) return;
+    if (!text) return;
+    if (loading) {
+      requestAbortRef.current?.abort();
+    }
     const nextMessages: ChatMessage[] = [...messages, { role: "user", content: text }];
     setMessages(nextMessages);
     setInput("");
+    setTranscriptPreview("");
     setLoading(true);
     setError("");
+    const controller = new AbortController();
+    requestAbortRef.current = controller;
     try {
       const res = await fetch(`${API_URL}/ai/assistant`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           message: text,
           history: messages.slice(-8),
@@ -85,22 +97,25 @@ export default function FloatingAssistant() {
         router.push(payload.navigate_to as never);
       }
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setMessages([...nextMessages, { role: "assistant", content: "Stopped." }]);
+        return;
+      }
       const message = err instanceof Error ? err.message : "Teifke AI could not complete that.";
       setError(message);
       setMessages([...nextMessages, { role: "assistant", content: message }]);
     } finally {
       setLoading(false);
+      requestAbortRef.current = null;
     }
   };
 
-  const toggleVoice = () => {
+  const startVoice = (autoSubmit = true) => {
     if (!speechSupported || typeof window === "undefined") {
       setError("Voice input is not supported in this browser.");
       return;
     }
     if (listening) {
-      recognitionRef.current?.stop();
-      setListening(false);
       return;
     }
 
@@ -110,16 +125,35 @@ export default function FloatingAssistant() {
 
     const recognition = new SpeechCtor();
     recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.lang = "en-US";
+    finalTranscriptRef.current = "";
+    liveTranscriptRef.current = "";
+    autoSubmitVoiceRef.current = autoSubmit;
+    setTranscriptPreview("");
     recognition.onresult = event => {
-      const transcript = Array.from(event.results).map(result => result[0].transcript).join(" ").trim();
+      let finalTranscript = "";
+      let interimTranscript = "";
+      for (const result of Array.from(event.results)) {
+        if (result.isFinal) {
+          finalTranscript += result[0].transcript;
+        } else {
+          interimTranscript += result[0].transcript;
+        }
+      }
+      const transcript = (finalTranscript || interimTranscript).trim();
+      liveTranscriptRef.current = transcript;
+      if (finalTranscript.trim()) finalTranscriptRef.current = finalTranscript.trim();
+      setTranscriptPreview(transcript);
       setInput(transcript);
-      if (transcript) {
+    };
+    recognition.onend = () => {
+      setListening(false);
+      const transcript = (finalTranscriptRef.current || liveTranscriptRef.current).trim();
+      if (autoSubmitVoiceRef.current && transcript) {
         void submit(undefined, transcript);
       }
     };
-    recognition.onend = () => setListening(false);
     recognition.onerror = () => {
       setListening(false);
       setError("Voice input stopped. Try typing the command instead.");
@@ -127,6 +161,18 @@ export default function FloatingAssistant() {
     recognitionRef.current = recognition;
     setListening(true);
     recognition.start();
+  };
+
+  const stopVoice = () => {
+    recognitionRef.current?.stop();
+    setListening(false);
+  };
+
+  const interrupt = () => {
+    requestAbortRef.current?.abort();
+    recognitionRef.current?.stop();
+    setListening(false);
+    setLoading(false);
   };
 
   const runAction = (action: AssistantAction) => {
@@ -196,6 +242,12 @@ export default function FloatingAssistant() {
               </div>
             ) : null}
             {loading ? <p className="text-xs text-muted">Thinking...</p> : null}
+            {listening ? (
+              <div className="rounded-lg border border-accent/50 bg-accent/20 px-3 py-2 text-sm text-text">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">Listening</p>
+                <p className="mt-1">{transcriptPreview || "Speak now..."}</p>
+              </div>
+            ) : null}
             {error ? <p className="text-xs text-red-700">{error}</p> : null}
           </div>
           <form onSubmit={submit} className="border-t border-soft p-3">
@@ -208,12 +260,32 @@ export default function FloatingAssistant() {
               />
               <button
                 type="button"
-                onClick={toggleVoice}
+                onPointerDown={event => {
+                  event.preventDefault();
+                  startVoice(true);
+                }}
+                onPointerUp={stopVoice}
+                onPointerCancel={stopVoice}
+                onKeyDown={event => {
+                  if (event.key === "Enter" || event.key === " ") startVoice(true);
+                }}
+                onKeyUp={event => {
+                  if (event.key === "Enter" || event.key === " ") stopVoice();
+                }}
                 className={`h-10 w-10 rounded-md border border-soft text-sm font-semibold ${listening ? "bg-accent text-text" : "bg-white text-text hover:bg-soft/40"}`}
                 aria-label={listening ? "Stop voice input" : "Start voice input"}
               >
                 {listening ? "Stop" : "Mic"}
               </button>
+              {loading ? (
+                <button
+                  type="button"
+                  onClick={interrupt}
+                  className="rounded-md border border-soft bg-white px-3 py-2 text-sm font-semibold text-text hover:bg-soft/40"
+                >
+                  Stop
+                </button>
+              ) : null}
               <button
                 type="submit"
                 disabled={loading || !input.trim()}
