@@ -31,7 +31,7 @@ PAGE_ROUTES = {
     "content": "/content",
     "events": "/events",
     "deals": "/deals",
-    "partners": "/partners",
+    "partners": "/organizations",
     "network": "/network/graph",
     "graph": "/network/graph",
     "scoreboard": "/scoreboard",

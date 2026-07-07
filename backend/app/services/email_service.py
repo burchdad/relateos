@@ -68,6 +68,71 @@ class EmailService:
         """
 
     @staticmethod
+    def _diagnostic_html(name: str) -> str:
+        safe_name = escape(name or "there")
+        return f"""
+        <div style="font-family: Arial, sans-serif; color: #1C3A2A; line-height: 1.5;">
+          <h1 style="font-size: 22px;">Teifke / Relationships email test</h1>
+          <p>Hi {safe_name},</p>
+          <p>This confirms that backend transactional email is configured and can send through Resend.</p>
+          <p>If you received this, account verification, password reset, and team invite delivery can use the same channel.</p>
+        </div>
+        """
+
+    @staticmethod
+    def diagnostics() -> dict:
+        notes: list[str] = []
+        resend_configured = bool(settings.resend_api_key)
+        if not resend_configured:
+            notes.append("RESEND_API_KEY is missing on the backend service.")
+        if "onboarding@resend.dev" in settings.auth_email_from:
+            notes.append("AUTH_EMAIL_FROM is still using Resend's onboarding sender; use a verified domain before client rollout.")
+        if settings.frontend_app_url.startswith("http://localhost"):
+            notes.append("FRONTEND_APP_URL points to localhost; production invites and resets should use the deployed frontend URL.")
+
+        ready = resend_configured and bool(settings.auth_email_from) and not settings.frontend_app_url.startswith("http://localhost")
+        return {
+            "resend_configured": resend_configured,
+            "auth_email_from": settings.auth_email_from,
+            "outbound_email_from": settings.outbound_email_from,
+            "frontend_app_url": settings.frontend_app_url,
+            "team_invites_ready": ready,
+            "account_verification_ready": resend_configured and bool(settings.auth_email_from),
+            "password_reset_ready": ready,
+            "notes": notes,
+        }
+
+    @staticmethod
+    def send_diagnostic_email(*, to_email: str, name: str, idempotency_key: str) -> bool:
+        if not settings.resend_api_key:
+            logger.warning("RESEND_API_KEY not set; diagnostic email was not sent for %s", to_email)
+            return False
+
+        payload = {
+            "from": settings.auth_email_from,
+            "to": [to_email],
+            "subject": "Teifke / Relationships email test",
+            "html": EmailService._diagnostic_html(name),
+        }
+        headers = {
+            "Authorization": f"Bearer {settings.resend_api_key}",
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotency_key,
+        }
+
+        try:
+            response = httpx.post("https://api.resend.com/emails", json=payload, headers=headers, timeout=10)
+            response.raise_for_status()
+            logger.info("Diagnostic email queued for %s via Resend", to_email)
+            return True
+        except httpx.HTTPStatusError as exc:
+            logger.warning("Diagnostic email rejected by Resend for %s: %s", to_email, exc.response.text)
+            return False
+        except Exception as exc:
+            logger.warning("Diagnostic email failed for %s: %s", to_email, exc)
+            return False
+
+    @staticmethod
     def send_registration_code(*, to_email: str, name: str, code: str, idempotency_key: str) -> bool:
         if not settings.resend_api_key:
             logger.info("RESEND_API_KEY not set; registration verification code for %s: %s", to_email, code)

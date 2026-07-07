@@ -49,6 +49,22 @@ class ForgotPasswordResponse(BaseModel):
     message: str
 
 
+class EmailDiagnosticsResponse(BaseModel):
+    resend_configured: bool
+    auth_email_from: str
+    outbound_email_from: str
+    frontend_app_url: str
+    team_invites_ready: bool
+    account_verification_ready: bool
+    password_reset_ready: bool
+    notes: list[str] = Field(default_factory=list)
+
+
+class EmailTestResponse(BaseModel):
+    sent: bool
+    message: str
+
+
 class ResetPasswordRequest(BaseModel):
     token: str = Field(min_length=20, max_length=255)
     password: str = Field(min_length=8, max_length=128)

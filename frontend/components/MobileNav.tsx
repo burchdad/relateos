@@ -98,27 +98,9 @@ export default function MobileNav({ user, onLogout }: MobileNavProps) {
   return (
     <>
       <header className="fixed inset-x-0 top-0 z-40 border-b border-text/15 bg-text px-4 py-3 text-cream-light shadow-card md:hidden">
-        <div className="flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-sage-pale/25 bg-sage/15 text-lg font-semibold text-cream-light"
-            aria-label="Open navigation menu"
-          >
-            =
-          </button>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[10px] uppercase tracking-[0.18em] text-accent">Teifke / Relationships</p>
-            <h1 className="truncate text-base font-semibold text-cream-light">Relationship Intelligence</h1>
-          </div>
-          <button
-            type="button"
-            onClick={openAssistant}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-accent/50 bg-accent text-sm font-bold text-text"
-            aria-label="Open Teifke AI assistant"
-          >
-            AI
-          </button>
+        <div className="min-w-0">
+          <p className="truncate text-[10px] uppercase tracking-[0.18em] text-accent">Teifke / Relationships</p>
+          <h1 className="truncate text-base font-semibold text-cream-light">Relationship Intelligence</h1>
         </div>
       </header>
 

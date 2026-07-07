@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.auth import (
     AuthResponse,
+    EmailDiagnosticsResponse,
+    EmailTestResponse,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     LoginResponse,
@@ -18,6 +20,7 @@ from app.schemas.auth import (
     UserOut,
 )
 from app.services.auth_service import AuthService
+from app.services.email_service import EmailService
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -83,6 +86,32 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
     return ForgotPasswordResponse(
         message="If an account exists for that email, password reset instructions will be sent."
     )
+
+
+@router.get("/email/diagnostics", response_model=EmailDiagnosticsResponse)
+def email_diagnostics(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    user = AuthService.bearer_user(db, authorization)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    return EmailService.diagnostics()
+
+
+@router.post("/email/test", response_model=EmailTestResponse)
+def email_test(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    user = AuthService.bearer_user(db, authorization)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    sent = EmailService.send_diagnostic_email(
+        to_email=user.email,
+        name=user.name,
+        idempotency_key=f"diagnostic-email-{user.id}",
+    )
+    if not sent:
+        return EmailTestResponse(
+            sent=False,
+            message="Test email was not accepted. Check RESEND_API_KEY, AUTH_EMAIL_FROM, and domain verification.",
+        )
+    return EmailTestResponse(sent=True, message=f"Test email sent to {user.email}.")
 
 
 @router.post("/reset-password", response_model=ForgotPasswordResponse)

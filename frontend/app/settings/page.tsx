@@ -76,6 +76,17 @@ type AssistantActionLog = {
   created_at: string;
 };
 
+type EmailDiagnostics = {
+  resend_configured: boolean;
+  auth_email_from: string;
+  outbound_email_from: string;
+  frontend_app_url: string;
+  team_invites_ready: boolean;
+  account_verification_ready: boolean;
+  password_reset_ready: boolean;
+  notes: string[];
+};
+
 const focusOptions = ["Clients", "Investors", "Partners", "Events", "Community", "Content audience"];
 const goalOptions = ["Prioritize follow-up", "Invite people to events", "Send better content", "Track deals", "Build partner network", "Clean up contacts"];
 const teamRoles = ["admin", "member", "viewer"];
@@ -118,6 +129,8 @@ export default function SettingsPage() {
   const [inviteRole, setInviteRole] = useState("member");
   const [teamBusy, setTeamBusy] = useState(false);
   const [assistantActions, setAssistantActions] = useState<AssistantActionLog[]>([]);
+  const [emailDiagnostics, setEmailDiagnostics] = useState<EmailDiagnostics | null>(null);
+  const [emailTestBusy, setEmailTestBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [preferences, setPreferences] = useState({
     dailyFocusDigest: true,
@@ -165,6 +178,9 @@ export default function SettingsPage() {
 
         const assistantRes = await fetch(`${API_URL}/ai/assistant/actions?limit=8`, { cache: "no-store" });
         if (assistantRes.ok) setAssistantActions(await assistantRes.json());
+
+        const emailRes = await fetch(`${API_URL}/auth/email/diagnostics`, { cache: "no-store" });
+        if (emailRes.ok) setEmailDiagnostics(await emailRes.json());
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Could not load settings.");
       } finally {
@@ -354,6 +370,23 @@ export default function SettingsPage() {
       setStatus(error instanceof Error ? error.message : "Could not save AI style settings.");
     } finally {
       setSavingStyle(false);
+    }
+  };
+
+  const sendEmailTest = async () => {
+    setEmailTestBusy(true);
+    setStatus("");
+    try {
+      const res = await fetch(`${API_URL}/auth/email/test`, { method: "POST" });
+      const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+      if (!res.ok) throw new Error(payload?.message || "Could not send test email.");
+      setStatus(payload?.message || "Test email requested.");
+      const emailRes = await fetch(`${API_URL}/auth/email/diagnostics`, { cache: "no-store" });
+      if (emailRes.ok) setEmailDiagnostics(await emailRes.json());
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not send test email.");
+    } finally {
+      setEmailTestBusy(false);
     }
   };
 
@@ -715,6 +748,62 @@ export default function SettingsPage() {
                 Import Contacts
               </Link>
             </div>
+          </article>
+
+          <article className="rounded-lg border border-soft bg-panel p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-text">Email Delivery</h2>
+                <p className="mt-1 text-sm text-muted">Verify Resend, sender, invite links, and password reset delivery.</p>
+              </div>
+              <span
+                className={`rounded-full border px-3 py-1 text-xs uppercase tracking-wide ${
+                  emailDiagnostics?.team_invites_ready ? "border-sage bg-sage-pale text-forest" : "border-honey bg-honey-light text-text"
+                }`}
+              >
+                {emailDiagnostics?.team_invites_ready ? "Ready" : "Check"}
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-2">
+              {[
+                ["Resend", emailDiagnostics?.resend_configured],
+                ["Team invites", emailDiagnostics?.team_invites_ready],
+                ["Account codes", emailDiagnostics?.account_verification_ready],
+                ["Password resets", emailDiagnostics?.password_reset_ready],
+              ].map(([label, ready]) => (
+                <div key={String(label)} className="flex items-center justify-between rounded-md border border-soft bg-base px-3 py-2 text-sm">
+                  <span className="text-text">{String(label)}</span>
+                  <span className={`rounded-full px-2 py-1 text-xs ${ready ? "bg-sage-pale text-forest" : "bg-honey-light text-text"}`}>
+                    {ready ? "Ready" : "Needs config"}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-3 rounded-md border border-soft bg-base p-3 text-xs text-muted">
+              <p className="break-all">From: {emailDiagnostics?.auth_email_from || "Not loaded"}</p>
+              <p className="mt-1 break-all">Frontend URL: {emailDiagnostics?.frontend_app_url || "Not loaded"}</p>
+            </div>
+
+            {emailDiagnostics?.notes?.length ? (
+              <div className="mt-3 grid gap-2">
+                {emailDiagnostics.notes.map(note => (
+                  <p key={note} className="rounded-md border border-honey/30 bg-honey-light px-3 py-2 text-xs text-text">
+                    {note}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={sendEmailTest}
+              disabled={emailTestBusy}
+              className="mt-4 w-full rounded-md border border-soft bg-base px-4 py-2 text-sm font-semibold text-text hover:bg-soft/30 disabled:opacity-50"
+            >
+              {emailTestBusy ? "Sending..." : "Send Test Email"}
+            </button>
           </article>
 
           <article className="rounded-lg border border-soft bg-panel p-5">
