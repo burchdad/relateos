@@ -79,6 +79,29 @@ export type FollowUpTask = {
   updated_at: string;
 };
 
+export type OutboxMessage = {
+  id: string;
+  workspace_id: string;
+  task_id: string | null;
+  relationship_id: string | null;
+  contact_id: string | null;
+  contact_name: string | null;
+  created_by_user_id: string | null;
+  created_by_name: string | null;
+  to_email: string;
+  to_name: string | null;
+  subject: string;
+  body: string;
+  status: "draft" | "ready" | "sent" | "failed" | string;
+  provider: string | null;
+  provider_message_id: string | null;
+  error_message: string | null;
+  sent_at: string | null;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
 export type TeamMember = {
   id: string;
   user_id: string;

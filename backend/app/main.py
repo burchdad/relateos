@@ -28,6 +28,7 @@ from app.routes.interactions import router as interactions_router
 from app.routes.meetings import router as meetings_router
 from app.routes.network import router as network_router
 from app.routes.organizations import router as organizations_router
+from app.routes.outbox import router as outbox_router
 from app.routes.recording_artifacts import router as recording_artifacts_router
 from app.routes.relateos import router as relateos_router
 from app.routes.relationships import router as relationships_router
@@ -401,6 +402,7 @@ app.include_router(events_router, prefix=settings.api_v1_prefix)
 app.include_router(relateos_router, prefix=settings.api_v1_prefix)
 app.include_router(style_profiles_router, prefix=settings.api_v1_prefix)
 app.include_router(tasks_router, prefix=settings.api_v1_prefix)
+app.include_router(outbox_router, prefix=settings.api_v1_prefix)
 app.include_router(team_router, prefix=settings.api_v1_prefix)
 # Network Intelligence routes
 app.include_router(contacts_router, prefix=settings.api_v1_prefix)

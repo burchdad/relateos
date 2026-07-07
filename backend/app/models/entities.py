@@ -147,6 +147,36 @@ class FollowUpTask(Base):
     created_by_user: Mapped["AppUser | None"] = relationship("AppUser", foreign_keys=[created_by_user_id])
 
 
+class OutboxMessage(Base):
+    __tablename__ = "outbox_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+    task_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("follow_up_tasks.id"), nullable=True, index=True)
+    relationship_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("relationships.id"), nullable=True)
+    contact_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("people.id"), nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    to_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    to_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="draft", nullable=False, index=True)
+    provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sent_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    task: Mapped["FollowUpTask | None"] = relationship("FollowUpTask", foreign_keys=[task_id])
+    linked_relationship: Mapped["Relationship | None"] = relationship("Relationship", foreign_keys=[relationship_id])
+    contact: Mapped["Person | None"] = relationship("Person", foreign_keys=[contact_id])
+    created_by_user: Mapped["AppUser | None"] = relationship("AppUser", foreign_keys=[created_by_user_id])
+
+
 class Opportunity(Base):
     __tablename__ = "opportunities"
 

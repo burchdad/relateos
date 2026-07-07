@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     frontend_app_url: str = "http://localhost:3000"
     resend_api_key: str = ""
     auth_email_from: str = "Teifke / Relationships <onboarding@resend.dev>"
+    outbound_email_from: str = "Teifke / Relationships <onboarding@resend.dev>"
     zoom_webhook_secret_token: str = ""
     zoom_oauth_client_id: str = ""
     zoom_oauth_client_secret: str = ""
