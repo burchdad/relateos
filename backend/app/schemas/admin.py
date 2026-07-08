@@ -48,6 +48,27 @@ class SupportSessionOut(BaseModel):
     permissions: list[str]
 
 
+class SupportWorkspaceSummary(BaseModel):
+    workspace_id: UUID
+    workspace_name: str
+    grant_id: UUID
+    access_level: str
+    metrics: list[WorkspaceMetric]
+    connectors: list[ConnectorStatus]
+    audit_summary: list[WorkspaceMetric]
+    recommended_actions: list[str]
+
+
+class SupportDraftRequest(BaseModel):
+    user_message: str = Field(min_length=2, max_length=2000)
+    situation: str | None = Field(default=None, max_length=1000)
+
+
+class SupportDraftResponse(BaseModel):
+    draft: str
+    guardrails: list[str]
+
+
 class WorkspaceAdminOverview(BaseModel):
     workspace_id: UUID
     workspace_name: str

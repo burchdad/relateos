@@ -62,11 +62,11 @@ def test_followup_generation_returns_day_0_2_5_plan(monkeypatch):
 
     monkeypatch.setattr(
         "app.services.followup_service.ContentService.get_content_by_id",
-        lambda db, _content_id: fake_content,
+        lambda db, _content_id, workspace_id=None: fake_content,
     )
     monkeypatch.setattr(
         "app.services.followup_service.FollowUpSuggestionService._load_targets",
-        lambda db, _content_id: [fake_target],
+        lambda db, _content_id, workspace_id=None: [fake_target],
     )
     monkeypatch.setattr(
         "app.services.followup_service.AIService.generate_message_suggestion_with_style",

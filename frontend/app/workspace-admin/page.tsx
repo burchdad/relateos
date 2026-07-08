@@ -195,6 +195,10 @@ export default function WorkspaceAdminPage() {
             <div className="rounded-lg border border-soft bg-panel p-5">
               <h2 className="text-lg font-semibold text-text">Support Access</h2>
               <p className="mt-1 text-sm text-muted">Create temporary, audited access for helper agents or support. Access is scoped to this workspace.</p>
+              <div className="mt-3 rounded-md border border-soft bg-base p-3 text-xs text-muted">
+                <p className="font-semibold text-text">Support can inspect health, review workspace summaries, and draft troubleshooting responses.</p>
+                <p className="mt-1">Support cannot delete data, send messages, run imports, sync connectors, change permissions, or modify settings.</p>
+              </div>
               <form onSubmit={createSupportAccess} className="mt-4 grid gap-3">
                 <input
                   value={supportForm.label}
