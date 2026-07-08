@@ -16,7 +16,9 @@ from app.schemas.admin import (
     SupportAccessGrantOut,
     SupportSessionOut,
     SupportWorkspaceSummary,
+    WorkspaceAuditLogOut,
     WorkspaceAdminOverview,
+    WorkspacePolicySettings,
 )
 from app.services.admin_service import SoftwareAdminService, WorkspaceAdminService
 from app.services.audit_service import AuditService
@@ -62,6 +64,41 @@ def list_support_access(
     context: WorkspaceContext = Depends(require_permission("workspace:manage")),
 ):
     return WorkspaceAdminService.list_support_access(db, workspace_id=context.workspace_id)
+
+
+@workspace_router.get("/audit-log", response_model=list[WorkspaceAuditLogOut])
+def workspace_audit_log(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    context: WorkspaceContext = Depends(require_permission("workspace:manage")),
+):
+    return WorkspaceAdminService.audit_logs(db, workspace_id=context.workspace_id, limit=limit)
+
+
+@workspace_router.get("/policies", response_model=WorkspacePolicySettings)
+def workspace_policy_settings(
+    db: Session = Depends(get_db),
+    context: WorkspaceContext = Depends(require_permission("workspace:manage")),
+):
+    return WorkspaceAdminService.policy_settings(db, workspace_id=context.workspace_id)
+
+
+@workspace_router.put("/policies", response_model=WorkspacePolicySettings)
+def update_workspace_policy_settings(
+    payload: WorkspacePolicySettings,
+    db: Session = Depends(get_db),
+    context: WorkspaceContext = Depends(require_permission("workspace:manage")),
+):
+    updated = WorkspaceAdminService.update_policy_settings(db, workspace_id=context.workspace_id, payload=payload)
+    AuditService.log(
+        db,
+        workspace_id=context.workspace_id,
+        user=context.user,
+        action_type="workspace_policy_update",
+        target_type="workspace_policy",
+        metadata=updated.model_dump(),
+    )
+    return updated
 
 
 @workspace_router.post("/support-access", response_model=SupportAccessCreateResponse, status_code=201)

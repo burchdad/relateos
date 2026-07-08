@@ -21,8 +21,9 @@ from app.models import (
     Workspace,
     WorkspaceMembership,
 )
-from app.schemas.admin import SupportAccessGrantOut, WorkspaceMetric
+from app.schemas.admin import SupportAccessGrantOut, WorkspaceAuditLogOut, WorkspaceMetric, WorkspacePolicySettings
 from app.services.connections_service import ConnectionsService
+from app.services.system_settings_service import get_setting, upsert_setting
 from app.services.team_service import TeamService
 
 
@@ -35,6 +36,8 @@ def _now() -> datetime:
 
 
 class WorkspaceAdminService:
+    POLICY_DEFAULTS = WorkspacePolicySettings().model_dump()
+
     @staticmethod
     def overview(db: Session, *, workspace_id: uuid.UUID, current_role: str) -> dict:
         workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
@@ -132,6 +135,47 @@ class WorkspaceAdminService:
         db.commit()
 
     @staticmethod
+    def audit_logs(db: Session, *, workspace_id: uuid.UUID, limit: int = 50) -> list[WorkspaceAuditLogOut]:
+        capped_limit = max(1, min(limit, 100))
+        rows = (
+            db.query(AssistantActionLog, AppUser)
+            .outerjoin(AppUser, AssistantActionLog.user_id == AppUser.id)
+            .filter(AssistantActionLog.workspace_id == workspace_id)
+            .order_by(AssistantActionLog.created_at.desc())
+            .limit(capped_limit)
+            .all()
+        )
+        return [
+            WorkspaceAuditLogOut(
+                id=log.id,
+                action_type=log.action_type,
+                status=log.status,
+                prompt=log.prompt,
+                target_type=log.target_type,
+                target_id=log.target_id,
+                metadata_json=log.metadata_json or {},
+                created_at=log.created_at,
+                user_id=log.user_id,
+                user_name=user.name if user else None,
+                user_email=user.email if user else None,
+            )
+            for log, user in rows
+        ]
+
+    @staticmethod
+    def policy_settings(db: Session, *, workspace_id: uuid.UUID) -> WorkspacePolicySettings:
+        key = WorkspaceAdminService._policy_key(workspace_id)
+        value = get_setting(db, key, WorkspaceAdminService.POLICY_DEFAULTS)
+        merged = {**WorkspaceAdminService.POLICY_DEFAULTS, **value}
+        return WorkspacePolicySettings.model_validate(merged)
+
+    @staticmethod
+    def update_policy_settings(db: Session, *, workspace_id: uuid.UUID, payload: WorkspacePolicySettings) -> WorkspacePolicySettings:
+        key = WorkspaceAdminService._policy_key(workspace_id)
+        upsert_setting(db, key, payload.model_dump())
+        return WorkspaceAdminService.policy_settings(db, workspace_id=workspace_id)
+
+    @staticmethod
     def validate_support_token(db: Session, *, token: str) -> SupportAccessGrant:
         grant = db.query(SupportAccessGrant).filter(SupportAccessGrant.token_hash == _token_hash(token)).first()
         if not grant:
@@ -146,6 +190,10 @@ class WorkspaceAdminService:
         db.commit()
         db.refresh(grant)
         return grant
+
+    @staticmethod
+    def _policy_key(workspace_id: uuid.UUID) -> str:
+        return f"workspace:{workspace_id}:admin_policy"
 
     @staticmethod
     def _count(db: Session, model, workspace_id: uuid.UUID, *filters) -> int:

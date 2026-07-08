@@ -65,17 +65,6 @@ type TeamOverview = {
   permissions: string[];
 };
 
-type AssistantActionLog = {
-  id: string;
-  action_type: string;
-  status: string;
-  prompt?: string | null;
-  target_type?: string | null;
-  target_id?: string | null;
-  metadata_json?: Record<string, unknown>;
-  created_at: string;
-};
-
 type EmailDiagnostics = {
   resend_configured: boolean;
   auth_email_from: string;
@@ -89,7 +78,6 @@ type EmailDiagnostics = {
 
 const focusOptions = ["Clients", "Investors", "Partners", "Events", "Community", "Content audience"];
 const goalOptions = ["Prioritize follow-up", "Invite people to events", "Send better content", "Track deals", "Build partner network", "Clean up contacts"];
-const teamRoles = ["admin", "member", "viewer"];
 
 const defaultProfile: UserProfile = {
   id: "",
@@ -125,10 +113,6 @@ export default function SettingsPage() {
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [twoFactorBusy, setTwoFactorBusy] = useState(false);
   const [team, setTeam] = useState<TeamOverview | null>(null);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("member");
-  const [teamBusy, setTeamBusy] = useState(false);
-  const [assistantActions, setAssistantActions] = useState<AssistantActionLog[]>([]);
   const [emailDiagnostics, setEmailDiagnostics] = useState<EmailDiagnostics | null>(null);
   const [emailTestBusy, setEmailTestBusy] = useState(false);
   const [status, setStatus] = useState("");
@@ -176,9 +160,6 @@ export default function SettingsPage() {
           if (teamRes.ok) setTeam(await teamRes.json());
         }
 
-        const assistantRes = await fetch(`${API_URL}/ai/assistant/actions?limit=8`, { cache: "no-store" });
-        if (assistantRes.ok) setAssistantActions(await assistantRes.json());
-
         const emailRes = await fetch(`${API_URL}/auth/email/diagnostics`, { cache: "no-store" });
         if (emailRes.ok) setEmailDiagnostics(await emailRes.json());
       } catch (error) {
@@ -194,12 +175,6 @@ export default function SettingsPage() {
   const can = (permission: string) => {
     const permissions = profile.permissions || team?.permissions || [];
     return permissions.includes("*") || permissions.includes(permission);
-  };
-
-  const loadTeam = async () => {
-    const res = await fetch(`${API_URL}/team`, { cache: "no-store" });
-    if (!res.ok) return;
-    setTeam(await res.json());
   };
 
   useEffect(() => {
@@ -263,88 +238,6 @@ export default function SettingsPage() {
       setStatus(error instanceof Error ? error.message : "Could not save profile.");
     } finally {
       setSavingProfile(false);
-    }
-  };
-
-  const inviteTeamMember = async () => {
-    setTeamBusy(true);
-    setStatus("");
-    try {
-      const res = await fetch(`${API_URL}/team/invites`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
-      });
-      if (!res.ok) {
-        const payload = (await res.json().catch(() => null)) as { detail?: string } | null;
-        throw new Error(payload?.detail || "Could not send invite.");
-      }
-      setInviteEmail("");
-      setInviteRole("member");
-      await loadTeam();
-      setStatus("Team invite sent.");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not send invite.");
-    } finally {
-      setTeamBusy(false);
-    }
-  };
-
-  const updateTeamRole = async (membershipId: string, role: string) => {
-    setTeamBusy(true);
-    setStatus("");
-    try {
-      const res = await fetch(`${API_URL}/team/members/${membershipId}/role`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role }),
-      });
-      if (!res.ok) {
-        const payload = (await res.json().catch(() => null)) as { detail?: string } | null;
-        throw new Error(payload?.detail || "Could not update role.");
-      }
-      setTeam(await res.json());
-      setStatus("Team role updated.");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not update role.");
-    } finally {
-      setTeamBusy(false);
-    }
-  };
-
-  const removeTeamMember = async (membershipId: string) => {
-    setTeamBusy(true);
-    setStatus("");
-    try {
-      const res = await fetch(`${API_URL}/team/members/${membershipId}`, { method: "DELETE" });
-      if (!res.ok) {
-        const payload = (await res.json().catch(() => null)) as { detail?: string } | null;
-        throw new Error(payload?.detail || "Could not remove member.");
-      }
-      await loadTeam();
-      setStatus("Team member removed.");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not remove member.");
-    } finally {
-      setTeamBusy(false);
-    }
-  };
-
-  const revokeTeamInvite = async (inviteId: string) => {
-    setTeamBusy(true);
-    setStatus("");
-    try {
-      const res = await fetch(`${API_URL}/team/invites/${inviteId}`, { method: "DELETE" });
-      if (!res.ok) {
-        const payload = (await res.json().catch(() => null)) as { detail?: string } | null;
-        throw new Error(payload?.detail || "Could not revoke invite.");
-      }
-      await loadTeam();
-      setStatus("Invite revoked.");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not revoke invite.");
-    } finally {
-      setTeamBusy(false);
     }
   };
 
@@ -475,7 +368,7 @@ export default function SettingsPage() {
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-accent">Teifke / Relationships</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-text sm:text-4xl">Settings</h1>
-            <p className="mt-3 max-w-2xl text-sm text-muted">Manage workspace identity, AI defaults, workflow behavior, and setup readiness.</p>
+            <p className="mt-3 max-w-2xl text-sm text-muted">Manage your account profile, sign-in security, personal AI style, and notification preferences.</p>
           </div>
           <div className="rounded-lg border border-soft bg-base px-4 py-3">
             <p className="text-xs uppercase tracking-wide text-muted">Setup complete</p>
@@ -492,112 +385,31 @@ export default function SettingsPage() {
         <section className="mt-4 rounded-lg border border-soft bg-panel p-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold text-text">Team Access</h2>
-              <p className="mt-1 text-sm text-muted">Invite teammates and control what they can do inside this workspace.</p>
+              <h2 className="text-lg font-semibold text-text">Workspace Access</h2>
+              <p className="mt-1 text-sm text-muted">Your current workspace role is shown here. Team invites, role changes, support access, policies, and audit logs now live in Workspace Admin.</p>
             </div>
             <span className="rounded-full border border-soft bg-base px-3 py-1 text-xs uppercase tracking-wide text-muted">
               {profile.workspace_role || team?.current_role || "member"}
             </span>
           </div>
-
-          {can("members:invite") ? (
-            <div className="mt-4 grid gap-3 rounded-lg border border-soft bg-base p-4 md:grid-cols-[1fr_180px_auto]">
-              <input
-                type="email"
-                value={inviteEmail}
-                onChange={event => setInviteEmail(event.target.value)}
-                placeholder="teammate@email.com"
-                className="rounded-md border border-soft bg-white px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-accent/60"
-              />
-              <select
-                value={inviteRole}
-                onChange={event => setInviteRole(event.target.value)}
-                className="rounded-md border border-soft bg-white px-3 py-2 text-sm outline-none focus:border-accent/60"
-              >
-                {teamRoles.map(role => <option key={role} value={role}>{role}</option>)}
-              </select>
-              <button
-                type="button"
-                onClick={inviteTeamMember}
-                disabled={teamBusy || !inviteEmail.trim()}
-                className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-105 disabled:opacity-50"
-              >
-                Send Invite
-              </button>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-md border border-soft bg-base p-4">
+              <p className="text-xs uppercase tracking-wide text-muted">Members</p>
+              <p className="mt-1 text-2xl font-semibold text-text">{team?.members.length || 0}</p>
             </div>
-          ) : null}
-
-          <div className="mt-4 overflow-hidden rounded-lg border border-soft">
-            <div className="grid grid-cols-[1.4fr_120px_120px_auto] gap-3 border-b border-soft bg-base px-4 py-2 text-xs uppercase tracking-wide text-muted">
-              <span>Member</span>
-              <span>Role</span>
-              <span>Status</span>
-              <span className="text-right">Actions</span>
+            <div className="rounded-md border border-soft bg-base p-4">
+              <p className="text-xs uppercase tracking-wide text-muted">Pending invites</p>
+              <p className="mt-1 text-2xl font-semibold text-text">{team?.invites.length || 0}</p>
             </div>
-            {(team?.members || []).map(member => (
-              <div key={member.id} className="grid grid-cols-[1.4fr_120px_120px_auto] items-center gap-3 border-b border-soft bg-white px-4 py-3 text-sm last:border-b-0">
-                <div className="min-w-0">
-                  <p className="truncate font-semibold text-text">{member.name}</p>
-                  <p className="truncate text-xs text-muted">{member.email}</p>
-                </div>
-                {can("members:manage") && member.role !== "owner" ? (
-                  <select
-                    value={member.role}
-                    onChange={event => updateTeamRole(member.id, event.target.value)}
-                    disabled={teamBusy}
-                    className="rounded-md border border-soft bg-base px-2 py-1.5 text-xs text-text"
-                  >
-                    {teamRoles.map(role => <option key={role} value={role}>{role}</option>)}
-                  </select>
-                ) : (
-                  <span className="text-sm text-text">{member.role}</span>
-                )}
-                <span className="rounded-full border border-soft bg-sage-pale px-2 py-1 text-xs text-forest">{member.status}</span>
-                <div className="text-right">
-                  {can("members:manage") && member.role !== "owner" && member.user_id !== profile.id ? (
-                    <button
-                      type="button"
-                      onClick={() => removeTeamMember(member.id)}
-                      disabled={teamBusy}
-                      className="rounded-md border border-soft bg-base px-3 py-1.5 text-xs font-medium text-text hover:bg-soft/30 disabled:opacity-50"
-                    >
-                      Remove
-                    </button>
-                  ) : (
-                    <span className="text-xs text-muted">-</span>
-                  )}
-                </div>
-              </div>
-            ))}
-            {team && team.members.length === 0 ? (
-              <p className="bg-white px-4 py-4 text-sm text-muted">No team members loaded yet.</p>
-            ) : null}
+            <div className="rounded-md border border-soft bg-base p-4">
+              <p className="text-xs uppercase tracking-wide text-muted">Your role</p>
+              <p className="mt-1 text-2xl font-semibold capitalize text-text">{profile.workspace_role || team?.current_role || "member"}</p>
+            </div>
           </div>
-
-          {team?.invites?.length ? (
-            <div className="mt-4 rounded-lg border border-soft bg-base p-4">
-              <p className="text-sm font-semibold text-text">Pending invites</p>
-              <div className="mt-3 grid gap-2">
-                {team.invites.map(invite => (
-                  <div key={invite.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-soft bg-white px-3 py-2 text-sm">
-                    <span>
-                      <span className="font-semibold text-text">{invite.invited_email}</span>
-                      <span className="ml-2 text-xs text-muted">{invite.role}</span>
-                    </span>
-                    {can("members:manage") ? (
-                      <button
-                        type="button"
-                        onClick={() => revokeTeamInvite(invite.id)}
-                        disabled={teamBusy}
-                        className="rounded-md border border-soft bg-base px-3 py-1.5 text-xs font-medium text-text hover:bg-soft/30 disabled:opacity-50"
-                      >
-                        Revoke
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </div>
+          {can("workspace:manage") ? (
+            <Link href="/workspace-admin" className="mt-4 inline-flex rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-105">
+              Open Workspace Admin
+            </Link>
           ) : null}
         </section>
       ) : null}
@@ -1027,28 +839,19 @@ export default function SettingsPage() {
           ))}
         </div>
 
-        <div className="mt-4 rounded-lg border border-soft bg-base p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-semibold text-text">Assistant Actions</p>
-              <p className="mt-1 text-sm text-muted">Recent commands completed inside this workspace.</p>
-            </div>
-            <span className="rounded-full border border-soft bg-white px-3 py-1 text-xs uppercase tracking-wide text-muted">
-              {assistantActions.length} recent
-            </span>
-          </div>
-          <div className="mt-3 overflow-hidden rounded-md border border-soft">
-            {assistantActions.length ? assistantActions.map(action => (
-              <div key={action.id} className="grid gap-2 border-b border-soft bg-white px-3 py-2 text-sm last:border-b-0 md:grid-cols-[180px_1fr_120px]">
-                <span className="font-semibold text-text">{action.action_type.replaceAll("_", " ")}</span>
-                <span className="truncate text-muted">{action.prompt || action.target_type || "Workspace action"}</span>
-                <span className="text-muted md:text-right">{new Date(action.created_at).toLocaleDateString()}</span>
+        {can("workspace:manage") ? (
+          <div className="mt-4 rounded-lg border border-soft bg-base p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="font-semibold text-text">Workspace audit trail</p>
+                <p className="mt-1 text-sm text-muted">Workspace-level action history and policy controls are managed by admins.</p>
               </div>
-            )) : (
-              <p className="bg-white px-3 py-3 text-sm text-muted">No assistant actions logged yet.</p>
-            )}
+              <Link href="/workspace-admin" className="rounded-md border border-soft bg-white px-3 py-2 text-sm font-semibold text-text hover:bg-soft/40">
+                Review Audit Logs
+              </Link>
+            </div>
           </div>
-        </div>
+        ) : null}
       </section>
     </main>
   );

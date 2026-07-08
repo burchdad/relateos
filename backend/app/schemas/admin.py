@@ -69,6 +69,30 @@ class SupportDraftResponse(BaseModel):
     guardrails: list[str]
 
 
+class WorkspaceAuditLogOut(BaseModel):
+    id: UUID
+    action_type: str
+    status: str
+    prompt: str | None = None
+    target_type: str | None = None
+    target_id: UUID | None = None
+    metadata_json: dict = Field(default_factory=dict)
+    created_at: datetime
+    user_id: UUID | None = None
+    user_name: str | None = None
+    user_email: str | None = None
+
+
+class WorkspacePolicySettings(BaseModel):
+    daily_focus_digest: bool = True
+    auto_create_contacts_from_meetings: bool = True
+    require_review_before_bulk_send: bool = True
+    require_confirmation_for_deletes: bool = True
+    allow_members_to_import_contacts: bool = False
+    allow_members_to_connect_integrations: bool = False
+    assistant_tone: str = Field(default="concise", max_length=40)
+
+
 class WorkspaceAdminOverview(BaseModel):
     workspace_id: UUID
     workspace_name: str

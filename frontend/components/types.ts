@@ -138,9 +138,20 @@ export type TeamMember = {
   created_at: string;
 };
 
+export type TeamInvite = {
+  id: string;
+  workspace_id: string;
+  invited_email: string;
+  role: string;
+  status: string;
+  expires_at: string;
+  accepted_at: string | null;
+  created_at: string;
+};
+
 export type TeamOverview = {
   members: TeamMember[];
-  invites: unknown[];
+  invites: TeamInvite[];
   current_role: string;
   permissions: string[];
 };
@@ -678,10 +689,34 @@ export type WorkspaceAdminOverview = {
   current_role: string;
   metrics: WorkspaceMetric[];
   team_members: TeamMember[];
-  pending_invites: unknown[];
+  pending_invites: TeamInvite[];
   connectors: ConnectorStatus[];
   support_access: SupportAccessGrant[];
   audit_summary: WorkspaceMetric[];
+};
+
+export type WorkspaceAuditLog = {
+  id: string;
+  action_type: string;
+  status: string;
+  prompt: string | null;
+  target_type: string | null;
+  target_id: string | null;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+  user_id: string | null;
+  user_name: string | null;
+  user_email: string | null;
+};
+
+export type WorkspacePolicySettings = {
+  daily_focus_digest: boolean;
+  auto_create_contacts_from_meetings: boolean;
+  require_review_before_bulk_send: boolean;
+  require_confirmation_for_deletes: boolean;
+  allow_members_to_import_contacts: boolean;
+  allow_members_to_connect_integrations: boolean;
+  assistant_tone: string;
 };
 
 export type SoftwareWorkspaceSummary = {
