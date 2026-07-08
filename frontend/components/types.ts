@@ -654,6 +654,52 @@ export type AgentSyncResponse = {
   errors: string[];
 };
 
+export type WorkspaceMetric = {
+  label: string;
+  value: number | string;
+  detail: string | null;
+};
+
+export type SupportAccessGrant = {
+  id: string;
+  workspace_id: string;
+  label: string;
+  status: string;
+  access_level: string;
+  expires_at: string;
+  revoked_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+};
+
+export type WorkspaceAdminOverview = {
+  workspace_id: string;
+  workspace_name: string;
+  current_role: string;
+  metrics: WorkspaceMetric[];
+  team_members: TeamMember[];
+  pending_invites: unknown[];
+  connectors: ConnectorStatus[];
+  support_access: SupportAccessGrant[];
+  audit_summary: WorkspaceMetric[];
+};
+
+export type SoftwareWorkspaceSummary = {
+  workspace_id: string;
+  workspace_name: string;
+  owner_user_id: string | null;
+  members: number;
+  contacts: number;
+  connectors_ready: number;
+  support_grants_active: number;
+  created_at: string;
+};
+
+export type SoftwareAdminOverview = {
+  workspaces: SoftwareWorkspaceSummary[];
+  software_admin_enabled: boolean;
+};
+
 export type GoogleContactsSyncResponse = {
   status: "completed" | "partial" | "needs_config";
   message: string;

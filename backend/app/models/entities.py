@@ -418,6 +418,26 @@ class WorkspaceInvite(Base):
     )
 
 
+class SupportAccessGrant(Base):
+    __tablename__ = "support_access_grants"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(40), default="active", nullable=False)
+    access_level: Mapped[str] = mapped_column(String(40), default="support_read", nullable=False)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    expires_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class ConnectorCredential(Base):
     __tablename__ = "connector_credentials"
 

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { coreNav, intelligenceNav, systemNav, type NavItem } from "@/components/SidebarNav";
+import { canSeeConnections, canSeeWorkspaceAdmin, coreNav, intelligenceNav, systemNav, type NavItem } from "@/components/SidebarNav";
 
 type MobileNavProps = {
   user: {
@@ -19,11 +19,6 @@ type MobileNavProps = {
 const openAssistant = () => {
   window.dispatchEvent(new Event("relateos-open-assistant"));
 };
-
-function canSeeConnections(user: MobileNavProps["user"]) {
-  const permissions = new Set(user.permissions || []);
-  return permissions.has("*") || permissions.has("connections:manage");
-}
 
 function MobileNavLink({
   item,
@@ -88,7 +83,11 @@ export default function MobileNav({ user, onLogout }: MobileNavProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const visibleSystemNav = canSeeConnections(user) ? systemNav : systemNav.filter(item => item.href === "/settings");
+  const visibleSystemNav = systemNav.filter((item) => {
+    if (item.href === "/workspace-admin") return canSeeWorkspaceAdmin(user);
+    if (item.href === "/connections") return canSeeConnections(user);
+    return true;
+  });
 
   const navigateTo = (href: string) => {
     setOpen(false);

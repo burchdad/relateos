@@ -32,9 +32,20 @@ export const intelligenceNav: NavItem[] = [
 ];
 
 export const systemNav: NavItem[] = [
+  { href: "/workspace-admin", label: "Admin", icon: "WA" },
   { href: "/connections", label: "Connections", icon: "CN" },
   { href: "/settings", label: "Settings", icon: "ST" },
 ];
+
+export function canSeeWorkspaceAdmin(user?: { workspace_role?: string; permissions?: string[] } | null) {
+  const permissions = new Set(user?.permissions || []);
+  return user?.workspace_role === "owner" || user?.workspace_role === "admin" || permissions.has("*") || permissions.has("workspace:manage");
+}
+
+export function canSeeConnections(user?: { permissions?: string[] } | null) {
+  const permissions = new Set(user?.permissions || []);
+  return permissions.has("*") || permissions.has("connections:manage");
+}
 
 function NavSection({ title, items, pathname }: { title: string; items: NavItem[]; pathname: string }) {
   return (
@@ -78,9 +89,11 @@ type SidebarNavProps = {
 
 export default function SidebarNav({ user }: SidebarNavProps) {
   const pathname = usePathname();
-  const permissions = new Set(user?.permissions || []);
-  const canManageConnections = permissions.has("*") || permissions.has("connections:manage");
-  const visibleSystemNav = canManageConnections ? systemNav : systemNav.filter(item => item.href === "/settings");
+  const visibleSystemNav = systemNav.filter((item) => {
+    if (item.href === "/workspace-admin") return canSeeWorkspaceAdmin(user);
+    if (item.href === "/connections") return canSeeConnections(user);
+    return true;
+  });
   return (
     <aside className="min-h-screen border-r border-text bg-text px-4 py-6 text-cream-light shadow-card">
       <div className="mb-5 px-2">

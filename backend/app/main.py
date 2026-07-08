@@ -15,6 +15,9 @@ from sqlalchemy import inspect, text
 from app.core.config import settings
 from app.core.database import Base, engine
 from app.routes.ai import router as ai_router
+from app.routes.admin import software_router as software_admin_router
+from app.routes.admin import support_router
+from app.routes.admin import workspace_router as workspace_admin_router
 from app.routes.auth import router as auth_router
 from app.routes.contacts import router as contacts_router
 from app.routes.connections import router as connections_router
@@ -47,6 +50,8 @@ RATE_LIMIT_RULES = [
     ("/imports", 25, 60),
     ("/team/invites", 20, 60),
     ("/connections", 45, 60),
+    ("/software-admin", 10, 60),
+    ("/support", 60, 60),
 ]
 
 # Log the database URL being used (mask password for security)
@@ -272,6 +277,29 @@ def _ensure_workspace_connector_schema() -> None:
         connection.execute(
             text(
                 """
+                CREATE TABLE IF NOT EXISTS support_access_grants (
+                    id UUID PRIMARY KEY,
+                    workspace_id UUID NOT NULL REFERENCES workspaces(id),
+                    label VARCHAR(255) NOT NULL,
+                    token_hash VARCHAR(128) NOT NULL UNIQUE,
+                    status VARCHAR(40) NOT NULL DEFAULT 'active',
+                    access_level VARCHAR(40) NOT NULL DEFAULT 'support_read',
+                    created_by_user_id UUID NULL REFERENCES app_users(id),
+                    expires_at TIMESTAMPTZ NOT NULL,
+                    revoked_at TIMESTAMPTZ NULL,
+                    last_used_at TIMESTAMPTZ NULL,
+                    metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_support_access_grants_workspace_id ON support_access_grants (workspace_id)"))
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_support_access_grants_token_hash ON support_access_grants (token_hash)"))
+        connection.execute(
+            text(
+                """
                 INSERT INTO workspace_memberships (id, workspace_id, user_id, role, status, accepted_at, created_at, updated_at)
                 SELECT gen_random_uuid(), u.workspace_id, u.id,
                        CASE WHEN w.owner_user_id = u.id THEN 'owner' ELSE 'admin' END,
@@ -359,6 +387,8 @@ async def _rate_limit_middleware(request: Request, call_next):
 async def _api_auth_middleware(request: Request, call_next):
     path = request.url.path
     auth_prefix = f"{settings.api_v1_prefix}/auth"
+    software_admin_prefix = f"{settings.api_v1_prefix}/software-admin"
+    support_prefix = f"{settings.api_v1_prefix}/support"
     zoom_webhook_path = f"{settings.api_v1_prefix}/connections/zoom/webhook"
     zoom_oauth_callback_path = f"{settings.api_v1_prefix}/connections/zoom/oauth/callback"
     google_oauth_callback_path = f"{settings.api_v1_prefix}/connections/google-calendar/oauth/callback"
@@ -367,6 +397,8 @@ async def _api_auth_middleware(request: Request, call_next):
         request.method == "OPTIONS"
         or not path.startswith(settings.api_v1_prefix)
         or path.startswith(auth_prefix)
+        or path.startswith(software_admin_prefix)
+        or path.startswith(support_prefix)
         or path == zoom_webhook_path
         or path == zoom_oauth_callback_path
         or path == google_oauth_callback_path
@@ -421,6 +453,9 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
 
 app.include_router(relationships_router, prefix=settings.api_v1_prefix)
 app.include_router(auth_router, prefix=settings.api_v1_prefix)
+app.include_router(workspace_admin_router, prefix=settings.api_v1_prefix)
+app.include_router(software_admin_router, prefix=settings.api_v1_prefix)
+app.include_router(support_router, prefix=settings.api_v1_prefix)
 app.include_router(interactions_router, prefix=settings.api_v1_prefix)
 app.include_router(ai_router, prefix=settings.api_v1_prefix)
 app.include_router(connections_router, prefix=settings.api_v1_prefix)

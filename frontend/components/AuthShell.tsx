@@ -33,7 +33,8 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
   const isOnboardingPage = pathname === "/onboarding";
   const isResetPasswordPage = pathname === "/reset-password";
   const isAcceptInvitePage = pathname === "/accept-invite";
-  const isPublicAuthPage = isLoginPage || isResetPasswordPage || isAcceptInvitePage;
+  const isSoftwareAdminPage = pathname === "/software-admin" || pathname.startsWith("/software-admin/");
+  const isPublicAuthPage = isLoginPage || isResetPasswordPage || isAcceptInvitePage || isSoftwareAdminPage;
 
   const handleLogout = () => {
     clearAuthToken();
