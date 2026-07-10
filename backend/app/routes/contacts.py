@@ -9,8 +9,9 @@ from app.core.database import get_db
 from app.core.permissions import WorkspaceContext, require_permission
 from app.core.workspace import workspace_id_for_user
 from app.models import AppUser
-from app.schemas.contact import ContactCreate, ContactOut, ContactUpdate
+from app.schemas.contact import ContactBulkDeleteRequest, ContactBulkDeleteResponse, ContactCreate, ContactOut, ContactUpdate
 from app.schemas.timeline import TimelineCreate, TimelineItem
+from app.services.audit_service import AuditService
 from app.services.contact_service import ContactService
 from app.services.timeline_service import TimelineService
 
@@ -49,6 +50,28 @@ def list_contacts(
 @router.post("", response_model=ContactOut, status_code=201)
 def create_contact(payload: ContactCreate, db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("contacts:write"))):
     return ContactService.create(db, payload, workspace_id=context.workspace_id)
+
+
+@router.post("/bulk-delete", response_model=ContactBulkDeleteResponse)
+def bulk_delete_contacts(
+    payload: ContactBulkDeleteRequest,
+    db: Session = Depends(get_db),
+    context: WorkspaceContext = Depends(require_permission("contacts:delete")),
+):
+    result = ContactService.bulk_delete(db, payload.contact_ids, workspace_id=context.workspace_id)
+    AuditService.log(
+        db,
+        workspace_id=context.workspace_id,
+        user=context.user,
+        action_type="contact_bulk_delete",
+        target_type="contact",
+        metadata={
+            "requested": len(payload.contact_ids),
+            "deleted": result["deleted"],
+            "missing": [str(contact_id) for contact_id in result["missing"]],
+        },
+    )
+    return ContactBulkDeleteResponse(**result)
 
 
 @router.get("/{contact_id}/timeline", response_model=list[TimelineItem])
@@ -97,3 +120,11 @@ def update_contact(contact_id: uuid.UUID, payload: ContactUpdate, db: Session = 
 def delete_contact(contact_id: uuid.UUID, db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("contacts:delete"))):
     if not ContactService.delete(db, contact_id, workspace_id=context.workspace_id):
         raise HTTPException(status_code=404, detail="Contact not found")
+    AuditService.log(
+        db,
+        workspace_id=context.workspace_id,
+        user=context.user,
+        action_type="contact_delete",
+        target_type="contact",
+        target_id=contact_id,
+    )

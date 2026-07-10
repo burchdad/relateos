@@ -42,6 +42,15 @@ class ContactUpdate(BaseModel):
     tags: dict | None = None
 
 
+class ContactBulkDeleteRequest(BaseModel):
+    contact_ids: list[UUID] = Field(min_length=1, max_length=500)
+
+
+class ContactBulkDeleteResponse(BaseModel):
+    deleted: int
+    missing: list[UUID] = Field(default_factory=list)
+
+
 class ContactOut(BaseModel):
     id: UUID
     first_name: str

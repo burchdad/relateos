@@ -5,7 +5,22 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.taxonomy import normalize_role, role_metadata
-from app.models.entities import Person
+from app.models.entities import (
+    AIInsight,
+    ContentRelationshipTarget,
+    Deal,
+    DealParticipant,
+    EngagementEvent,
+    FollowUpTask,
+    Interaction,
+    MeetingAttendee,
+    Opportunity,
+    OutboxMessage,
+    Person,
+    Relationship,
+    RelationshipEdge,
+    RelationshipSignal,
+)
 from app.schemas.contact import ContactCreate, ContactUpdate
 
 
@@ -149,15 +164,109 @@ class ContactService:
 
     @staticmethod
     def delete(db: Session, contact_id: uuid.UUID, workspace_id: uuid.UUID | None = None) -> bool:
-        q = db.query(Person).filter(Person.id == contact_id)
+        result = ContactService.bulk_delete(db, [contact_id], workspace_id=workspace_id)
+        return result["deleted"] > 0
+
+    @staticmethod
+    def bulk_delete(db: Session, contact_ids: list[uuid.UUID], workspace_id: uuid.UUID | None = None) -> dict[str, Any]:
+        unique_ids = list(dict.fromkeys(contact_ids))
+        if not unique_ids:
+            return {"deleted": 0, "missing": []}
+
+        people_q = db.query(Person.id).filter(Person.id.in_(unique_ids))
         if workspace_id:
-            q = q.filter(Person.workspace_id == workspace_id)
-        person = q.first()
-        if not person:
-            return False
-        db.delete(person)
+            people_q = people_q.filter(Person.workspace_id == workspace_id)
+        found_ids = [row[0] for row in people_q.all()]
+        found_set = set(found_ids)
+        missing = [contact_id for contact_id in unique_ids if contact_id not in found_set]
+
+        if not found_ids:
+            return {"deleted": 0, "missing": missing}
+
+        relationship_q = db.query(Relationship.id).filter(Relationship.person_id.in_(found_ids))
+        if workspace_id:
+            relationship_q = relationship_q.filter(Relationship.workspace_id == workspace_id)
+        relationship_ids = [row[0] for row in relationship_q.all()]
+
+        if relationship_ids:
+            for model in (Interaction, Opportunity, AIInsight, RelationshipSignal, ContentRelationshipTarget):
+                db.query(model).filter(model.relationship_id.in_(relationship_ids)).delete(synchronize_session=False)
+
+            task_q = db.query(FollowUpTask).filter(
+                or_(FollowUpTask.relationship_id.in_(relationship_ids), FollowUpTask.contact_id.in_(found_ids))
+            )
+            if workspace_id:
+                task_q = task_q.filter(FollowUpTask.workspace_id == workspace_id)
+            task_ids = [row[0] for row in task_q.with_entities(FollowUpTask.id).all()]
+            outbox_filters = [OutboxMessage.relationship_id.in_(relationship_ids), OutboxMessage.contact_id.in_(found_ids)]
+            if task_ids:
+                outbox_filters.append(OutboxMessage.task_id.in_(task_ids))
+            outbox_q = db.query(OutboxMessage).filter(or_(*outbox_filters))
+            if workspace_id:
+                outbox_q = outbox_q.filter(OutboxMessage.workspace_id == workspace_id)
+            outbox_q.delete(synchronize_session=False)
+            task_q.delete(synchronize_session=False)
+
+            db.query(Relationship).filter(Relationship.id.in_(relationship_ids)).delete(synchronize_session=False)
+        else:
+            task_q = db.query(FollowUpTask).filter(FollowUpTask.contact_id.in_(found_ids))
+            if workspace_id:
+                task_q = task_q.filter(FollowUpTask.workspace_id == workspace_id)
+            task_ids = [row[0] for row in task_q.with_entities(FollowUpTask.id).all()]
+            outbox_filters = [OutboxMessage.contact_id.in_(found_ids)]
+            if task_ids:
+                outbox_filters.append(OutboxMessage.task_id.in_(task_ids))
+            outbox_q = db.query(OutboxMessage).filter(or_(*outbox_filters))
+            if workspace_id:
+                outbox_q = outbox_q.filter(OutboxMessage.workspace_id == workspace_id)
+            outbox_q.delete(synchronize_session=False)
+            task_q.delete(synchronize_session=False)
+
+        edge_q = db.query(RelationshipEdge).filter(
+            or_(RelationshipEdge.source_contact_id.in_(found_ids), RelationshipEdge.target_contact_id.in_(found_ids))
+        )
+        event_q = db.query(EngagementEvent).filter(EngagementEvent.contact_id.in_(found_ids))
+        if workspace_id:
+            edge_q = edge_q.filter(RelationshipEdge.workspace_id == workspace_id)
+            event_q = event_q.filter(EngagementEvent.workspace_id == workspace_id)
+        edge_q.delete(synchronize_session=False)
+        event_q.delete(synchronize_session=False)
+
+        db.query(MeetingAttendee).filter(MeetingAttendee.contact_id.in_(found_ids)).update(
+            {MeetingAttendee.contact_id: None},
+            synchronize_session=False,
+        )
+        db.query(DealParticipant).filter(DealParticipant.contact_id.in_(found_ids)).update(
+            {DealParticipant.contact_id: None},
+            synchronize_session=False,
+        )
+
+        deal_q = db.query(Deal)
+        if workspace_id:
+            deal_q = deal_q.filter(Deal.workspace_id == workspace_id)
+        deal_q.filter(Deal.primary_contact_id.in_(found_ids)).update({Deal.primary_contact_id: None}, synchronize_session=False)
+
+        deal_q = db.query(Deal)
+        if workspace_id:
+            deal_q = deal_q.filter(Deal.workspace_id == workspace_id)
+        deal_q.filter(Deal.source_contact_id.in_(found_ids)).update({Deal.source_contact_id: None}, synchronize_session=False)
+
+        deal_q = db.query(Deal)
+        if workspace_id:
+            deal_q = deal_q.filter(Deal.workspace_id == workspace_id)
+        deal_q.filter(Deal.referred_by_contact_id.in_(found_ids)).update({Deal.referred_by_contact_id: None}, synchronize_session=False)
+
+        parent_q = db.query(Person).filter(Person.parent_contact_id.in_(found_ids))
+        if workspace_id:
+            parent_q = parent_q.filter(Person.workspace_id == workspace_id)
+        parent_q.update({Person.parent_contact_id: None}, synchronize_session=False)
+
+        delete_q = db.query(Person).filter(Person.id.in_(found_ids))
+        if workspace_id:
+            delete_q = delete_q.filter(Person.workspace_id == workspace_id)
+        deleted = delete_q.delete(synchronize_session=False)
         db.commit()
-        return True
+        return {"deleted": deleted, "missing": missing}
 
     @staticmethod
     def find_or_create_by_email(db: Session, email: str, name: str | None = None, workspace_id: uuid.UUID | None = None) -> Person:

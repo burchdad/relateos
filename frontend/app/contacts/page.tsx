@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { resolveApiUrl } from "@/components/api";
-import { ROLE_OPTIONS, formatRole } from "@/components/roleTaxonomy";
+import { ROLE_OPTIONS } from "@/components/roleTaxonomy";
 import type { Contact, FollowUpTask, TimelineItem } from "@/components/types";
 
 const STAGES = ["new", "aware", "engaged", "active", "partner", "dormant", "high_value"];
 const TAG_OPTIONS = [
+  { value: "advisory", label: "Advisory" },
+  ...ROLE_OPTIONS.filter(role => role.value !== "unknown").map(role => ({ value: role.value, label: role.label })),
   { value: "investor", label: "Investor" },
   { value: "buyer", label: "Buyer" },
   { value: "seller", label: "Seller" },
@@ -18,7 +20,9 @@ const TAG_OPTIONS = [
   { value: "partner", label: "Partner" },
   { value: "event_invite", label: "Event Invite" },
   { value: "high_touch", label: "High Touch" },
-];
+].filter((option, index, options) => options.findIndex(current => current.value === option.value) === index);
+
+const ROLE_TAG_VALUES = new Set(ROLE_OPTIONS.map(role => role.value));
 
 const emptyForm = {
   first_name: "",
@@ -69,6 +73,13 @@ const tagKeysFor = (tags: Record<string, unknown> | null | undefined) => {
 
 const tagLabelFor = (tag: string) => TAG_OPTIONS.find(option => option.value === tag)?.label || tag.replace(/_/g, " ");
 
+const contactTagsFor = (contact: Contact) => Array.from(new Set([
+  ...tagKeysFor(contact.tags),
+  ...(contact.primary_role ? [contact.primary_role] : []),
+]));
+
+const primaryRoleFromTags = (tagKeys: string[]) => tagKeys.find(tag => ROLE_TAG_VALUES.has(tag)) || "";
+
 const timelineDate = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Unknown date";
@@ -87,7 +98,7 @@ export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
   const [stageFilter, setStageFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -97,6 +108,9 @@ export default function ContactsPage() {
   const [editForm, setEditForm] = useState(emptyForm);
   const [editError, setEditError] = useState("");
   const [selectedRelationshipIds, setSelectedRelationshipIds] = useState<Set<string>>(new Set());
+  const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
+  const [deletingContacts, setDeletingContacts] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const [showContentModal, setShowContentModal] = useState(false);
   const [contentEmailForm, setContentEmailForm] = useState(emptyContentEmailForm);
   const [intent, setIntent] = useState("");
@@ -113,12 +127,13 @@ export default function ContactsPage() {
     try {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
-      if (roleFilter) params.set("role", roleFilter);
       if (stageFilter) params.set("relationship_stage", stageFilter);
       const res = await fetch(`${API_URL}/contacts?${params}`, { cache: "no-store" });
       if (res.ok) {
         const data = (await res.json()) as Contact[];
         setContacts(data);
+        setSelectedContactIds(prev => new Set(Array.from(prev).filter(contactId => data.some(contact => contact.id === contactId))));
+        setSelectedRelationshipIds(prev => new Set(Array.from(prev).filter(relationshipId => data.some(contact => contact.relationship_id === relationshipId))));
         const requestedContactId =
           typeof window !== "undefined" ? new URL(window.location.href).searchParams.get("contact_id") : null;
         setSelectedContact((current) => {
@@ -129,7 +144,7 @@ export default function ContactsPage() {
     } finally {
       setLoading(false);
     }
-  }, [API_URL, roleFilter, search, stageFilter]);
+  }, [API_URL, search, stageFilter]);
 
   useEffect(() => { fetchContacts(); }, [fetchContacts]);
 
@@ -180,7 +195,7 @@ export default function ContactsPage() {
       source: selectedContact.source || "",
       relationship_stage: selectedContact.relationship_stage || "",
       notes_summary: selectedContact.notes_summary || selectedContact.relationship_interests || "",
-      tag_keys: tagKeysFor(selectedContact.tags),
+      tag_keys: contactTagsFor(selectedContact),
     });
   }, [editingContact, selectedContact]);
 
@@ -198,10 +213,15 @@ export default function ContactsPage() {
     const withEmail = contacts.filter(c => c.email).length;
     const priority = contacts.filter(c => (c.priority_score || 0) >= 70).length;
     const active = contacts.filter(c => ["active", "partner", "high_value"].includes(c.relationship_stage || "")).length;
-    const needsCleanup = contacts.filter(c => compactName(c).toLowerCase().includes("unknown") || !c.primary_role || !c.email).length;
+    const needsCleanup = contacts.filter(c => compactName(c).toLowerCase().includes("unknown") || contactTagsFor(c).length === 0 || !c.email).length;
     const noContactLogged = contacts.filter(c => c.relationship_id && !c.last_contacted_at).length;
     return { total: contacts.length, withEmail, priority, active, needsCleanup, noContactLogged };
   }, [contacts]);
+
+  const displayedContacts = useMemo(
+    () => (tagFilter ? contacts.filter(contact => contactTagsFor(contact).includes(tagFilter)) : contacts),
+    [contacts, tagFilter]
+  );
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -212,6 +232,7 @@ export default function ContactsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
+          primary_role: primaryRoleFromTags(form.tag_keys) || null,
           tags: Object.fromEntries(form.tag_keys.map(tag => [tag, true])),
           tag_keys: undefined,
         }),
@@ -238,7 +259,7 @@ export default function ContactsPage() {
       source: selectedContact.source || "",
       relationship_stage: selectedContact.relationship_stage || "",
       notes_summary: selectedContact.notes_summary || selectedContact.relationship_interests || "",
-      tag_keys: tagKeysFor(selectedContact.tags),
+      tag_keys: contactTagsFor(selectedContact),
     });
     setEditingContact(true);
   };
@@ -256,7 +277,7 @@ export default function ContactsPage() {
           ...editForm,
           email: editForm.email.trim() || null,
           phone: editForm.phone.trim() || null,
-          primary_role: editForm.primary_role || null,
+          primary_role: primaryRoleFromTags(editForm.tag_keys) || null,
           source: editForm.source.trim() || null,
           relationship_stage: editForm.relationship_stage || null,
           notes_summary: editForm.notes_summary.trim() || null,
@@ -336,12 +357,17 @@ export default function ContactsPage() {
     [contacts, selectedRelationshipIds]
   );
   const visibleRelationshipContacts = useMemo(
-    () => contacts.filter(contact => contact.relationship_id),
-    [contacts]
+    () => displayedContacts.filter(contact => contact.relationship_id),
+    [displayedContacts]
   );
   const visibleSelectedRelationshipCount = useMemo(
     () => visibleRelationshipContacts.filter(contact => selectedRelationshipIds.has(contact.relationship_id!)).length,
     [selectedRelationshipIds, visibleRelationshipContacts]
+  );
+  const selectedContactCount = selectedContactIds.size;
+  const visibleSelectedContactCount = useMemo(
+    () => displayedContacts.filter(contact => selectedContactIds.has(contact.id)).length,
+    [displayedContacts, selectedContactIds]
   );
 
   const toggleRelationshipSelected = (contact: Contact) => {
@@ -369,6 +395,69 @@ export default function ContactsPage() {
       return next;
     });
   };
+
+  const toggleContactSelected = (contact: Contact) => {
+    setSelectedContactIds(prev => {
+      const next = new Set(prev);
+      if (next.has(contact.id)) next.delete(contact.id);
+      else next.add(contact.id);
+      return next;
+    });
+  };
+
+  const toggleVisibleContactsForDelete = () => {
+    setSelectedContactIds(prev => {
+      const next = new Set(prev);
+      const allVisibleSelected = displayedContacts.length > 0 && displayedContacts.every(contact => next.has(contact.id));
+      displayedContacts.forEach(contact => {
+        if (allVisibleSelected) next.delete(contact.id);
+        else next.add(contact.id);
+      });
+      return next;
+    });
+  };
+
+  const deleteContacts = async (contactIds: string[]) => {
+    const uniqueIds = Array.from(new Set(contactIds));
+    if (uniqueIds.length === 0) return;
+    const message =
+      uniqueIds.length === 1
+        ? "Delete this contact? Related relationship history, open tasks, and graph links for this contact will also be removed."
+        : `Delete ${uniqueIds.length} contacts? Related relationship history, open tasks, and graph links for these contacts will also be removed.`;
+    if (typeof window !== "undefined" && !window.confirm(message)) return;
+
+    setDeletingContacts(true);
+    setDeleteError("");
+    try {
+      const res = await fetch(`${API_URL}/contacts/bulk-delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contact_ids: uniqueIds }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.detail || "Could not delete contacts");
+      }
+
+      const deletedSet = new Set(uniqueIds);
+      const deletedRelationshipIds = contacts
+        .filter(contact => deletedSet.has(contact.id) && contact.relationship_id)
+        .map(contact => contact.relationship_id as string);
+      setSelectedContactIds(prev => new Set(Array.from(prev).filter(contactId => !deletedSet.has(contactId))));
+      setSelectedRelationshipIds(prev => new Set(Array.from(prev).filter(relationshipId => !deletedRelationshipIds.includes(relationshipId))));
+      if (selectedContact && deletedSet.has(selectedContact.id)) {
+        setSelectedContact(null);
+        setEditingContact(false);
+      }
+      await fetchContacts();
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Could not delete contacts");
+    } finally {
+      setDeletingContacts(false);
+    }
+  };
+
+  const deleteSelectedContacts = () => deleteContacts(Array.from(selectedContactIds));
 
   const toggleFormTag = (tag: string) => {
     setForm(prev => ({
@@ -436,18 +525,18 @@ export default function ContactsPage() {
       </div>
 
       <div className="rounded-lg border border-soft bg-panel p-4">
-        <div className="grid gap-3 lg:grid-cols-[1fr_220px_180px_auto_auto]">
+        <div className="grid gap-3 lg:grid-cols-[1fr_220px_180px_auto_auto_auto]">
           <input
             type="text"
-            placeholder="Search name, email, phone, or role"
+            placeholder="Search name, email, phone, or tag"
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
           />
-          <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
+          <select value={tagFilter} onChange={e => setTagFilter(e.target.value)}
             className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60">
-            <option value="">All Roles</option>
-            {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            <option value="">All Tags</option>
+            {TAG_OPTIONS.map(tag => <option key={tag.value} value={tag.value}>{tag.label}</option>)}
           </select>
           <select value={stageFilter} onChange={e => setStageFilter(e.target.value)}
             className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60">
@@ -463,6 +552,14 @@ export default function ContactsPage() {
             Send Content
           </button>
           <Link href={selectedRelationshipCount > 0 ? `/events?relationship_ids=${selectedParam}` : "/events"} className="rounded-md border border-soft px-3 py-2 text-sm text-text hover:bg-soft/40">Invite</Link>
+          <button
+            type="button"
+            onClick={deleteSelectedContacts}
+            disabled={selectedContactCount === 0 || deletingContacts}
+            className="rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {deletingContacts ? "Deleting..." : "Delete Selected"}
+          </button>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">
           <label className="inline-flex items-center gap-2 rounded-md border border-soft px-2.5 py-1.5">
@@ -472,10 +569,21 @@ export default function ContactsPage() {
               onChange={toggleVisibleRelationshipContacts}
               className="h-3.5 w-3.5 rounded border-soft bg-base text-accent"
             />
-            Select visible
+            Select visible for content
           </label>
           <span>Selected relationship contacts: {selectedRelationshipCount}</span>
+          <label className="inline-flex items-center gap-2 rounded-md border border-soft px-2.5 py-1.5">
+            <input
+              type="checkbox"
+              checked={displayedContacts.length > 0 && visibleSelectedContactCount === displayedContacts.length}
+              onChange={toggleVisibleContactsForDelete}
+              className="h-3.5 w-3.5 rounded border-soft bg-base text-accent"
+            />
+            Select visible to delete
+          </label>
+          <span>Selected contacts: {selectedContactCount}</span>
         </div>
+        {deleteError ? <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{deleteError}</p> : null}
       </div>
 
       {showForm && (
@@ -489,11 +597,6 @@ export default function ContactsPage() {
                 className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
               />
             ))}
-            <select value={form.primary_role} onChange={e => setForm(p => ({ ...p, primary_role: e.target.value }))}
-              className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60">
-              <option value="">Select role</option>
-              {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-            </select>
             <select value={form.relationship_stage} onChange={e => setForm(p => ({ ...p, relationship_stage: e.target.value }))}
               className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60">
               <option value="">Select stage</option>
@@ -504,7 +607,25 @@ export default function ContactsPage() {
               className="md:col-span-2 h-24 resize-none rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
             />
             <div className="md:col-span-2 rounded-lg border border-soft bg-base p-3">
-              <p className="mb-2 text-xs uppercase tracking-wide text-muted">Tags</p>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs uppercase tracking-wide text-muted">Tags</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setForm(prev => ({ ...prev, tag_keys: TAG_OPTIONS.map(tag => tag.value) }))}
+                    className="rounded-md border border-soft px-2 py-1 text-[11px] text-text hover:bg-soft/40"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm(prev => ({ ...prev, tag_keys: [] }))}
+                    className="rounded-md border border-soft px-2 py-1 text-[11px] text-text hover:bg-soft/40"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
               <div className="flex flex-wrap gap-2">
                 {TAG_OPTIONS.map(tag => {
                   const selected = form.tag_keys.includes(tag.value);
@@ -628,10 +749,11 @@ export default function ContactsPage() {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="rounded-lg border border-soft bg-panel overflow-hidden">
-          <div className="grid grid-cols-[36px_minmax(220px,1.4fr)_170px_130px_120px_minmax(220px,1fr)_120px] border-b border-soft bg-base/60 px-4 py-3 text-xs uppercase tracking-wide text-muted">
-            <span>Select</span>
+          <div className="grid grid-cols-[36px_36px_minmax(220px,1.4fr)_170px_130px_120px_minmax(220px,1fr)_120px] border-b border-soft bg-base/60 px-4 py-3 text-xs uppercase tracking-wide text-muted">
+            <span>Bulk</span>
+            <span>Use</span>
             <span>Name</span>
-            <span>Role</span>
+            <span>Tags</span>
             <span>Stage</span>
             <span>Priority</span>
             <span>Contact</span>
@@ -639,7 +761,7 @@ export default function ContactsPage() {
           </div>
           {loading ? (
             <p className="p-4 text-sm text-muted">Loading contacts...</p>
-          ) : contacts.length === 0 ? (
+          ) : displayedContacts.length === 0 ? (
             <div className="p-5">
               <p className="text-sm font-semibold text-text">No contacts are in this view yet.</p>
               <p className="mt-1 max-w-2xl text-sm text-muted">
@@ -659,7 +781,7 @@ export default function ContactsPage() {
             </div>
           ) : (
             <div className="max-h-[680px] overflow-auto divide-y divide-soft">
-              {contacts.map(contact => (
+              {displayedContacts.map(contact => (
                 <button
                   key={contact.id}
                   onClick={() => {
@@ -667,8 +789,18 @@ export default function ContactsPage() {
                     setEditingContact(false);
                     setEditError("");
                   }}
-                  className={`grid w-full grid-cols-[36px_minmax(220px,1.4fr)_170px_130px_120px_minmax(220px,1fr)_120px] items-center gap-3 px-4 py-3 text-left text-sm hover:bg-soft/20 ${selectedContact?.id === contact.id ? "bg-accent/10" : ""}`}
+                  className={`grid w-full grid-cols-[36px_36px_minmax(220px,1.4fr)_170px_130px_120px_minmax(220px,1fr)_120px] items-center gap-3 px-4 py-3 text-left text-sm hover:bg-soft/20 ${selectedContact?.id === contact.id ? "bg-accent/10" : ""}`}
                 >
+                  <span>
+                    <input
+                      type="checkbox"
+                      checked={selectedContactIds.has(contact.id)}
+                      onClick={event => event.stopPropagation()}
+                      onChange={() => toggleContactSelected(contact)}
+                      className="h-3.5 w-3.5 rounded border-soft bg-base text-accent"
+                      aria-label={`Select ${compactName(contact)} for deletion`}
+                    />
+                  </span>
                   <span>
                     <input
                       type="checkbox"
@@ -687,7 +819,9 @@ export default function ContactsPage() {
                       <span className="block truncate text-xs text-muted">{contact.relationship_interests || contact.phone || "No context"}</span>
                     </span>
                   </span>
-                  <span className="truncate text-muted">{formatRole(contact.primary_role)}</span>
+                  <span className="truncate text-muted">
+                    {contactTagsFor(contact).slice(0, 3).map(tagLabelFor).join(", ") || "-"}
+                  </span>
                   <span><span className={`rounded-full border px-2 py-1 text-xs capitalize ${stageClass(contact.relationship_stage)}`}>{contact.relationship_stage || "unset"}</span></span>
                   <span className="text-muted">{contact.priority_score != null ? contact.priority_score.toFixed(1) : "-"}</span>
                   <span className="truncate text-muted">{contact.email || "No email"}</span>
@@ -703,19 +837,31 @@ export default function ContactsPage() {
             <div className="space-y-5">
               <div>
                 <div className="flex items-start justify-between gap-3">
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-xs uppercase tracking-wide text-muted">Selected contact</p>
-                    <h3 className="mt-1 text-xl font-semibold text-text">{compactName(selectedContact)}</h3>
-                    <p className="mt-1 text-sm text-muted">{formatRole(selectedContact.primary_role)}</p>
+                    <h3 className="mt-1 break-words text-xl font-semibold text-text">{compactName(selectedContact)}</h3>
+                    <p className="mt-1 text-sm text-muted">
+                      {contactTagsFor(selectedContact).slice(0, 4).map(tagLabelFor).join(", ") || "No tags"}
+                    </p>
                   </div>
                   {!editingContact ? (
-                    <button
-                      type="button"
-                      onClick={startEditingContact}
-                      className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-text hover:brightness-110"
-                    >
-                      Edit
-                    </button>
+                    <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={startEditingContact}
+                        className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-text hover:brightness-110"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteContacts([selectedContact.id])}
+                        disabled={deletingContacts}
+                        className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {deletingContacts ? "Deleting..." : "Delete"}
+                      </button>
+                    </div>
                   ) : null}
                 </div>
               </div>
@@ -733,14 +879,6 @@ export default function ContactsPage() {
                       />
                     ))}
                   </div>
-                  <select
-                    value={editForm.primary_role}
-                    onChange={e => setEditForm(prev => ({ ...prev, primary_role: e.target.value }))}
-                    className="rounded-md border border-soft bg-base px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/60"
-                  >
-                    <option value="">Select role</option>
-                    {ROLE_OPTIONS.map(role => <option key={role.value} value={role.value}>{role.label}</option>)}
-                  </select>
                   <select
                     value={editForm.relationship_stage}
                     onChange={e => setEditForm(prev => ({ ...prev, relationship_stage: e.target.value }))}
@@ -762,7 +900,25 @@ export default function ContactsPage() {
                     className="h-28 resize-none rounded-md border border-soft bg-base px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent/60"
                   />
                   <div className="rounded-lg border border-soft bg-base p-3">
-                    <p className="mb-2 text-xs uppercase tracking-wide text-muted">Tags</p>
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs uppercase tracking-wide text-muted">Tags</p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditForm(prev => ({ ...prev, tag_keys: TAG_OPTIONS.map(tag => tag.value) }))}
+                          className="rounded-md border border-soft px-2 py-1 text-[11px] text-text hover:bg-soft/40"
+                        >
+                          Select All
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditForm(prev => ({ ...prev, tag_keys: [] }))}
+                          className="rounded-md border border-soft px-2 py-1 text-[11px] text-text hover:bg-soft/40"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       {TAG_OPTIONS.map(tag => {
                         const selected = editForm.tag_keys.includes(tag.value);
@@ -804,9 +960,9 @@ export default function ContactsPage() {
                 </form>
               ) : (
                 <>
-              {tagKeysFor(selectedContact.tags).length > 0 ? (
+              {contactTagsFor(selectedContact).length > 0 ? (
                 <div className="flex flex-wrap gap-2">
-                  {tagKeysFor(selectedContact.tags).map(tag => (
+                  {contactTagsFor(selectedContact).map(tag => (
                     <span key={tag} className="rounded-full border border-soft bg-base px-2 py-1 text-xs capitalize text-muted">
                       {tagLabelFor(tag)}
                     </span>
@@ -840,6 +996,14 @@ export default function ContactsPage() {
                   <Link href={`/events?relationship_ids=${encodeURIComponent(selectedContact.relationship_id)}`} className="rounded-md border border-soft px-3 py-2 text-xs text-text hover:bg-soft/40">Invite</Link>
                 </div>
               ) : null}
+              <button
+                type="button"
+                onClick={() => deleteContacts([selectedContact.id])}
+                disabled={deletingContacts}
+                className="w-full rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deletingContacts ? "Deleting contact..." : "Delete Contact"}
+              </button>
               <div>
                 <p className="text-xs uppercase tracking-wide text-muted">Notes</p>
                 <p className="mt-2 rounded-lg border border-soft bg-base p-3 text-sm text-muted">{selectedContact.relationship_interests || selectedContact.notes_summary || "No notes captured yet."}</p>
