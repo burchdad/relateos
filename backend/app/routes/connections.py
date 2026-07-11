@@ -24,6 +24,7 @@ from app.schemas.connections import (
     GoogleContactsSyncResponse,
 )
 from app.services.audit_service import AuditService
+from app.services.calendar_ingestion_service import CalendarIngestionService
 from app.services.connections_service import ConnectionsService
 from app.services.google_contacts_service import GoogleContactsService
 from app.services.zoom_import_service import ZoomImportService
@@ -190,6 +191,69 @@ def sync_google_contacts(db: Session = Depends(get_db), context: WorkspaceContex
         },
     )
     return GoogleContactsSyncResponse.model_validate(result)
+
+
+@router.post("/google/calendar/sync", response_model=AgentSyncResponse)
+def sync_google_calendar_meetings(db: Session = Depends(get_db), context: WorkspaceContext = Depends(require_permission("imports:run"))):
+    workspace_id = context.workspace_id
+    try:
+        imported = CalendarIngestionService.sync_google_calendar(db, workspace_id=workspace_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    errors = imported.get("errors", [])
+    imported_total = (
+        int(imported.get("content_imported") or 0)
+        + int(imported.get("meetings_imported") or 0)
+        + int(imported.get("attendees_imported") or 0)
+    )
+    result = {
+        "job_id": str(uuid.uuid4()),
+        "mode": "archive",
+        "status": "partial" if errors else "completed",
+        "message": (
+            "Google Calendar sync completed. Meetings, attendees, and content links were imported."
+            if not errors and imported_total > 0
+            else "Google Calendar sync completed. No new meetings or attendees were found."
+            if not errors
+            else "Google Calendar sync partially completed. Review calendar access or event details."
+        ),
+        "pipeline": ConnectionsService.overview(db, workspace_id)["pipeline"],
+        "blockers": [],
+        "requested_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "imported_content_count": int(imported.get("content_imported") or 0),
+        "imported_meeting_count": int(imported.get("meetings_imported") or 0),
+        "imported_attendee_count": int(imported.get("attendees_imported") or 0),
+        "imported_artifact_count": 0,
+        "errors": errors,
+    }
+    ConnectionsService.merge_connector_values(
+        db,
+        "google_calendar",
+        {
+            "last_sync_at": result["requested_at"],
+            "last_sync_status": result["status"],
+            "last_error": errors[0] if errors else "",
+            "records_imported": imported_total,
+        },
+        workspace_id,
+    )
+    AuditService.log(
+        db,
+        workspace_id=context.workspace_id,
+        user=context.user,
+        action_type="google_calendar_meeting_sync",
+        status=result["status"],
+        target_type="connector",
+        metadata={
+            "events_found": imported.get("events_found", 0),
+            "meetings_imported": imported.get("meetings_imported", 0),
+            "attendees_imported": imported.get("attendees_imported", 0),
+            "contacts_created": imported.get("contacts_created", 0),
+            "content_imported": imported.get("content_imported", 0),
+            "errors": errors,
+        },
+    )
+    return AgentSyncResponse.model_validate(result)
 
 
 @router.get("/zoom/oauth/start", response_model=OAuthStartResponse)

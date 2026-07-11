@@ -299,7 +299,7 @@ class ConnectionsService:
                     "response_type": "code",
                     "client_id": settings.google_calendar_client_id,
                     "redirect_uri": redirect_uri,
-                    "scope": "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/userinfo.email",
+                    "scope": "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email",
                     "access_type": "offline",
                     "prompt": "consent",
                     "state": state,
@@ -525,6 +525,9 @@ class ConnectionsService:
             if status == "ready" and "contacts.readonly" not in scope:
                 health["level"] = "yellow"
                 health["last_error"] = "Reconnect Google to approve Contacts access before syncing contacts."
+            elif status == "ready" and "gmail.send" not in scope:
+                health["level"] = "yellow"
+                health["last_error"] = "Reconnect Google to approve Gmail send access before emailing event invites."
             elif status != "ready":
                 health["last_error"] = "Connect Google to create calendar events and import contacts."
         if connector_key == "zoom" and status != "ready":

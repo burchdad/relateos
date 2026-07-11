@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -17,6 +17,34 @@ TIME_ZONE = "America/Chicago"
 
 
 class GoogleCalendarService:
+    @staticmethod
+    def list_events_for_workspace(
+        db: Session,
+        *,
+        workspace_id: UUID,
+        days_back: int = 30,
+        days_forward: int = 90,
+        max_results: int = 100,
+    ) -> list[dict[str, Any]]:
+        access_token = ConnectionsService.stored_connector_value(db, "google_calendar", "access_token", workspace_id)
+        refresh_token = ConnectionsService.stored_connector_value(db, "google_calendar", "refresh_token", workspace_id)
+        calendar_id = ConnectionsService.stored_connector_value(db, "google_calendar", "calendar_id", workspace_id) or "primary"
+
+        if not access_token and refresh_token:
+            access_token = ConnectionsService.refresh_oauth_token(db, "google_calendar", workspace_id)
+        if not access_token:
+            raise ValueError("Google Calendar is not connected for this workspace.")
+
+        response = GoogleCalendarService._get_events(calendar_id, access_token, days_back, days_forward, max_results)
+        if response.status_code == 401 and refresh_token:
+            access_token = ConnectionsService.refresh_oauth_token(db, "google_calendar", workspace_id)
+            response = GoogleCalendarService._get_events(calendar_id, access_token, days_back, days_forward, max_results)
+
+        if response.status_code == 403:
+            raise ValueError("Reconnect Google to approve Calendar read access before syncing meeting attendees.")
+        response.raise_for_status()
+        return response.json().get("items", [])
+
     @staticmethod
     def create_event_for_workspace(db: Session, *, event: Event, workspace_id: UUID) -> dict[str, Any]:
         access_token = ConnectionsService.stored_connector_value(db, "google_calendar", "access_token", workspace_id)
@@ -41,6 +69,23 @@ class GoogleCalendarService:
             "htmlLink": data.get("htmlLink"),
             "status": data.get("status"),
         }
+
+    @staticmethod
+    def _get_events(calendar_id: str, access_token: str, days_back: int, days_forward: int, max_results: int) -> httpx.Response:
+        now = datetime.now(timezone.utc)
+        params = {
+            "singleEvents": "true",
+            "orderBy": "startTime",
+            "maxResults": str(max(1, min(max_results, 250))),
+            "timeMin": (now - timedelta(days=days_back)).isoformat().replace("+00:00", "Z"),
+            "timeMax": (now + timedelta(days=days_forward)).isoformat().replace("+00:00", "Z"),
+        }
+        return httpx.get(
+            f"https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events",
+            headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+            params=params,
+            timeout=20,
+        )
 
     @staticmethod
     def _post_event(calendar_id: str, access_token: str, payload: dict[str, Any]) -> httpx.Response:

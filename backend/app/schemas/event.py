@@ -17,6 +17,16 @@ class EventCreate(BaseModel):
     owner_user_id: str | None = None
 
 
+class EventAttendeeOut(BaseModel):
+    id: UUID
+    contact_id: UUID | None = None
+    name: str | None = None
+    email: str | None = None
+    attendance_status: str
+
+    model_config = {"from_attributes": True}
+
+
 class EventOut(BaseModel):
     id: UUID
     title: str
@@ -31,6 +41,16 @@ class EventOut(BaseModel):
     calendar_sync_status: str | None = None
     calendar_sync_error: str | None = None
     owner_user_id: str | None
+    attendees: list["EventAttendeeOut"] = Field(default_factory=list)
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class EventInviteSendRequest(BaseModel):
+    contact_ids: list[UUID] = Field(min_length=1, max_length=500)
+
+
+class EventInviteSendResponse(BaseModel):
+    sent: int
+    skipped: list[UUID] = Field(default_factory=list)

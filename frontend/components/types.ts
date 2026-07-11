@@ -244,6 +244,13 @@ export type EventItem = {
   calendar_sync_status?: string | null;
   calendar_sync_error?: string | null;
   owner_user_id: string | null;
+  attendees?: {
+    id: string;
+    contact_id: string | null;
+    name: string | null;
+    email: string | null;
+    attendance_status: string;
+  }[];
   created_at: string;
 };
 

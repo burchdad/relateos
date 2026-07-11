@@ -155,6 +155,9 @@ export default function EventsPage() {
   const [selectedInviteTags, setSelectedInviteTags] = useState<Set<string>>(new Set());
   const [selectedInviteRoleGroups, setSelectedInviteRoleGroups] = useState<Set<string>>(new Set());
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
+  const [sendingInvites, setSendingInvites] = useState(false);
+  const [inviteSendMessage, setInviteSendMessage] = useState("");
+  const [inviteSendError, setInviteSendError] = useState("");
   const [preselectedRelationshipIds, setPreselectedRelationshipIds] = useState<Set<string>>(new Set());
   const [queryEventId, setQueryEventId] = useState("");
 
@@ -273,27 +276,41 @@ export default function EventsPage() {
     () => contacts.filter(contact => selectedContactIds.has(contact.id)),
     [contacts, selectedContactIds]
   );
+  const selectedInviteEmailContacts = useMemo(
+    () => selectedInviteContacts.filter(contact => Boolean(contact.email)),
+    [selectedInviteContacts]
+  );
   const visibleSelectedCount = useMemo(
     () => inviteCandidates.filter(contact => selectedContactIds.has(contact.id)).length,
     [inviteCandidates, selectedContactIds]
   );
 
-  const inviteMailto = useMemo(() => {
-    if (!selectedEvent || selectedInviteContacts.length === 0) return "";
-    const emails = selectedInviteContacts.map(contact => contact.email).filter(Boolean).join(",");
-    if (!emails) return "";
-    const subject = `Invite: ${selectedEvent.title}`;
-    const schedule = `${selectedEvent.day_of_week === null ? "One-time" : dayLabels[selectedEvent.day_of_week]} at ${selectedEvent.time_of_day}`;
-    const body = [
-      `You're invited to ${selectedEvent.title}.`,
-      "",
-      selectedEvent.description,
-      "",
-      `When: ${schedule}`,
-      `Link: ${selectedEvent.event_url}`,
-    ].join("\n");
-    return `mailto:?bcc=${encodeURIComponent(emails)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  }, [selectedEvent, selectedInviteContacts]);
+  const sendEventInvites = async () => {
+    if (!selectedEvent || selectedInviteEmailContacts.length === 0) return;
+    setSendingInvites(true);
+    setInviteSendMessage("");
+    setInviteSendError("");
+
+    try {
+      const res = await fetch(`${API_URL}/events/${selectedEvent.id}/send-invites`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contact_ids: selectedInviteEmailContacts.map(contact => contact.id) }),
+      });
+      const payload = await res.json().catch(() => null) as { sent?: number; skipped?: string[]; detail?: string } | null;
+      if (!res.ok) throw new Error(payload?.detail || "Could not send event invites.");
+      const sent = payload?.sent || 0;
+      setInviteSendMessage(`Sent ${sent} invite${sent === 1 ? "" : "s"} from the connected Google account.`);
+      const skipped = selectedInviteContacts.length - selectedInviteEmailContacts.length + (payload?.skipped?.length || 0);
+      if (skipped > 0) {
+        setInviteSendError(`${skipped} selected contact${skipped === 1 ? "" : "s"} skipped because they do not have an email address.`);
+      }
+    } catch (e) {
+      setInviteSendError(e instanceof Error ? e.message : "Could not send event invites.");
+    } finally {
+      setSendingInvites(false);
+    }
+  };
 
   const onCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -358,6 +375,8 @@ export default function EventsPage() {
   };
 
   const toggleContact = (contactId: string) => {
+    setInviteSendMessage("");
+    setInviteSendError("");
     setSelectedContactIds(prev => {
       const next = new Set(prev);
       if (next.has(contactId)) next.delete(contactId);
@@ -367,6 +386,8 @@ export default function EventsPage() {
   };
 
   const selectVisibleContacts = () => {
+    setInviteSendMessage("");
+    setInviteSendError("");
     setSelectedContactIds(prev => {
       const next = new Set(prev);
       inviteCandidates.forEach(contact => next.add(contact.id));
@@ -375,6 +396,8 @@ export default function EventsPage() {
   };
 
   const removeVisibleContacts = () => {
+    setInviteSendMessage("");
+    setInviteSendError("");
     setSelectedContactIds(prev => {
       const next = new Set(prev);
       inviteCandidates.forEach(contact => next.delete(contact.id));
@@ -387,6 +410,8 @@ export default function EventsPage() {
     setSelectedInviteTags(new Set());
     setSelectedInviteRoleGroups(new Set());
     setInviteSearch("");
+    setInviteSendMessage("");
+    setInviteSendError("");
   };
 
   return (
@@ -588,6 +613,7 @@ export default function EventsPage() {
                 <p className="text-muted">Schedule: <span className="text-text">{selectedEvent.day_of_week === null ? "One-time" : dayLabels[selectedEvent.day_of_week]} at {selectedEvent.time_of_day}</span></p>
                 <p className="text-muted">Owner: <span className="text-text">{selectedEvent.owner_user_id || "Unassigned"}</span></p>
                 <p className="text-muted">Created: <span className="text-text">{new Date(selectedEvent.created_at).toLocaleDateString()}</span></p>
+                <p className="text-muted">Attendees: <span className="text-text">{selectedEvent.attendees?.length || 0}</span></p>
                 <p className="text-muted">
                   Calendar:{" "}
                   <span className="text-text">
@@ -608,6 +634,23 @@ export default function EventsPage() {
                 <p className="text-xs uppercase tracking-wide text-muted">Description</p>
                 <p className="mt-2 rounded-lg border border-soft bg-base p-3 text-sm text-muted">{selectedEvent.description}</p>
               </div>
+              {selectedEvent.attendees?.length ? (
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-muted">Calendar attendees</p>
+                  <div className="mt-2 max-h-48 overflow-auto rounded-lg border border-soft bg-base">
+                    {selectedEvent.attendees.map(attendee => (
+                      <div key={attendee.id} className="border-b border-soft px-3 py-2 text-sm last:border-b-0">
+                        <p className="font-medium text-text">{attendee.name || attendee.email || "Unknown attendee"}</p>
+                        <p className="text-xs text-muted">{attendee.email || "No email"} · {attendee.attendance_status.replace(/_/g, " ")}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="rounded-lg border border-soft bg-base px-3 py-2 text-xs text-muted">
+                  No calendar attendees synced yet. Run Sync Calendar Meetings from Connections after Google Calendar is connected.
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 <a href={selectedEvent.event_url} target="_blank" rel="noreferrer" className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-text">Open Link</a>
                 {selectedEvent.calendar_event_url ? (
@@ -640,7 +683,7 @@ export default function EventsPage() {
                   {selectedEvent ? selectedEvent.title : "Select an event"}
                 </h2>
                 <p className="mt-1 text-xs text-muted">
-                  Selected: {selectedInviteContacts.length} / Visible selected: {visibleSelectedCount}
+                  Selected: {selectedInviteContacts.length} / With email: {selectedInviteEmailContacts.length} / Visible selected: {visibleSelectedCount}
                 </p>
               </div>
               <button type="button" onClick={() => setShowInvitePanel(false)} className="rounded-md border border-soft px-2 py-1 text-xs text-text hover:bg-soft/40">
@@ -734,15 +777,28 @@ export default function EventsPage() {
                     );
                   })}
                 </div>
-                <a
-                  href={inviteMailto || undefined}
-                  aria-disabled={!inviteMailto}
-                  className={`block rounded-md px-3 py-2 text-center text-sm font-semibold ${
-                    inviteMailto ? "bg-accent text-text hover:brightness-110" : "pointer-events-none border border-soft text-muted"
+                {inviteSendMessage ? (
+                  <p className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-text">
+                    {inviteSendMessage}
+                  </p>
+                ) : null}
+                {inviteSendError ? (
+                  <p className="rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-xs text-text">
+                    {inviteSendError}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={sendEventInvites}
+                  disabled={sendingInvites || selectedInviteEmailContacts.length === 0}
+                  className={`block w-full rounded-md px-3 py-2 text-center text-sm font-semibold ${
+                    selectedInviteEmailContacts.length > 0 && !sendingInvites
+                      ? "bg-accent text-text hover:brightness-110"
+                      : "border border-soft text-muted"
                   }`}
                 >
-                  Email Invites
-                </a>
+                  {sendingInvites ? "Sending..." : "Email Invites"}
+                </button>
               </div>
             ) : (
               <p className="mt-4 rounded-md border border-soft bg-base px-3 py-3 text-sm text-muted">

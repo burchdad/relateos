@@ -54,6 +54,7 @@ export default function ConnectionsPage() {
   const [contactsSyncResult, setContactsSyncResult] = useState<GoogleContactsSyncResponse | null>(null);
   const [syncing, setSyncing] = useState<AgentSyncResponse["mode"] | null>(null);
   const [syncingGoogleContacts, setSyncingGoogleContacts] = useState(false);
+  const [syncingGoogleCalendar, setSyncingGoogleCalendar] = useState(false);
 
   const loadConnections = useCallback(async () => {
     setLoading(true);
@@ -181,6 +182,24 @@ export default function ConnectionsPage() {
     }
   };
 
+  const runGoogleCalendarSync = async () => {
+    setSyncingGoogleCalendar(true);
+    setMessage("");
+    setSyncResult(null);
+    try {
+      const res = await fetch(`${API_URL}/connections/google/calendar/sync`, { method: "POST" });
+      if (!res.ok) throw await apiError(res, "Could not sync Google Calendar meetings");
+      const data = (await res.json()) as AgentSyncResponse;
+      setSyncResult(data);
+      setMessage(data.message);
+      await loadConnections();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not sync Google Calendar meetings");
+    } finally {
+      setSyncingGoogleCalendar(false);
+    }
+  };
+
   const startOAuth = async (connectorKey: ConnectorStatus["key"]) => {
     const path =
       connectorKey === "zoom"
@@ -230,35 +249,42 @@ export default function ConnectionsPage() {
           <div className="flex flex-wrap gap-2">
             <button
               onClick={runZoomSync}
-              disabled={Boolean(syncing)}
+              disabled={Boolean(syncing) || syncingGoogleCalendar}
               className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110 disabled:opacity-50"
             >
               {syncing === "archive" ? "Syncing..." : "Sync Zoom Recordings"}
             </button>
             <button
               onClick={runZoomAiSync}
-              disabled={Boolean(syncing)}
+              disabled={Boolean(syncing) || syncingGoogleCalendar}
               className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110 disabled:opacity-50"
             >
               {syncing === "archive" ? "Syncing..." : "Sync Zoom AI Notes"}
             </button>
             <button
+              onClick={runGoogleCalendarSync}
+              disabled={Boolean(syncing) || syncingGoogleCalendar}
+              className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-text hover:brightness-110 disabled:opacity-50"
+            >
+              {syncingGoogleCalendar ? "Syncing..." : "Sync Calendar Meetings"}
+            </button>
+            <button
               onClick={() => runSync("archive")}
-              disabled={Boolean(syncing)}
+              disabled={Boolean(syncing) || syncingGoogleCalendar}
               className="rounded-md border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent hover:bg-accent/20 disabled:opacity-50"
             >
               {syncing === "archive" ? "Starting..." : "Sync Archive"}
             </button>
             <button
               onClick={() => runSync("live_session")}
-              disabled={Boolean(syncing)}
+              disabled={Boolean(syncing) || syncingGoogleCalendar}
               className="rounded-md border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent hover:bg-accent/20 disabled:opacity-50"
             >
               {syncing === "live_session" ? "Preparing..." : "Prepare Live Watcher"}
             </button>
             <button
               onClick={() => runSync("full")}
-              disabled={Boolean(syncing)}
+              disabled={Boolean(syncing) || syncingGoogleCalendar}
               className="rounded-md border border-soft px-4 py-2 text-sm text-text hover:bg-soft/40 disabled:opacity-50"
             >
               {syncing === "full" ? "Starting..." : "Full Sync"}
@@ -417,13 +443,22 @@ export default function ConnectionsPage() {
                   </button>
                 ) : null}
                 {connector.key === "google_calendar" ? (
-                  <button
-                    onClick={runGoogleContactsSync}
-                    disabled={syncingGoogleContacts || connector.status !== "ready"}
-                    className="rounded-md border border-soft px-4 py-2 text-sm font-semibold text-text hover:bg-soft/40 disabled:opacity-50"
-                  >
-                    {syncingGoogleContacts ? "Syncing contacts..." : "Sync Google Contacts"}
-                  </button>
+                  <>
+                    <button
+                      onClick={runGoogleCalendarSync}
+                      disabled={syncingGoogleCalendar || connector.status !== "ready"}
+                      className="rounded-md border border-soft px-4 py-2 text-sm font-semibold text-text hover:bg-soft/40 disabled:opacity-50"
+                    >
+                      {syncingGoogleCalendar ? "Syncing meetings..." : "Sync Calendar Meetings"}
+                    </button>
+                    <button
+                      onClick={runGoogleContactsSync}
+                      disabled={syncingGoogleContacts || connector.status !== "ready"}
+                      className="rounded-md border border-soft px-4 py-2 text-sm font-semibold text-text hover:bg-soft/40 disabled:opacity-50"
+                    >
+                      {syncingGoogleContacts ? "Syncing contacts..." : "Sync Google Contacts"}
+                    </button>
+                  </>
                 ) : null}
                 <button
                   onClick={() => saveConnector(connector)}
